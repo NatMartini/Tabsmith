@@ -1,0 +1,23 @@
+[package]
+name = "rustpy-cli"
+description = "The `rustpy` command-line tool."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "rustpy"
+path = "src/main.rs"
+
+[dependencies]
+rustpy-contracts.workspace = true
+rustpy-runtime.workspace = true
+rustpy-workflow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+clap.workspace = true
+ctrlc.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

@@ -1,0 +1,15 @@
+[package]
+name = "predict-app"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "A tiny Rust application that loads a RustPy bundle. Depends only on rustpy-runtime."
+
+# Standalone on purpose (not a workspace member): `cargo tree` here shows the full
+# dependency set an application pays for — no Burn, no Polars, no Python.
+[workspace]
+
+[dependencies]
+rustpy-runtime = { path = "../../crates/rustpy-runtime" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
