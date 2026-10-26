@@ -56,7 +56,7 @@ impl Project {
         let mut cur: Option<&Path> = Some(&start);
         while let Some(d) = cur {
             if d.join(CONFIG_FILE).is_file() {
-                return Ok(Self { root: d.to_path_buf() });
+                return Self::open(d);
             }
             cur = d.parent();
         }
@@ -70,7 +70,10 @@ impl Project {
 
     /// Opens a project at exactly `root`.
     pub fn open(root: impl AsRef<Path>) -> Result<Self> {
-        let root = root.as_ref().to_path_buf();
+        let root = root.as_ref();
+        // Absolute, canonical root: relative paths in records and the config are
+        // always resolved against it, never against the current directory.
+        let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
         if !root.join(CONFIG_FILE).is_file() {
             return Err(RustpyError::new(
                 ErrorCode::ConfigNotFound,
