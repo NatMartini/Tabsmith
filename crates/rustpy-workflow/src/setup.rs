@@ -137,7 +137,14 @@ impl Workspace {
             RustpyError::new(ErrorCode::ConfigInvalid, Phase::Config, format!("{CONFIG_FILE}: {e}"))
         })?;
         let abs = if req.file.is_absolute() { req.file.clone() } else { std::env::current_dir().map_err(|e| RustpyError::io(Phase::Config, ".", e))?.join(&req.file) };
-        let abs = if abs.exists() { abs.canonicalize().unwrap_or(abs) } else if project.root.join(&req.file).exists() { project.root.join(&req.file) } else { abs };
+        let abs = if abs.exists() {
+            abs
+        } else if project.root.join(&req.file).exists() {
+            project.root.join(&req.file)
+        } else {
+            abs
+        };
+        let abs = abs.canonicalize().unwrap_or(abs);
         if !abs.is_file() {
             return Err(RustpyError::new(
                 ErrorCode::DataSourceNotFound,
