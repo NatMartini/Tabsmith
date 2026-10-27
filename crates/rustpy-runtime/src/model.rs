@@ -78,8 +78,7 @@ impl DenseModel {
         }
         let mut meta = HashMap::new();
         meta.insert("format".to_string(), self.config.format.clone());
-        safetensors::serialize(views, Some(meta))
-            .map_err(|e| RustpyError::internal(Phase::Bundle, format!("safetensors serialize: {e}")))
+        safetensors::serialize(views, Some(meta)).map_err(|e| RustpyError::internal(Phase::Bundle, format!("safetensors serialize: {e}")))
     }
 
     /// Loads weights for `config` from safetensors bytes.
@@ -173,10 +172,7 @@ fn read_f32(st: &SafeTensors<'_>, name: &str, shape: &[usize]) -> Result<Vec<f32
         return Err(corrupt(format!("tensor `{name}` has dtype {:?}, expected F32", t.dtype())));
     }
     if t.shape() != shape {
-        return Err(corrupt(format!(
-            "tensor `{name}` has shape {:?}, expected {shape:?}",
-            t.shape()
-        )));
+        return Err(corrupt(format!("tensor `{name}` has shape {:?}, expected {shape:?}", t.shape())));
     }
     Ok(t.data()
         .chunks_exact(4)
@@ -215,7 +211,11 @@ mod tests {
     #[test]
     fn forward_matches_hand_computation() {
         let m = tiny();
-        let x = Matrix { rows: 2, cols: 2, data: vec![3.0, 1.0, 0.0, 4.0] };
+        let x = Matrix {
+            rows: 2,
+            cols: 2,
+            data: vec![3.0, 1.0, 0.0, 4.0],
+        };
         // row0: h = relu([3-1, 1.5+0.5-1]) = [2, 1]; y = 4 + 3 + 0.25
         // row1: h = relu([-4, 2-1]) = [0, 1]; y = 3 + 0.25
         assert_eq!(m.logits(&x), vec![7.25, 3.25]);

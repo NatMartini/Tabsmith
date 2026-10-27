@@ -176,7 +176,10 @@ impl Record {
                     return Err(RustpyError::new(
                         ErrorCode::SchemaTypeMismatch,
                         Phase::Predict,
-                        format!("field `{k}` holds a nested {}; only flat scalar values are supported", json_kind(other)),
+                        format!(
+                            "field `{k}` holds a nested {}; only flat scalar values are supported",
+                            json_kind(other)
+                        ),
                     )
                     .field(k.clone())
                     .expected("null, bool, number or string")
@@ -297,12 +300,7 @@ impl Table {
             .iter()
             .map(|name| Column {
                 name: name.to_string(),
-                data: ColumnData::Mixed(
-                    records
-                        .iter()
-                        .map(|r| r.get(name).cloned().unwrap_or(Value::Null))
-                        .collect(),
-                ),
+                data: ColumnData::Mixed(records.iter().map(|r| r.get(name).cloned().unwrap_or(Value::Null)).collect()),
             })
             .collect();
         Self {

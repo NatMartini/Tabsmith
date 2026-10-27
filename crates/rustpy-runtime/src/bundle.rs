@@ -5,14 +5,14 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 use rustpy_contracts::manifest::{
-    BundleEvaluation, BundleManifest, ExampleExpected, ExampleInputs, version_at_least,
-    EVALUATION_FILE, EXAMPLES_EXPECTED_FILE, EXAMPLES_INPUT_FILE, INPUT_SCHEMA_FILE, MANIFEST_FILE,
-    MODEL_CONFIG_FILE, MODEL_WEIGHTS_FILE, OUTPUT_SCHEMA_FILE, REQUIRED_FILES, TRANSFORM_FILE,
+    BundleEvaluation, BundleManifest, EVALUATION_FILE, EXAMPLES_EXPECTED_FILE, EXAMPLES_INPUT_FILE, ExampleExpected, ExampleInputs,
+    INPUT_SCHEMA_FILE, MANIFEST_FILE, MODEL_CONFIG_FILE, MODEL_WEIGHTS_FILE, OUTPUT_SCHEMA_FILE, REQUIRED_FILES, TRANSFORM_FILE,
+    version_at_least,
 };
-use rustpy_contracts::model::{ModelConfig, MODEL_FORMAT};
+use rustpy_contracts::model::{MODEL_FORMAT, ModelConfig};
 use rustpy_contracts::schema::{InputSchema, OutputSchema};
 use rustpy_contracts::transform::{FittedTransform, TRANSFORM_VERSION};
-use rustpy_contracts::{ErrorCode, Phase, Result, RustpyError, BUNDLE_FORMAT_VERSION, RUSTPY_VERSION};
+use rustpy_contracts::{BUNDLE_FORMAT_VERSION, ErrorCode, Phase, RUSTPY_VERSION, Result, RustpyError};
 use serde::de::DeserializeOwned;
 
 use crate::model::DenseModel;
@@ -75,10 +75,7 @@ impl LoadOptions {
     }
 
     pub fn device(device: Device) -> Self {
-        Self {
-            device,
-            ..Self::cpu()
-        }
+        Self { device, ..Self::cpu() }
     }
 
     pub fn with_self_check(mut self, yes: bool) -> Self {
@@ -125,16 +122,15 @@ fn parse_json<T: DeserializeOwned>(dir: &Path, rel: &str, bytes: &[u8]) -> Resul
     serde_json::from_slice(bytes).map_err(|e| {
         bundle_err(ErrorCode::BundleCorrupt, dir, format!("`{rel}` is not valid: {e}"))
             .field(rel)
-            .next("the bundle file is damaged or comes from an incompatible version; rebuild the bundle or restore it from a known-good copy")
+            .next(
+                "the bundle file is damaged or comes from an incompatible version; rebuild the bundle or restore it from a known-good copy",
+            )
     })
 }
 
 fn safe_relative(p: &str) -> bool {
     let path = Path::new(p);
-    !p.is_empty()
-        && path
-            .components()
-            .all(|c| matches!(c, Component::Normal(_)))
+    !p.is_empty() && path.components().all(|c| matches!(c, Component::Normal(_)))
 }
 
 /// Every file under `dir` (relative, `/`-separated); symlinks are reported as errors.
@@ -142,16 +138,16 @@ fn walk(dir: &Path, base: &Path, out: &mut Vec<String>) -> Result<()> {
     for e in fs::read_dir(dir).map_err(|e| RustpyError::io(Phase::Load, dir, e))? {
         let e = e.map_err(|e| RustpyError::io(Phase::Load, dir, e))?;
         let path = e.path();
-        let rel = path
-            .strip_prefix(base)
-            .unwrap_or(&path)
-            .to_string_lossy()
-            .replace('\\', "/");
-        let ft = fs::symlink_metadata(&path).map_err(|e| RustpyError::io(Phase::Load, &path, e))?.file_type();
+        let rel = path.strip_prefix(base).unwrap_or(&path).to_string_lossy().replace('\\', "/");
+        let ft = fs::symlink_metadata(&path)
+            .map_err(|e| RustpyError::io(Phase::Load, &path, e))?
+            .file_type();
         if ft.is_symlink() {
-            return Err(bundle_err(ErrorCode::BundleCorrupt, base, format!("bundle contains a symbolic link `{rel}`"))
-                .field(rel)
-                .next("bundles contain regular files only; rebuild the bundle"));
+            return Err(
+                bundle_err(ErrorCode::BundleCorrupt, base, format!("bundle contains a symbolic link `{rel}`"))
+                    .field(rel)
+                    .next("bundles contain regular files only; rebuild the bundle"),
+            );
         } else if ft.is_dir() {
             walk(&path, base, out)?;
         } else {
@@ -167,10 +163,16 @@ impl Bundle {
     pub fn open(dir: impl AsRef<Path>, opts: &LoadOptions) -> Result<Self> {
         let dir = dir.as_ref().to_path_buf();
         if !dir.join(MANIFEST_FILE).is_file() {
-            let code = if dir.is_dir() { ErrorCode::BundleMissingFile } else { ErrorCode::BundleNotFound };
-            return Err(bundle_err(code, &dir, format!("no bundle manifest at `{}`", dir.join(MANIFEST_FILE).display()))
-                .expected("a directory created by `rustpy bundle build`")
-                .next("check the path; list bundles with `rustpy bundle list`"));
+            let code = if dir.is_dir() {
+                ErrorCode::BundleMissingFile
+            } else {
+                ErrorCode::BundleNotFound
+            };
+            return Err(
+                bundle_err(code, &dir, format!("no bundle manifest at `{}`", dir.join(MANIFEST_FILE).display()))
+                    .expected("a directory created by `rustpy bundle build`")
+                    .next("check the path; list bundles with `rustpy bundle list`"),
+            );
         }
         let manifest_bytes = fs::read(dir.join(MANIFEST_FILE)).map_err(|e| RustpyError::io(Phase::Load, &dir, e))?;
         let manifest: BundleManifest = parse_json(&dir, MANIFEST_FILE, &manifest_bytes)?;
@@ -269,9 +271,9 @@ impl Bundle {
             .expected(format!("{} / {:?}", evaluation.status, test_id))
             .actual(format!("{} / {:?}", manifest.evaluation_status, manifest.provenance.evaluation_id)));
         }
-        transform.check_consistency().map_err(|m| {
-            bundle_err(ErrorCode::BundleCorrupt, &dir, format!("transform.json is inconsistent: {m}"))
-        })?;
+        transform
+            .check_consistency()
+            .map_err(|m| bundle_err(ErrorCode::BundleCorrupt, &dir, format!("transform.json is inconsistent: {m}")))?;
         if transform.version != TRANSFORM_VERSION {
             return Err(bundle_err(
                 ErrorCode::BundleIncompatible,
@@ -346,7 +348,10 @@ impl Bundle {
                 return Err(bundle_err(
                     ErrorCode::BundleCorrupt,
                     dir,
-                    format!("min_runtime_version {:?} is not a major.minor.patch version", m.runtime.min_runtime_version),
+                    format!(
+                        "min_runtime_version {:?} is not a major.minor.patch version",
+                        m.runtime.min_runtime_version
+                    ),
                 ));
             }
         }
@@ -358,8 +363,7 @@ impl Bundle {
             .expected(TRANSFORM_VERSION));
         }
         if m.runtime.model_format != MODEL_FORMAT {
-            return Err(incompatible(format!("model format `{}` is not supported", m.runtime.model_format))
-                .expected(MODEL_FORMAT));
+            return Err(incompatible(format!("model format `{}` is not supported", m.runtime.model_format)).expected(MODEL_FORMAT));
         }
         if m.runtime.precision != "fp32" {
             return Err(incompatible(format!("precision `{}` is not supported", m.runtime.precision)));

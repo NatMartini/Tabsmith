@@ -3,17 +3,17 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use rustpy_contracts::config::{resolve, Candidate, ConfigLayer, ProjectFile, SplitStrategy, ValueSource};
+use rustpy_contracts::config::{Candidate, ConfigLayer, ProjectFile, SplitStrategy, ValueSource, resolve};
 use rustpy_contracts::data::DataSnapshot;
 use rustpy_contracts::device::DevicePlan;
 use rustpy_contracts::transform::FeatureTransform;
-use rustpy_contracts::{ErrorCode, Phase, Result, RustpyError, RECIPE_ID, RECIPE_NAME};
+use rustpy_contracts::{ErrorCode, Phase, RECIPE_ID, RECIPE_NAME, Result, RustpyError};
 use serde::Serialize;
-use toml_edit::{value, Array, DocumentMut, Item, Table as EditTable};
+use toml_edit::{Array, DocumentMut, Item, Table as EditTable, value};
 
-use crate::data::{plan_columns, snapshot_source, ColumnDecision, ColumnRole, TargetInfo};
+use crate::data::{ColumnDecision, ColumnRole, TargetInfo, plan_columns, snapshot_source};
 use crate::pipeline::Workspace;
-use crate::project::{write_atomic, ConfigRequest, CONFIG_FILE};
+use crate::project::{CONFIG_FILE, ConfigRequest, write_atomic};
 use crate::split::make_split;
 use crate::train::model_config;
 
@@ -59,10 +59,12 @@ pub struct InitReport {
 /// Creates a new project directory.
 pub fn init_project(dir: &Path, recipe: &str, sample_data: bool) -> Result<InitReport> {
     if recipe != RECIPE_NAME && recipe != RECIPE_ID {
-        return Err(RustpyError::new(ErrorCode::ConfigInvalid, Phase::Config, format!("unknown recipe `{recipe}`"))
-            .field("--recipe")
-            .expected(RECIPE_NAME)
-            .next("RustPy 0.1 implements the tabular-binary recipe only"));
+        return Err(
+            RustpyError::new(ErrorCode::ConfigInvalid, Phase::Config, format!("unknown recipe `{recipe}`"))
+                .field("--recipe")
+                .expected(RECIPE_NAME)
+                .next("RustPy 0.1 implements the tabular-binary recipe only"),
+        );
     }
     if dir.join(CONFIG_FILE).exists() {
         return Err(RustpyError::new(
@@ -86,7 +88,10 @@ pub fn init_project(dir: &Path, recipe: &str, sample_data: bool) -> Result<InitR
     // Never overwrite user files: add the state directory to an existing .gitignore.
     let gitignore = dir.join(".gitignore");
     let existing = fs::read_to_string(&gitignore).unwrap_or_default();
-    if !existing.lines().any(|l| l.trim() == "/.rustpy/" || l.trim() == ".rustpy/" || l.trim() == ".rustpy") {
+    if !existing
+        .lines()
+        .any(|l| l.trim() == "/.rustpy/" || l.trim() == ".rustpy/" || l.trim() == ".rustpy")
+    {
         let mut text = existing.clone();
         if !text.is_empty() && !text.ends_with('\n') {
             text.push('\n');
@@ -215,10 +220,16 @@ impl Workspace {
     pub fn bind_data(&self, req: &BindRequest) -> Result<BindReport> {
         let project = &self.project;
         let text = fs::read_to_string(project.config_path()).map_err(|e| RustpyError::io(Phase::Config, project.config_path(), e))?;
-        let mut doc: DocumentMut = text.parse().map_err(|e: toml_edit::TomlError| {
-            RustpyError::new(ErrorCode::ConfigInvalid, Phase::Config, format!("{CONFIG_FILE}: {e}"))
-        })?;
-        let abs = if req.file.is_absolute() { req.file.clone() } else { std::env::current_dir().map_err(|e| RustpyError::io(Phase::Config, ".", e))?.join(&req.file) };
+        let mut doc: DocumentMut = text
+            .parse()
+            .map_err(|e: toml_edit::TomlError| RustpyError::new(ErrorCode::ConfigInvalid, Phase::Config, format!("{CONFIG_FILE}: {e}")))?;
+        let abs = if req.file.is_absolute() {
+            req.file.clone()
+        } else {
+            std::env::current_dir()
+                .map_err(|e| RustpyError::io(Phase::Config, ".", e))?
+                .join(&req.file)
+        };
         let abs = if abs.exists() {
             abs
         } else if project.root.join(&req.file).exists() {
@@ -245,15 +256,25 @@ impl Workspace {
         let source = project_relative(&root, &abs);
         if let Some(sp) = &req.split {
             if !matches!(sp.as_str(), "stratified" | "group" | "time") {
-                return Err(RustpyError::new(ErrorCode::ConfigInvalid, Phase::Config, format!("unknown split `{sp}`"))
-                    .field("--split")
-                    .expected("stratified (independent rows) or group (with --group <column>)"));
+                return Err(
+                    RustpyError::new(ErrorCode::ConfigInvalid, Phase::Config, format!("unknown split `{sp}`"))
+                        .field("--split")
+                        .expected("stratified (independent rows) or group (with --group <column>)"),
+                );
             }
         }
         // Only the flags given change the file; a new source or target invalidates the
         // keys that describe the old one (they are re-inferred or must be passed again).
-        let old_source = doc.get("data").and_then(|d| d.get("source")).and_then(|v| v.as_str()).map(str::to_string);
-        let old_target = doc.get("data").and_then(|d| d.get("target")).and_then(|v| v.as_str()).map(str::to_string);
+        let old_source = doc
+            .get("data")
+            .and_then(|d| d.get("source"))
+            .and_then(|v| v.as_str())
+            .map(str::to_string);
+        let old_target = doc
+            .get("data")
+            .and_then(|d| d.get("target"))
+            .and_then(|v| v.as_str())
+            .map(str::to_string);
         let rebinding = old_source.as_deref() != Some(source.as_str()) || old_target.as_deref() != Some(req.target.as_str());
         {
             let data = data_table(&mut doc);
@@ -334,7 +355,11 @@ impl Workspace {
                 }
                 data["exclude"] = value(kept);
             }
-            if let Some(cols) = data.get("columns").and_then(|v| v.as_table_like()).map(|t| t.iter().map(|(k, _)| k.to_string()).collect::<Vec<_>>()) {
+            if let Some(cols) = data
+                .get("columns")
+                .and_then(|v| v.as_table_like())
+                .map(|t| t.iter().map(|(k, _)| k.to_string()).collect::<Vec<_>>())
+            {
                 for c in cols {
                     if !has(&c) {
                         if let Some(t) = data.get_mut("columns").and_then(|v| v.as_table_like_mut()) {
@@ -354,8 +379,7 @@ impl Workspace {
             resolved = resolve_doc(&doc).map_err(as_flag_error)?;
         }
         let cfg = &resolved.config;
-        let features =
-            plan_columns(&snap.snapshot, &snap.table, &cfg.data, cfg.preprocess.max_categories).map_err(as_flag_error)?;
+        let features = plan_columns(&snap.snapshot, &snap.table, &cfg.data, cfg.preprocess.max_categories).map_err(as_flag_error)?;
         let split = make_split(&snap.snapshot.snapshot_id, &snap.table, &features.target, &cfg.data).map_err(as_flag_error)?;
         let earlier: Vec<&String> = cfg.data.exclude.iter().filter(|c| !req.exclude.contains(c)).collect();
         if !earlier.is_empty() {
@@ -370,7 +394,12 @@ impl Workspace {
             snapshot: snap.snapshot,
             target: features.target.clone(),
             columns: features.columns.clone(),
-            warnings: kept_notes.iter().chain(&features.warnings).chain(&split.warnings).cloned().collect(),
+            warnings: kept_notes
+                .iter()
+                .chain(&features.warnings)
+                .chain(&split.warnings)
+                .cloned()
+                .collect(),
             split: format!("{} (seed {})", split.strategy, split.seed),
             split_counts: [
                 ("train".into(), split.train.rows, split.train.positives),
@@ -394,12 +423,19 @@ impl Workspace {
             .features
             .iter()
             .map(|f| match f {
-                FeatureTransform::Numeric { name, impute, mean, std, .. } => PlannedFeature {
+                FeatureTransform::Numeric {
+                    name, impute, mean, std, ..
+                } => PlannedFeature {
                     name: name.clone(),
                     encoding: format!("numeric: missing -> {impute:.4}, z = (x - {mean:.4}) / {std:.4}"),
                     width: 1,
                 },
-                FeatureTransform::Categorical { name, categories, missing_slot, .. } => PlannedFeature {
+                FeatureTransform::Categorical {
+                    name,
+                    categories,
+                    missing_slot,
+                    ..
+                } => PlannedFeature {
                     name: name.clone(),
                     encoding: format!(
                         "one-hot over {} categories{}; unseen -> {}",

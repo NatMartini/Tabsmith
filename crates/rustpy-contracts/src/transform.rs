@@ -52,9 +52,7 @@ impl FeatureTransform {
         match self {
             FeatureTransform::Numeric { .. } => 1,
             FeatureTransform::Categorical {
-                categories,
-                missing_slot,
-                ..
+                categories, missing_slot, ..
             } => categories.len() + usize::from(*missing_slot),
         }
     }

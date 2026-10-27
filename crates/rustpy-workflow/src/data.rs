@@ -8,9 +8,7 @@ use std::sync::Arc;
 
 use polars::prelude::*;
 use rustpy_contracts::config::{ColumnKindOverride, DataConfig, DataFormat, SnapshotMode};
-use rustpy_contracts::data::{
-    ColumnProfile, DataSnapshot, NumericSummary, RowIdentity, SnapshotStorage, SourceFormat, SourceRef,
-};
+use rustpy_contracts::data::{ColumnProfile, DataSnapshot, NumericSummary, RowIdentity, SnapshotStorage, SourceFormat, SourceRef};
 use rustpy_contracts::hash::{canonical_hash, sha256_file, short};
 use rustpy_contracts::schema::RawDtype;
 use rustpy_contracts::time::now_rfc3339;
@@ -18,7 +16,7 @@ use rustpy_contracts::{ErrorCode, Phase, Result, RustpyError};
 use rustpy_runtime::{Column as RtColumn, ColumnData, Table};
 use serde::{Deserialize, Serialize};
 
-use crate::project::{did_you_mean, read_json, write_json, Project};
+use crate::project::{Project, did_you_mean, read_json, write_json};
 
 /// Options that change how a file is interpreted; part of the snapshot identity.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -43,7 +41,11 @@ impl ReadOptions {
                     return Err(RustpyError::new(
                         ErrorCode::DataUnsupported,
                         Phase::Data,
-                        format!("cannot tell the format of `{}` (extension {:?})", path.display(), other.unwrap_or("")),
+                        format!(
+                            "cannot tell the format of `{}` (extension {:?})",
+                            path.display(),
+                            other.unwrap_or("")
+                        ),
                     )
                     .field("data.format")
                     .expected("a .csv or .parquet file")
@@ -136,8 +138,10 @@ pub fn check_csv_structure(path: &Path, delimiter: u8) -> Result<CsvStructure> {
             continue;
         }
         if b == b'\r' && bytes.get(i + 1) != Some(&b'\n') {
-            return Err(read_err(path, format!("line {line} ends with a bare carriage return (CR-only line endings)"))
-                .next("convert the file to LF or CRLF line endings"));
+            return Err(
+                read_err(path, format!("line {line} ends with a bare carriage return (CR-only line endings)"))
+                    .next("convert the file to LF or CRLF line endings"),
+            );
         }
         if b == b'"' {
             in_quotes = true;
@@ -185,8 +189,7 @@ pub fn check_csv_structure(path: &Path, delimiter: u8) -> Result<CsvStructure> {
         i += 1;
     }
     if in_quotes {
-        return Err(read_err(path, "CSV file ends inside a quoted field (unbalanced quote)")
-            .next("fix the quoting and bind again"));
+        return Err(read_err(path, "CSV file ends inside a quoted field (unbalanced quote)").next("fix the quoting and bind again"));
     }
     if has_content {
         fields += 1;
@@ -207,8 +210,7 @@ pub fn check_csv_structure(path: &Path, delimiter: u8) -> Result<CsvStructure> {
     let mut seen = HashSet::new();
     for h in &header {
         if h.trim().is_empty() {
-            return Err(read_err(path, "the CSV header has an empty column name")
-                .next("give every column a name in the header row"));
+            return Err(read_err(path, "the CSV header has an empty column name").next("give every column a name in the header row"));
         }
         if !seen.insert(h.as_str()) {
             return Err(read_err(path, format!("the CSV header repeats column `{h}`"))
@@ -217,8 +219,7 @@ pub fn check_csv_structure(path: &Path, delimiter: u8) -> Result<CsvStructure> {
         }
     }
     if records == 0 {
-        return Err(read_err(path, "the CSV file has a header but no data rows")
-            .next("bind a file that contains data rows"));
+        return Err(read_err(path, "the CSV file has a header but no data rows").next("bind a file that contains data rows"));
     }
     Ok(CsvStructure {
         header,
@@ -228,15 +229,21 @@ pub fn check_csv_structure(path: &Path, delimiter: u8) -> Result<CsvStructure> {
 }
 
 fn blank_line_error(path: &Path, line: usize) -> RustpyError {
-    read_err(path, format!("line {line} is blank; a blank line inside the data would be read as a row of missing values"))
-        .next(format!("remove the blank line {line} (and any others) from the file"))
+    read_err(
+        path,
+        format!("line {line} is blank; a blank line inside the data would be read as a row of missing values"),
+    )
+    .next(format!("remove the blank line {line} (and any others) from the file"))
 }
 
 fn ragged_error(path: &Path, line: usize, fields: usize, expected: usize) -> RustpyError {
-    read_err(path, format!("CSV record starting on line {line} has {fields} fields, the header has {expected}"))
-        .expected(format!("{expected} fields per row"))
-        .actual(format!("{fields} fields"))
-        .next("fix the row (missing or extra delimiters / unbalanced quotes) and bind again")
+    read_err(
+        path,
+        format!("CSV record starting on line {line} has {fields} fields, the header has {expected}"),
+    )
+    .expected(format!("{expected} fields per row"))
+    .actual(format!("{fields} fields"))
+    .next("fix the row (missing or extra delimiters / unbalanced quotes) and bind again")
 }
 
 fn raw_of(dtype: &DataType) -> Option<RawDtype> {
@@ -411,7 +418,13 @@ pub fn read_table(path: &Path, opts: &ReadOptions, frozen: Option<&[(String, Opt
                         values
                             .iter()
                             .map(|v| {
-                                v.map(|x| if timestamp { format_utc(x, per_second) } else { format!("{}", x as f64 / per_second as f64) })
+                                v.map(|x| {
+                                    if timestamp {
+                                        format_utc(x, per_second)
+                                    } else {
+                                        format!("{}", x as f64 / per_second as f64)
+                                    }
+                                })
                             })
                             .collect(),
                     ),
@@ -422,9 +435,9 @@ pub fn read_table(path: &Path, opts: &ReadOptions, frozen: Option<&[(String, Opt
                 ColumnData::Float(c.f64().map_err(|e| polars_err(path, e))?.iter().collect())
             }
             (_, Some(RawDtype::Int)) => {
-                let c = col.strict_cast(&DataType::Int64).map_err(|e| {
-                    read_err(path, format!("integer column `{name}` does not fit in i64: {e}"))
-                })?;
+                let c = col
+                    .strict_cast(&DataType::Int64)
+                    .map_err(|e| read_err(path, format!("integer column `{name}` does not fit in i64: {e}")))?;
                 ColumnData::Int(c.i64().map_err(|e| polars_err(path, e))?.iter().collect())
             }
             (_, Some(RawDtype::Bool)) => ColumnData::Bool(col.bool().map_err(|e| polars_err(path, e))?.iter().collect()),
@@ -487,7 +500,11 @@ pub fn profile_columns(data: &LoadedData) -> Vec<ColumnProfile> {
                 }
                 p.distinct = distinct.len() as u64;
                 if n > 0 {
-                    p.numeric = Some(NumericSummary { min, max, mean: sum / n as f64 });
+                    p.numeric = Some(NumericSummary {
+                        min,
+                        max,
+                        mean: sum / n as f64,
+                    });
                     p.all_integral = v.iter().flatten().filter(|f| f.is_finite()).all(|f| f.fract() == 0.0);
                 }
             }
@@ -509,7 +526,11 @@ pub fn profile_columns(data: &LoadedData) -> Vec<ColumnProfile> {
                 }
                 p.distinct = counts.len() as u64;
                 if n > 0 {
-                    p.numeric = Some(NumericSummary { min, max, mean: sum / n as f64 });
+                    p.numeric = Some(NumericSummary {
+                        min,
+                        max,
+                        mean: sum / n as f64,
+                    });
                 }
                 if counts.len() <= 20 {
                     p.top_values = top_n(counts.into_iter().map(|(k, c)| (k.to_string(), c)));
@@ -633,7 +654,12 @@ pub fn snapshot_source(project: &Project, cfg: &DataConfig) -> Result<SnapshotDa
                 let _ = fs::remove_dir_all(&dir);
                 return Err(changed_error(&path));
             }
-            (copy, SnapshotStorage::Copy { file: format!("data.{ext}") })
+            (
+                copy,
+                SnapshotStorage::Copy {
+                    file: format!("data.{ext}"),
+                },
+            )
         }
         SnapshotMode::Reference => (path.clone(), SnapshotStorage::Reference),
     };
@@ -777,7 +803,10 @@ pub fn read_for_prediction(
                 return Ok(Table::new(
                     header
                         .into_iter()
-                        .map(|name| RtColumn { name, data: ColumnData::Text(Vec::new()) })
+                        .map(|name| RtColumn {
+                            name,
+                            data: ColumnData::Text(Vec::new()),
+                        })
                         .collect(),
                 )?);
             }
@@ -1003,7 +1032,11 @@ pub fn plan_columns(snapshot: &DataSnapshot, table: &Table, cfg: &DataConfig, ma
         Err(e)
     };
     must_exist(target, "data.target")?;
-    for (key, col) in [("data.id_column", &cfg.id_column), ("data.group_column", &cfg.group_column), ("data.time_column", &cfg.time_column)] {
+    for (key, col) in [
+        ("data.id_column", &cfg.id_column),
+        ("data.group_column", &cfg.group_column),
+        ("data.time_column", &cfg.time_column),
+    ] {
         if let Some(c) = col {
             must_exist(c, key)?;
         }
@@ -1064,7 +1097,11 @@ pub fn plan_columns(snapshot: &DataSnapshot, table: &Table, cfg: &DataConfig, ma
         .next("remove or label those rows; rows without a label cannot be used for training or evaluation"));
     }
     let labels: Vec<&String> = label_counts.keys().collect();
-    let shown = label_counts.iter().map(|(l, c)| format!("{l:?}: {c}")).collect::<Vec<_>>().join(", ");
+    let shown = label_counts
+        .iter()
+        .map(|(l, c)| format!("{l:?}: {c}"))
+        .collect::<Vec<_>>()
+        .join(", ");
     if label_counts.len() != 2 {
         return Err(RustpyError::new(
             ErrorCode::TargetInvalid,
@@ -1136,13 +1173,27 @@ pub fn plan_columns(snapshot: &DataSnapshot, table: &Table, cfg: &DataConfig, ma
         } else if cfg.group_column.as_deref() == Some(name) {
             (ColumnRole::Group, "config")
         } else if cfg.time_column.as_deref() == Some(name) {
-            (ColumnRole::Excluded { reason: "declared time column".into() }, "config")
+            (
+                ColumnRole::Excluded {
+                    reason: "declared time column".into(),
+                },
+                "config",
+            )
         } else if cfg.exclude.iter().any(|c| c == name) {
-            (ColumnRole::Excluded { reason: "listed in data.exclude".into() }, "config")
+            (
+                ColumnRole::Excluded {
+                    reason: "listed in data.exclude".into(),
+                },
+                "config",
+            )
         } else if let Some(kind) = cfg.columns.get(name) {
             let role = match kind {
-                ColumnKindOverride::Ignore => ColumnRole::Excluded { reason: "data.columns = ignore".into() },
-                ColumnKindOverride::Categorical => ColumnRole::Feature { kind: FieldKind::Categorical },
+                ColumnKindOverride::Ignore => ColumnRole::Excluded {
+                    reason: "data.columns = ignore".into(),
+                },
+                ColumnKindOverride::Categorical => ColumnRole::Feature {
+                    kind: FieldKind::Categorical,
+                },
                 ColumnKindOverride::Numeric => {
                     if !matches!(prof.raw_dtype, Some(RawDtype::Float) | Some(RawDtype::Int)) {
                         return Err(RustpyError::new(
@@ -1154,7 +1205,10 @@ pub fn plan_columns(snapshot: &DataSnapshot, table: &Table, cfg: &DataConfig, ma
                             ),
                         )
                         .field(format!("data.columns.{name}"))
-                        .next(format!("declare it categorical or clean the column; first values: {:?}", prof.top_values.iter().take(3).map(|v| &v.0).collect::<Vec<_>>())));
+                        .next(format!(
+                            "declare it categorical or clean the column; first values: {:?}",
+                            prof.top_values.iter().take(3).map(|v| &v.0).collect::<Vec<_>>()
+                        )));
                     }
                     ColumnRole::Feature { kind: FieldKind::Numeric }
                 }
@@ -1164,9 +1218,14 @@ pub fn plan_columns(snapshot: &DataSnapshot, table: &Table, cfg: &DataConfig, ma
             let non_missing = (snapshot.n_rows as u64).saturating_sub(prof.null_count + prof.nan_count);
             let role = match prof.raw_dtype {
                 None => ColumnRole::Excluded {
-                    reason: format!("unsupported type {} (dates/nested types are not features in 0.1)", prof.engine_dtype),
+                    reason: format!(
+                        "unsupported type {} (dates/nested types are not features in 0.1)",
+                        prof.engine_dtype
+                    ),
                 },
-                Some(_) if non_missing == 0 => ColumnRole::Excluded { reason: "all values are missing".into() },
+                Some(_) if non_missing == 0 => ColumnRole::Excluded {
+                    reason: "all values are missing".into(),
+                },
                 Some(RawDtype::Float | RawDtype::Int)
                     if prof.distinct == non_missing
                         && non_missing >= 20
@@ -1179,9 +1238,7 @@ pub fn plan_columns(snapshot: &DataSnapshot, table: &Table, cfg: &DataConfig, ma
                     }
                 }
                 Some(RawDtype::Int)
-                    if looks_like_id_name(name)
-                        && prof.distinct >= 20
-                        && non_missing as f64 / prof.distinct.max(1) as f64 >= 2.0 =>
+                    if looks_like_id_name(name) && prof.distinct >= 20 && non_missing as f64 / prof.distinct.max(1) as f64 >= 2.0 =>
                 {
                     if cfg.group_column.is_some() {
                         ColumnRole::Excluded {
@@ -1204,7 +1261,9 @@ pub fn plan_columns(snapshot: &DataSnapshot, table: &Table, cfg: &DataConfig, ma
                     }
                 }
                 Some(RawDtype::Float | RawDtype::Int) => ColumnRole::Feature { kind: FieldKind::Numeric },
-                Some(RawDtype::Bool) => ColumnRole::Feature { kind: FieldKind::Categorical },
+                Some(RawDtype::Bool) => ColumnRole::Feature {
+                    kind: FieldKind::Categorical,
+                },
                 Some(RawDtype::Text) => {
                     let sample_dates = prof.top_values.iter().filter(|(v, _)| looks_like_date(v)).count();
                     if !prof.non_numeric_examples.is_empty() && prof.numeric_text * 10 >= non_missing * 9 {
@@ -1229,7 +1288,9 @@ pub fn plan_columns(snapshot: &DataSnapshot, table: &Table, cfg: &DataConfig, ma
                                 "column `{name}` holds dates: if rows depend on time (drift, seasonality), declare data.time_column = \"{name}\"; RustPy then refuses the random split instead of leaking future rows into training"
                             ));
                         }
-                        ColumnRole::Excluded { reason: "date/time text is not a feature in 0.1".into() }
+                        ColumnRole::Excluded {
+                            reason: "date/time text is not a feature in 0.1".into(),
+                        }
                     } else if prof.distinct as usize > max_categories {
                         if prof.distinct * 2 > non_missing {
                             ColumnRole::Excluded {
@@ -1264,7 +1325,9 @@ pub fn plan_columns(snapshot: &DataSnapshot, table: &Table, cfg: &DataConfig, ma
                             return Err(e);
                         }
                     } else {
-                        ColumnRole::Feature { kind: FieldKind::Categorical }
+                        ColumnRole::Feature {
+                            kind: FieldKind::Categorical,
+                        }
                     }
                 }
             };
@@ -1308,15 +1371,50 @@ mod tests {
     #[test]
     fn date_like_text() {
         for d in [
-            "2026-01", "2026/12", "2026/1", "2026-1", "2026/1/5", "2026-01-31", "2026-01-31T08:00:00", "2026/1/5 08:00",
-            "31.01.2026", "1/31/2026", "1/31/26", "12-5-2026 10:00", "2026年1月", "2026年1月5日", "16-JAN-25", "31-Jan-2026",
-            "1-oct-25", "Oct-2026", "2026-10-01T00:00:00Z",
+            "2026-01",
+            "2026/12",
+            "2026/1",
+            "2026-1",
+            "2026/1/5",
+            "2026-01-31",
+            "2026-01-31T08:00:00",
+            "2026/1/5 08:00",
+            "31.01.2026",
+            "1/31/2026",
+            "1/31/26",
+            "12-5-2026 10:00",
+            "2026年1月",
+            "2026年1月5日",
+            "16-JAN-25",
+            "31-Jan-2026",
+            "1-oct-25",
+            "Oct-2026",
+            "2026-10-01T00:00:00Z",
         ] {
             assert!(looks_like_date(d), "{d}");
         }
         for t in [
-            "2026-13", "A-17", "S01", "12-34", "1.2.3", "2026", "line-B", "6.1.7601", "12-34-5678", "2026.5", "3.14", "v2.0",
-            "16.7.10", "17.4.18", "10.2.15", "MAR-12", "Oct-2", "JAN", "32-JAN-25", "1/JAN/25", "TEMP-1",
+            "2026-13",
+            "A-17",
+            "S01",
+            "12-34",
+            "1.2.3",
+            "2026",
+            "line-B",
+            "6.1.7601",
+            "12-34-5678",
+            "2026.5",
+            "3.14",
+            "v2.0",
+            "16.7.10",
+            "17.4.18",
+            "10.2.15",
+            "MAR-12",
+            "Oct-2",
+            "JAN",
+            "32-JAN-25",
+            "1/JAN/25",
+            "TEMP-1",
         ] {
             assert!(!looks_like_date(t), "{t}");
         }
@@ -1327,7 +1425,10 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         let ok = write(d.path(), "ok.csv", "a,b\n1,\"x,y\"\n2,\"q\"\"z\"\n");
         let st = check_csv_structure(&ok, b',').unwrap();
-        assert_eq!((st.header, st.records, st.trailing_blank_lines), (vec!["a".into(), "b".into()], 2, 0));
+        assert_eq!(
+            (st.header, st.records, st.trailing_blank_lines),
+            (vec!["a".into(), "b".into()], 2, 0)
+        );
         let bom = write(d.path(), "bom.csv", "\u{feff}x, y\n1,2\n");
         assert_eq!(check_csv_structure(&bom, b',').unwrap().header, vec!["x", " y"]);
         let blank = write(d.path(), "blank.csv", "a,b\n1,2\n\n3,4\n");

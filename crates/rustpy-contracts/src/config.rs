@@ -536,8 +536,7 @@ impl ProjectFile {
         if let Err(e) = toml::from_str::<ProjectFileDoc>(text) {
             return Err(toml_error(e.message(), origin, Some(text), e.span()));
         }
-        let mut table: toml::Table = toml::from_str(text)
-            .map_err(|e| toml_error(e.message(), origin, Some(text), e.span()))?;
+        let mut table: toml::Table = toml::from_str(text).map_err(|e| toml_error(e.message(), origin, Some(text), e.span()))?;
         let mut profiles = BTreeMap::new();
         if let Some(p) = table.remove("profiles") {
             let toml::Value::Table(p) = p else {
@@ -599,12 +598,7 @@ fn line_col(text: &str, offset: usize) -> (usize, usize) {
     (line, col)
 }
 
-fn toml_error(
-    message: &str,
-    origin: &str,
-    text: Option<&str>,
-    span: Option<std::ops::Range<usize>>,
-) -> RustpyError {
+fn toml_error(message: &str, origin: &str, text: Option<&str>, span: Option<std::ops::Range<usize>>) -> RustpyError {
     let location = match (text, span) {
         (Some(t), Some(s)) => {
             let (l, c) = line_col(t, s.start);
@@ -690,11 +684,10 @@ fn single_leaf(path: &str, value: toml::Value) -> toml::Table {
 /// value when possible (`5`, `0.1`, `true`, `["linear"]`, `"text"`), otherwise as a string.
 pub fn parse_override(spec: &str) -> Result<toml::Table> {
     let Some((key, raw)) = spec.split_once('=') else {
-        return Err(config_invalid(
-            format!("override `{spec}` must look like key.path=value"),
-            spec.to_string(),
-        )
-        .next("example: --set train.small-mlp.epochs=20"));
+        return Err(
+            config_invalid(format!("override `{spec}` must look like key.path=value"), spec.to_string())
+                .next("example: --set train.small-mlp.epochs=20"),
+        );
     };
     let key = key.trim();
     let raw = raw.trim();
@@ -843,11 +836,10 @@ impl ProjectConfig {
     /// Structural and semantic checks that do not need the data.
     pub fn validate(&self) -> Result<()> {
         if self.schema_version != PROJECT_SCHEMA_VERSION {
-            return Err(config_invalid(
-                format!("unsupported schema_version {}", self.schema_version),
-                "schema_version",
-            )
-            .expected(PROJECT_SCHEMA_VERSION.to_string()));
+            return Err(
+                config_invalid(format!("unsupported schema_version {}", self.schema_version), "schema_version")
+                    .expected(PROJECT_SCHEMA_VERSION.to_string()),
+            );
         }
         let recipe_ok = self.recipe == RECIPE_ID || self.recipe == RECIPE_NAME;
         if !recipe_ok {
@@ -869,8 +861,10 @@ impl ProjectConfig {
                 .actual(format!("{} (sum of {fr:?})", fr.iter().sum::<f64>())));
         }
         if d.csv_delimiter.len() != 1 {
-            return Err(config_invalid("csv_delimiter must be exactly one ASCII character", "data.csv_delimiter")
-                .actual(format!("{:?}", d.csv_delimiter)));
+            return Err(
+                config_invalid("csv_delimiter must be exactly one ASCII character", "data.csv_delimiter")
+                    .actual(format!("{:?}", d.csv_delimiter)),
+            );
         }
         if let Some(target) = &d.target {
             for (name, col) in [
@@ -903,8 +897,7 @@ impl ProjectConfig {
         }
         let t = self.selection.threshold;
         if !(t.is_finite() && t > 0.0 && t < 1.0) {
-            return Err(config_invalid("threshold must be strictly between 0 and 1", "selection.threshold")
-                .actual(t.to_string()));
+            return Err(config_invalid("threshold must be strictly between 0 and 1", "selection.threshold").actual(t.to_string()));
         }
         for (name, v) in [
             ("selection.min_valid_metric", self.selection.min_valid_metric),
@@ -945,8 +938,7 @@ impl ProjectConfig {
             }
         }
         if !self.train.linear.hidden.is_empty() {
-            return Err(config_invalid("the linear candidate has no hidden layers", "train.linear.hidden")
-                .expected("[]"));
+            return Err(config_invalid("the linear candidate has no hidden layers", "train.linear.hidden").expected("[]"));
         }
         let h = &self.train.small_mlp.hidden;
         if h.is_empty() || h.len() > 4 || h.iter().any(|w| *w == 0 || *w > 4096) {
@@ -966,13 +958,9 @@ impl ProjectConfig {
     pub fn require_data(&self) -> Result<(&str, &str, &str)> {
         let d = &self.data;
         let missing = |field: &str| {
-            RustpyError::new(
-                ErrorCode::ConfigInvalid,
-                Phase::Config,
-                format!("`data.{field}` is not set"),
-            )
-            .field(format!("data.{field}"))
-            .next("bind a dataset: rustpy data bind <file.csv|file.parquet> --target <column> --positive <value>")
+            RustpyError::new(ErrorCode::ConfigInvalid, Phase::Config, format!("`data.{field}` is not set"))
+                .field(format!("data.{field}"))
+                .next("bind a dataset: rustpy data bind <file.csv|file.parquet> --target <column> --positive <value>")
         };
         let source = d.source.as_deref().ok_or_else(|| missing("source"))?;
         let target = d.target.as_deref().ok_or_else(|| missing("target"))?;
@@ -1057,7 +1045,10 @@ epochs = 3
     #[test]
     fn unknown_keys_suggest_the_closest_name() {
         let e = ProjectFile::parse("[data]\ntrain_fracton = 0.6\n", "rustpy.toml").unwrap_err();
-        assert!(e.next_action.as_deref().unwrap_or("").contains("did you mean `train_fraction`"), "{e}");
+        assert!(
+            e.next_action.as_deref().unwrap_or("").contains("did you mean `train_fraction`"),
+            "{e}"
+        );
         assert_eq!(closest_expected("unknown field `zzzzzz`, expected one of `source`, `target`"), None);
     }
 

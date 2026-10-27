@@ -3,20 +3,20 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use rustpy_contracts::evaluation::EvaluationSubject;
 use rustpy_contracts::data::SplitName;
+use rustpy_contracts::evaluation::EvaluationSubject;
 use rustpy_contracts::hash::sha256_file;
 use rustpy_contracts::manifest::{
-    BundleEvaluation, BundleManifest, BundleProvenance, ExampleExpected, ExampleInputs,
-    ExpectedPrediction, FileEntry, RuntimeRequirements, EVALUATION_FILE, EXAMPLES_EXPECTED_FILE, EXAMPLES_INPUT_FILE,
-    INPUT_SCHEMA_FILE, MANIFEST_FILE, MODEL_CONFIG_FILE, MODEL_WEIGHTS_FILE, OUTPUT_SCHEMA_FILE, TRANSFORM_FILE,
+    BundleEvaluation, BundleManifest, BundleProvenance, EVALUATION_FILE, EXAMPLES_EXPECTED_FILE, EXAMPLES_INPUT_FILE, ExampleExpected,
+    ExampleInputs, ExpectedPrediction, FileEntry, INPUT_SCHEMA_FILE, MANIFEST_FILE, MODEL_CONFIG_FILE, MODEL_WEIGHTS_FILE,
+    OUTPUT_SCHEMA_FILE, RuntimeRequirements, TRANSFORM_FILE,
 };
 use rustpy_contracts::model::MODEL_FORMAT;
 use rustpy_contracts::run::{RunRecord, RunStatus};
 use rustpy_contracts::schema::FieldKind;
 use rustpy_contracts::time::now_rfc3339;
 use rustpy_contracts::transform::{FeatureTransform, TRANSFORM_VERSION};
-use rustpy_contracts::{ErrorCode, Phase, Result, RustpyError, BUNDLE_FORMAT_VERSION, RECIPE_ID, RUSTPY_VERSION};
+use rustpy_contracts::{BUNDLE_FORMAT_VERSION, ErrorCode, Phase, RECIPE_ID, RUSTPY_VERSION, Result, RustpyError};
 use rustpy_runtime::{CheckReport, LoadOptions, Predictor, Record, Value};
 use serde::Serialize;
 
@@ -52,21 +52,39 @@ pub fn synthetic_examples(fitted: &FittedArtifacts) -> Vec<Record> {
     let mut alt = Record::new();
     for f in &t.features {
         match f {
-            FeatureTransform::Numeric { name, mean, std, impute, .. } => {
-                let (m, s) = if *std == 1.0 && *mean == 0.0 { (*impute, 1.0) } else { (*mean, *std) };
+            FeatureTransform::Numeric {
+                name, mean, std, impute, ..
+            } => {
+                let (m, s) = if *std == 1.0 && *mean == 0.0 {
+                    (*impute, 1.0)
+                } else {
+                    (*mean, *std)
+                };
                 typical.insert(name.clone(), round6(m));
                 high.insert(name.clone(), round6(m + 2.0 * s));
                 alt.insert(name.clone(), round6(m - s));
                 missing.insert(name.clone(), Value::Null);
             }
-            FeatureTransform::Categorical { name, categories, missing_slot, .. } => {
+            FeatureTransform::Categorical {
+                name,
+                categories,
+                missing_slot,
+                ..
+            } => {
                 typical.insert(name.clone(), categories[0].clone());
                 high.insert(name.clone(), categories.last().cloned().unwrap_or_default());
                 alt.insert(name.clone(), categories.get(1).cloned().unwrap_or_else(|| categories[0].clone()));
                 // A missing value is only valid input when it was seen in training or
                 // unknown values are ignored; otherwise use a known category.
                 let missing_ok = *missing_slot || t.unknown_category == rustpy_contracts::config::UnknownCategoryPolicy::Ignore;
-                missing.insert(name.clone(), if missing_ok { Value::Null } else { Value::from(categories[0].clone()) });
+                missing.insert(
+                    name.clone(),
+                    if missing_ok {
+                        Value::Null
+                    } else {
+                        Value::from(categories[0].clone())
+                    },
+                );
             }
         }
     }
@@ -80,7 +98,12 @@ pub fn synthetic_examples(fitted: &FittedArtifacts) -> Vec<Record> {
     let mut out = vec![typical, high, alt, missing];
     let unknown_ok = t.unknown_category == rustpy_contracts::config::UnknownCategoryPolicy::Ignore;
     if unknown_ok {
-        if let Some(cat) = fitted.input_schema.fields.iter().find(|f| f.kind == FieldKind::Categorical && f.required) {
+        if let Some(cat) = fitted
+            .input_schema
+            .fields
+            .iter()
+            .find(|f| f.kind == FieldKind::Categorical && f.required)
+        {
             let mut r = out[0].clone();
             r.insert(cat.name.clone(), "__rustpy_unseen_category__");
             out.push(r);
@@ -149,7 +172,12 @@ impl Workspace {
         // the same weights trained on the same data version with the same threshold
         // (a deterministic re-run). The evidence is about these exact weights.
         let model_sha = Self::run_model_sha(&run);
-        let tests: Vec<_> = self.evaluations().into_iter().rev().filter(|e| e.protocol.split == SplitName::Test).collect();
+        let tests: Vec<_> = self
+            .evaluations()
+            .into_iter()
+            .rev()
+            .filter(|e| e.protocol.split == SplitName::Test)
+            .collect();
         let test_eval = tests
             .iter()
             .find(|e| matches!(&e.subject, EvaluationSubject::Run { run_id: r } if r == run_id))
@@ -159,7 +187,9 @@ impl Workspace {
                         && !model_sha.is_empty()
                         && e.model_sha256.as_deref() == Some(model_sha.as_str())
                         && e.metrics.threshold == run.threshold
-                        && e.model_snapshot_id.as_deref().is_some_and(|s| self.same_data_version(s, &run.snapshot_id))
+                        && e.model_snapshot_id
+                            .as_deref()
+                            .is_some_and(|s| self.same_data_version(s, &run.snapshot_id))
                 })
             })
             .cloned();
@@ -174,7 +204,10 @@ impl Workspace {
                 "lock it as the final candidate with `rustpy evaluate --run {run_id} --split test`, or build a candidate bundle with --allow-unevaluated"
             )));
         }
-        let metrics = run.metrics.clone().ok_or_else(|| RustpyError::internal(Phase::Bundle, "completed run without metrics"))?;
+        let metrics = run
+            .metrics
+            .clone()
+            .ok_or_else(|| RustpyError::internal(Phase::Bundle, "completed run without metrics"))?;
         let out = opts.out.clone().unwrap_or_else(|| self.project.bundles_dir().join(run_id));
         let parent = out.parent().unwrap_or(Path::new(".")).to_path_buf();
         fs::create_dir_all(&parent).map_err(|e| RustpyError::io(Phase::Bundle, &parent, e))?;
@@ -204,7 +237,11 @@ impl Workspace {
             let bytes = fs::read(&weights).map_err(|e| RustpyError::io(Phase::Bundle, &weights, e))?;
             write_atomic(&tmp.join(MODEL_WEIGHTS_FILE), &bytes)?;
             let evaluation = BundleEvaluation {
-                status: if test_eval.is_some() { crate::auto::EVALUATED.into() } else { "unevaluated-candidate".into() },
+                status: if test_eval.is_some() {
+                    crate::auto::EVALUATED.into()
+                } else {
+                    "unevaluated-candidate".into()
+                },
                 test: test_eval.clone(),
                 valid: metrics.valid.clone(),
                 notes: match &test_eval {
@@ -234,7 +271,10 @@ impl Workspace {
                 &ExampleExpected {
                     predictions: examples
                         .iter()
-                        .map(|_| ExpectedPrediction { label: String::new(), probability: 0.0 })
+                        .map(|_| ExpectedPrediction {
+                            label: String::new(),
+                            probability: 0.0,
+                        })
                         .collect(),
                     tolerance: 1e-6,
                 },
@@ -326,7 +366,10 @@ impl Workspace {
                 _ => Err(RustpyError::new(
                     ErrorCode::BundleExists,
                     Phase::Bundle,
-                    format!("`{}` already exists and holds a different bundle; bundles are immutable", out.display()),
+                    format!(
+                        "`{}` already exists and holds a different bundle; bundles are immutable",
+                        out.display()
+                    ),
                 )
                 .field(out.display().to_string())
                 .retained(format!("existing bundle at {}", out.display()))

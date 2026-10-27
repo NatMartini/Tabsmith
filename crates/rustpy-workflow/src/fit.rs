@@ -7,7 +7,7 @@ use rustpy_contracts::hash::{canonical_hash, short};
 use rustpy_contracts::schema::{FieldKind, InputField, InputSchema, OutputSchema, RawDtype};
 use rustpy_contracts::transform::{DroppedField, FeatureTransform, FittedTransform, TRANSFORM_VERSION};
 use rustpy_contracts::{ErrorCode, Phase, Result, RustpyError};
-use rustpy_runtime::{check_category_type, coerce_category, coerce_numeric, MissingTokens, Table};
+use rustpy_runtime::{MissingTokens, Table, check_category_type, coerce_category, coerce_numeric};
 use serde::{Deserialize, Serialize};
 
 use crate::data::{ColumnRole, FeaturePlan};
@@ -158,7 +158,9 @@ pub fn fit_transform(
                     format!("feature `{name}` cannot be used: {reason}"),
                 )
                 .field(name)
-                .next(format!("exclude it (data.exclude = [\"{name}\"]) or set preprocess.zero_variance = \"drop\"")));
+                .next(format!(
+                    "exclude it (data.exclude = [\"{name}\"]) or set preprocess.zero_variance = \"drop\""
+                )));
             }
             dropped.push(DroppedField {
                 name: name.to_string(),
@@ -194,9 +196,7 @@ pub fn fit_transform(
         fitted_on_split: split_id.to_string(),
         fitted_rows: train.n_rows(),
     };
-    transform
-        .check_consistency()
-        .map_err(|m| RustpyError::internal(Phase::Fit, m))?;
+    transform.check_consistency().map_err(|m| RustpyError::internal(Phase::Fit, m))?;
     let input_schema = InputSchema {
         fields,
         missing_column: "error".to_string(),
@@ -235,17 +235,25 @@ fn median(values: &mut [f64]) -> f64 {
 mod tests {
     use super::*;
     use crate::data::{ColumnDecision, TargetInfo};
-    use rustpy_runtime::{apply_transform, Column, ColumnData};
+    use rustpy_runtime::{Column, ColumnData, apply_transform};
 
     fn plan() -> FeaturePlan {
         let f = |n: &str, k| ColumnDecision {
             name: n.into(),
             role: ColumnRole::Feature { kind: k },
-            raw_dtype: Some(if k == FieldKind::Categorical { RawDtype::Text } else { RawDtype::Float }),
+            raw_dtype: Some(if k == FieldKind::Categorical {
+                RawDtype::Text
+            } else {
+                RawDtype::Float
+            }),
             decided_by: "inferred".into(),
         };
         FeaturePlan {
-            columns: vec![f("x", FieldKind::Numeric), f("c", FieldKind::Categorical), f("k", FieldKind::Numeric)],
+            columns: vec![
+                f("x", FieldKind::Numeric),
+                f("c", FieldKind::Categorical),
+                f("k", FieldKind::Numeric),
+            ],
             target: TargetInfo {
                 name: "y".into(),
                 positive_label: "1".into(),
@@ -260,15 +268,32 @@ mod tests {
     #[test]
     fn statistics_come_from_training_rows_only() {
         let train = Table::new(vec![
-            Column { name: "x".into(), data: ColumnData::Float(vec![Some(1.0), Some(3.0), None]) },
+            Column {
+                name: "x".into(),
+                data: ColumnData::Float(vec![Some(1.0), Some(3.0), None]),
+            },
             Column {
                 name: "c".into(),
                 data: ColumnData::Text(vec![Some("b".into()), Some("a".into()), Some("b".into())]),
             },
-            Column { name: "k".into(), data: ColumnData::Float(vec![Some(5.0), Some(5.0), Some(5.0)]) },
+            Column {
+                name: "k".into(),
+                data: ColumnData::Float(vec![Some(5.0), Some(5.0), Some(5.0)]),
+            },
         ])
         .unwrap();
-        let fa = fit_transform(&train, &[0, 1, 2], &plan(), &PreprocessConfig::default(), "sp", 0.5, None, &[], None).unwrap();
+        let fa = fit_transform(
+            &train,
+            &[0, 1, 2],
+            &plan(),
+            &PreprocessConfig::default(),
+            "sp",
+            0.5,
+            None,
+            &[],
+            None,
+        )
+        .unwrap();
         let t = &fa.transform;
         assert_eq!(t.output_dim, 3);
         assert_eq!(t.output_names, vec!["x", "c=b", "c=a"]);
@@ -283,8 +308,14 @@ mod tests {
 
         // A test table with a very different mean is encoded with the training statistics.
         let test = Table::new(vec![
-            Column { name: "x".into(), data: ColumnData::Float(vec![Some(100.0)]) },
-            Column { name: "c".into(), data: ColumnData::Text(vec![Some("a".into())]) },
+            Column {
+                name: "x".into(),
+                data: ColumnData::Float(vec![Some(100.0)]),
+            },
+            Column {
+                name: "c".into(),
+                data: ColumnData::Text(vec![Some("a".into())]),
+            },
         ])
         .unwrap();
         let m = apply_transform(t, &test, Phase::Predict).unwrap();
@@ -295,12 +326,24 @@ mod tests {
     fn cardinality_budget() {
         let vals: Vec<Option<String>> = (0..10).map(|i| Some(format!("v{i}"))).collect();
         let train = Table::new(vec![
-            Column { name: "x".into(), data: ColumnData::Float((0..10).map(|i| Some(i as f64)).collect()) },
-            Column { name: "c".into(), data: ColumnData::Text(vals) },
-            Column { name: "k".into(), data: ColumnData::Float((0..10).map(|i| Some(i as f64)).collect()) },
+            Column {
+                name: "x".into(),
+                data: ColumnData::Float((0..10).map(|i| Some(i as f64)).collect()),
+            },
+            Column {
+                name: "c".into(),
+                data: ColumnData::Text(vals),
+            },
+            Column {
+                name: "k".into(),
+                data: ColumnData::Float((0..10).map(|i| Some(i as f64)).collect()),
+            },
         ])
         .unwrap();
-        let pre = PreprocessConfig { max_categories: 5, ..Default::default() };
+        let pre = PreprocessConfig {
+            max_categories: 5,
+            ..Default::default()
+        };
         let e = fit_transform(&train, &(0..10).collect::<Vec<_>>(), &plan(), &pre, "sp", 0.5, None, &[], None).unwrap_err();
         assert_eq!(e.code, ErrorCode::CardinalityBudget);
     }

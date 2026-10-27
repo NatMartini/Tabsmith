@@ -195,10 +195,21 @@ mod tests {
 
     #[test]
     fn bundle_id_is_order_independent_and_covers_claims() {
-        let a = FileEntry { path: "a".into(), sha256: "1".into(), bytes: 1 };
-        let b = FileEntry { path: "b".into(), sha256: "2".into(), bytes: 1 };
+        let a = FileEntry {
+            path: "a".into(),
+            sha256: "1".into(),
+            bytes: 1,
+        };
+        let b = FileEntry {
+            path: "b".into(),
+            sha256: "2".into(),
+            bytes: 1,
+        };
         let c = serde_json::json!({"evaluation_status": "evaluated"});
-        assert_eq!(compute_bundle_id(&[a.clone(), b.clone()], &c), compute_bundle_id(&[b.clone(), a.clone()], &c));
+        assert_eq!(
+            compute_bundle_id(&[a.clone(), b.clone()], &c),
+            compute_bundle_id(&[b.clone(), a.clone()], &c)
+        );
         let d = serde_json::json!({"evaluation_status": "unevaluated-candidate"});
         assert_ne!(compute_bundle_id(&[a.clone(), b.clone()], &c), compute_bundle_id(&[a, b], &d));
     }

@@ -41,11 +41,18 @@ fn fails(dir: &Path, args: &[&str], code: &str, exit: i32) -> serde_json::Value 
     a.push("--json");
     let out = rustpy(dir, &a);
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap_or_else(|_| {
-        panic!("rustpy {a:?}: stdout {}\nstderr {}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr))
+        panic!(
+            "rustpy {a:?}: stdout {}\nstderr {}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        )
     });
     assert_eq!(v["ok"], false, "{a:?} unexpectedly succeeded: {v}");
     assert_eq!(v["error"]["code"], code, "{a:?}: {v}");
-    assert!(v["error"]["next_action"].as_str().is_some_and(|s| !s.is_empty()), "{a:?}: no next action: {v}");
+    assert!(
+        v["error"]["next_action"].as_str().is_some_and(|s| !s.is_empty()),
+        "{a:?}: no next action: {v}"
+    );
     assert_eq!(out.status.code(), Some(exit), "{a:?}: exit code");
     v
 }
@@ -63,7 +70,20 @@ fn new_project(root: &Path, name: &str, rows: usize) -> PathBuf {
     ok(root, &["init", name]);
     let dir = root.join(name);
     ok(&dir, &["sample-data", "data/defects.csv", "--rows", &rows.to_string()]);
-    ok(&dir, &["data", "bind", "data/defects.csv", "--target", "defect", "--group", "device_id", "--id", "unit_id"]);
+    ok(
+        &dir,
+        &[
+            "data",
+            "bind",
+            "data/defects.csv",
+            "--target",
+            "defect",
+            "--group",
+            "device_id",
+            "--id",
+            "unit_id",
+        ],
+    );
     dir
 }
 
@@ -87,7 +107,18 @@ fn user_flow_from_csv_to_predictions() {
     ok(&dir, &["bundle", "build", "--run", &best]);
     let check = json(&dir, &["bundle", "check", &format!("bundles/{best}")]);
     assert_eq!(check["result"]["check"]["passed"], true);
-    ok(&dir, &["predict", "--bundle", &format!("bundles/{best}"), "--input", "data/defects.csv", "--output", "preds.csv"]);
+    ok(
+        &dir,
+        &[
+            "predict",
+            "--bundle",
+            &format!("bundles/{best}"),
+            "--input",
+            "data/defects.csv",
+            "--output",
+            "preds.csv",
+        ],
+    );
     let preds = std::fs::read_to_string(dir.join("preds.csv")).unwrap();
     assert_eq!(preds.lines().count(), 1501);
     assert!(preds.starts_with("unit_id,label,probability"));
@@ -104,7 +135,10 @@ fn crash_then_resume_equals_uninterrupted_run_bitwise() {
     let train = args(&["run", "--candidates", "small-mlp"], &QUICK);
     // Uninterrupted reference in project b.
     let reference = json(&b, &train);
-    let ref_sha = reference["result"]["runs"][0]["artifacts"][0]["sha256"].as_str().unwrap().to_string();
+    let ref_sha = reference["result"]["runs"][0]["artifacts"][0]["sha256"]
+        .as_str()
+        .unwrap()
+        .to_string();
     // Project a: the process dies after 20 optimizer steps (inside epoch 3).
     let crash = rustpy(&a, &args(&train, &["--simulate-crash-after-steps", "20"]));
     assert_eq!(crash.status.code(), Some(137));
@@ -117,7 +151,11 @@ fn crash_then_resume_equals_uninterrupted_run_bitwise() {
     assert_eq!(r["status"], "completed");
     assert_eq!(r["lineage"]["level"], "R2");
     assert_eq!(r["lineage"]["parent_run_id"], "run-001");
-    assert_eq!(r["artifacts"][0]["sha256"].as_str().unwrap(), ref_sha, "resumed weights differ from the uninterrupted run");
+    assert_eq!(
+        r["artifacts"][0]["sha256"].as_str().unwrap(),
+        ref_sha,
+        "resumed weights differ from the uninterrupted run"
+    );
     assert_eq!(r["history"], reference["result"]["runs"][0]["history"]);
 }
 
@@ -134,13 +172,28 @@ fn preset_failures_are_actionable() {
     fails(&dir, &["plan", "--set", "preprocess.max_categories=3"], "E_CARDINALITY_BUDGET", 3);
     recoverable += 1;
     // 3. Requested GPU backend not available: no silent CPU fallback.
-    fails(&dir, &args(&["run", "--set", "execution.candidate_device=\"cuda\""], &QUICK), "E_DEVICE_UNSUPPORTED", 5);
+    fails(
+        &dir,
+        &args(&["run", "--set", "execution.candidate_device=\"cuda\""], &QUICK),
+        "E_DEVICE_UNSUPPORTED",
+        5,
+    );
     recoverable += 1;
     // 4. Memory budget (pre-flight "OOM").
-    fails(&dir, &args(&["run", "--set", "execution.max_memory_mb=1"], &QUICK), "E_RESOURCE_BUDGET_EXCEEDED", 5);
+    fails(
+        &dir,
+        &args(&["run", "--set", "execution.max_memory_mb=1"], &QUICK),
+        "E_RESOURCE_BUDGET_EXCEEDED",
+        5,
+    );
     recoverable += 1;
     // 5. Time-dependent data cannot fall back to a random split.
-    fails(&dir, &["plan", "--set", "data.time_column=\"hours_in_service\""], "E_SPLIT_UNSUPPORTED", 3);
+    fails(
+        &dir,
+        &["plan", "--set", "data.time_column=\"hours_in_service\""],
+        "E_SPLIT_UNSUPPORTED",
+        3,
+    );
     recoverable += 1;
 
     let run = json(&dir, &args(&["run", "--candidates", "linear"], &QUICK));
@@ -221,7 +274,20 @@ fn json_usage_errors_flags_and_bind_details() {
     let start = cfg.find("[data_old]").unwrap();
     let end = cfg[start..].find("\n[selection]").map(|i| start + i).unwrap();
     std::fs::write(dir.join("rustpy.toml"), format!("{}{}", &cfg[..start], &cfg[end + 1..])).unwrap();
-    ok(&dir, &["data", "bind", "data/defects.csv", "--target", "defect", "--group", "device_id", "--id", "unit_id"]);
+    ok(
+        &dir,
+        &[
+            "data",
+            "bind",
+            "data/defects.csv",
+            "--target",
+            "defect",
+            "--group",
+            "device_id",
+            "--id",
+            "unit_id",
+        ],
+    );
     let eff = json(&dir, &["config"]);
     let seed = eff["result"].as_array().unwrap().iter().find(|r| r[0] == "data.seed").unwrap()[1].clone();
     assert_eq!(seed, "1234");
@@ -229,9 +295,19 @@ fn json_usage_errors_flags_and_bind_details() {
     ok(&dir, &["config", "--set", "data.positive_label=1"]);
     let run = json(&dir, &args(&["run", "--candidates", "linear"], &QUICK));
     let id = run["result"]["runs"][0]["run_id"].as_str().unwrap().to_string();
-    fails(&dir, &["evaluate", "--run", &id, "--set", "selection.threshold=0.2"], "E_CONFIG_INVALID", 2);
+    fails(
+        &dir,
+        &["evaluate", "--run", &id, "--set", "selection.threshold=0.2"],
+        "E_CONFIG_INVALID",
+        2,
+    );
     // The device error names the setting that is actually wrong.
-    let v = fails(&dir, &["plan", "--set", "execution.baseline_device=\"cuda\""], "E_DEVICE_UNSUPPORTED", 5);
+    let v = fails(
+        &dir,
+        &["plan", "--set", "execution.baseline_device=\"cuda\""],
+        "E_DEVICE_UNSUPPORTED",
+        5,
+    );
     assert_eq!(v["error"]["field"], "execution.baseline_device");
 }
 
@@ -244,7 +320,10 @@ fn separate_process_predictions_equal_training_side_probabilities() {
     let id = run["result"]["runs"][0]["run_id"].as_str().unwrap().to_string();
     ok(&dir, &["bundle", "build", "--run", &id, "--allow-unevaluated"]);
     // Application side: a separate `rustpy predict` process reading the raw CSV.
-    let out = json(&dir, &["predict", "--bundle", &format!("bundles/{id}"), "--input", "data/defects.csv"]);
+    let out = json(
+        &dir,
+        &["predict", "--bundle", &format!("bundles/{id}"), "--input", "data/defects.csv"],
+    );
     let preds = out["result"]["predictions"].as_array().unwrap();
     // Training side: the run's snapshot rows through the fitted transform and kept weights.
     let ws = rustpy_workflow::Workspace::open(&dir).unwrap();
@@ -286,7 +365,12 @@ fn walkthrough_details() {
     assert!(rows.iter().any(|r| r[0] == "data.id_column" && r[1] == "(unset)"), "{cfg}");
 
     let run = json(&dir, &args(&["run"], &QUICK));
-    let ids: Vec<String> = run["result"]["runs"].as_array().unwrap().iter().map(|r| r["run_id"].as_str().unwrap().to_string()).collect();
+    let ids: Vec<String> = run["result"]["runs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["run_id"].as_str().unwrap().to_string())
+        .collect();
     let both = ids.join(",");
     let cmp = json(&dir, &["compare", "--runs", &both]);
     assert_eq!(cmp["result"]["rows"].as_array().unwrap().len(), 2, "{cmp}");
@@ -301,9 +385,15 @@ fn walkthrough_details() {
     let preds = out["result"]["predictions"].as_array().unwrap();
     assert_eq!(preds.len(), 60);
     assert!(preds[0]["unit_id"].is_string(), "{}", preds[0]);
-    assert!(out["result"]["unseen_categories"].as_array().is_some_and(|u| !u.is_empty()), "{out}");
+    assert!(
+        out["result"]["unseen_categories"].as_array().is_some_and(|u| !u.is_empty()),
+        "{out}"
+    );
     assert!(preds.iter().any(|p| p["unseen_categories"].is_array()));
-    let human = rustpy(&dir, &["predict", "--bundle", &bundle, "--input", "later.csv", "--keep", "unit_id,line"]);
+    let human = rustpy(
+        &dir,
+        &["predict", "--bundle", &bundle, "--input", "later.csv", "--keep", "unit_id,line"],
+    );
     assert!(human.status.success());
     let stdout = String::from_utf8_lossy(&human.stdout);
     assert!(stdout.starts_with("unit_id,line,label,probability,unseen_categories"), "{stdout}");
@@ -311,9 +401,19 @@ fn walkthrough_details() {
     // Without key columns, rows are numbered from 1.
     let numbered = json(&dir, &["predict", "--bundle", &bundle, "--input", "later.csv"]);
     assert_eq!(numbered["result"]["predictions"][0]["row"], 1);
-    let e = fails(&dir, &["predict", "--bundle", &bundle, "--input", "nope.csv"], "E_DATA_SOURCE_NOT_FOUND", 3);
+    let e = fails(
+        &dir,
+        &["predict", "--bundle", &bundle, "--input", "nope.csv"],
+        "E_DATA_SOURCE_NOT_FOUND",
+        3,
+    );
     assert_eq!(e["error"]["field"], "--input");
-    fails(&dir, &["predict", "--bundle", &bundle, "--input", "later.csv", "--keep", "no_such"], "E_SCHEMA_MISSING_COLUMN", 3);
+    fails(
+        &dir,
+        &["predict", "--bundle", &bundle, "--input", "later.csv", "--keep", "no_such"],
+        "E_SCHEMA_MISSING_COLUMN",
+        3,
+    );
 }
 
 /// `rustpy train`: one command from a CSV to a tested bundle; again after new data,
@@ -324,9 +424,15 @@ fn one_command_train_and_retrain() {
     let tmp = tempfile::tempdir().unwrap();
     let dir = tmp.path();
     ok(dir, &["sample-data", "machines.csv", "--rows", "1500"]);
-    let first = json(dir, &args(&["train", "machines.csv", "--target", "defect", "--group", "device_id"], &QUICK));
+    let first = json(
+        dir,
+        &args(&["train", "machines.csv", "--target", "defect", "--group", "device_id"], &QUICK),
+    );
     assert_eq!(first["ok"], true, "{first}");
-    assert!(dir.join("rustpy.toml").is_file(), "train creates the project in the current directory");
+    assert!(
+        dir.join("rustpy.toml").is_file(),
+        "train creates the project in the current directory"
+    );
     let chosen = first["result"]["chosen"].as_str().unwrap().to_string();
     assert_eq!(first["result"]["test"]["test_use_index"], 1);
     assert_eq!(first["result"]["bundle"]["check"]["passed"], true);
@@ -342,7 +448,10 @@ fn one_command_train_and_retrain() {
     let prev = &second["result"]["previous"];
     assert_eq!(prev["run_id"], chosen.as_str(), "{second}");
     assert_eq!(prev["evaluation"]["unseen_rows_verified"], true, "{prev}");
-    assert_eq!(prev["new_model_on_same_rows"]["n"], prev["evaluation"]["metrics"]["n"], "same rows for old and new: {prev}");
+    assert_eq!(
+        prev["new_model_on_same_rows"]["n"], prev["evaluation"]["metrics"]["n"],
+        "same rows for old and new: {prev}"
+    );
     let new_bundle = second["result"]["bundle"]["path"].as_str().unwrap().to_string();
     // Again on unchanged data: same weights, the bundle is kept (no failure, no duplicate).
     let third = json(dir, &args(&["train"], &QUICK));
@@ -352,12 +461,18 @@ fn one_command_train_and_retrain() {
     // A re-split of the same data gives no fresh test split; the candidate it
     // builds does not replace the evaluated bundle as the default.
     let reseeded = json(dir, &args(&["train", "--set", "data.seed=7"], &QUICK));
-    assert!(reseeded["result"]["test_skipped"].as_str().unwrap().contains("only new rows"), "{reseeded}");
+    assert!(
+        reseeded["result"]["test_skipped"].as_str().unwrap().contains("only new rows"),
+        "{reseeded}"
+    );
     // Predict with the newest bundle by default.
     ok(dir, &["sample-data", "new.csv", "--rows", "5", "--seed", "77"]);
     let p = json(dir, &["predict", "--input", "new.csv"]);
     assert_eq!(p["result"]["predictions"].as_array().unwrap().len(), 5);
-    assert_eq!(p["result"]["bundle_id"], second["result"]["bundle"]["manifest"]["bundle_id"], "{new_bundle}");
+    assert_eq!(
+        p["result"]["bundle_id"], second["result"]["bundle"]["manifest"]["bundle_id"],
+        "{new_bundle}"
+    );
     // Data flags without a file are a usage error, not silently ignored.
     fails(dir, &["train", "--target", "defect"], "E_CONFIG_INVALID", 2);
 }
@@ -366,7 +481,12 @@ fn one_command_train_and_retrain() {
 fn http(addr: &str, method: &str, path: &str, body: &str) -> (u16, serde_json::Value) {
     use std::io::{Read, Write};
     let mut s = std::net::TcpStream::connect(addr).unwrap();
-    write!(s, "{method} {path} HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+    write!(
+        s,
+        "{method} {path} HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    )
+    .unwrap();
     let mut text = String::new();
     s.read_to_string(&mut text).unwrap();
     let status: u16 = text.split_whitespace().nth(1).unwrap().parse().unwrap();
@@ -393,7 +513,11 @@ fn serve_predicts_over_http() {
         .unwrap();
     let mut first = String::new();
     std::io::BufReader::new(child.stdout.take().unwrap()).read_line(&mut first).unwrap();
-    let addr = first.trim().strip_prefix("listening on http://").unwrap_or_else(|| panic!("{first}")).to_string();
+    let addr = first
+        .trim()
+        .strip_prefix("listening on http://")
+        .unwrap_or_else(|| panic!("{first}"))
+        .to_string();
     let (code, health) = http(&addr, "GET", "/health", "");
     assert_eq!(code, 200);
     assert!(health["bundle_id"].as_str().unwrap().starts_with("b-"));
@@ -433,7 +557,13 @@ fn predict_keep_details() {
     ok(&dir, &["bundle", "build", "--run", &id, "--allow-unevaluated"]);
     std::fs::write(
         dir.join("in.csv"),
-        std::fs::read_to_string(dir.join("data/defects.csv")).unwrap().lines().take(4).collect::<Vec<_>>().join("\n") + "\n",
+        std::fs::read_to_string(dir.join("data/defects.csv"))
+            .unwrap()
+            .lines()
+            .take(4)
+            .collect::<Vec<_>>()
+            .join("\n")
+            + "\n",
     )
     .unwrap();
     let raw_temp: Vec<String> = std::fs::read_to_string(dir.join("in.csv"))
@@ -450,17 +580,31 @@ fn predict_keep_details() {
         assert_eq!(line.split(',').nth(1).unwrap(), raw, "temp_mean is copied as written in the file");
     }
     std::fs::write(dir.join("in.jsonl"), "{\"customerId\": 1}\n").unwrap();
-    let e = fails(&dir, &["predict", "--input", "in.jsonl", "--keep", "customer_id"], "E_SCHEMA_MISSING_COLUMN", 3);
+    let e = fails(
+        &dir,
+        &["predict", "--input", "in.jsonl", "--keep", "customer_id"],
+        "E_SCHEMA_MISSING_COLUMN",
+        3,
+    );
     assert!(e["error"]["actual"].as_str().unwrap().contains("customerId"), "{e}");
     let cmp = json(&dir, &["compare", "--runs", &format!("{id},")]);
     assert_eq!(cmp["result"]["rows"].as_array().unwrap().len(), 1);
     // Kept values equal to a missing-value token are copied as written (NA is Namibia).
-    let lines: Vec<String> = std::fs::read_to_string(dir.join("in.csv")).unwrap().lines().map(str::to_string).collect();
-    let mut text = format!("country,{}
-", lines[0]);
+    let lines: Vec<String> = std::fs::read_to_string(dir.join("in.csv"))
+        .unwrap()
+        .lines()
+        .map(str::to_string)
+        .collect();
+    let mut text = format!(
+        "country,{}
+",
+        lines[0]
+    );
     for (line, country) in lines[1..].iter().zip(["NA", "DE", "null"]) {
-        text.push_str(&format!("{country},{line}
-"));
+        text.push_str(&format!(
+            "{country},{line}
+"
+        ));
     }
     std::fs::write(dir.join("countries.csv"), text).unwrap();
     let out = ok(&dir, &["predict", "--input", "countries.csv", "--keep", "country,unit_id"]);

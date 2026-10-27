@@ -20,7 +20,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     let report = handle.try_update(&new, LoadOptions::cpu())?;
-    println!("updated {} -> {} ({} examples re-checked)", report.previous_bundle_id, report.active_bundle_id, report.examples_checked);
+    println!(
+        "updated {} -> {} ({} examples re-checked)",
+        report.previous_bundle_id, report.active_bundle_id, report.examples_checked
+    );
     for change in report.schema_changes.iter().chain(&report.output_changes) {
         println!("  contract change: {change}");
     }

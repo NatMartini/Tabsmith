@@ -11,8 +11,8 @@ use std::fmt::Write as _;
 use std::path::PathBuf;
 
 use rustpy_contracts::data::SplitName;
-use rustpy_runtime::model::sigmoid;
 use rustpy_runtime::ValueRef;
+use rustpy_runtime::model::sigmoid;
 use rustpy_workflow::Workspace;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -54,7 +54,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::fs::write(out.join(format!("raw_{name}.csv")), raw)?;
         // Transformed matrix.
         let mut x = String::new();
-        x.push_str(&p.fitted.transform.output_names.iter().map(|n| format!("\"{n}\"")).collect::<Vec<_>>().join(","));
+        x.push_str(
+            &p.fitted
+                .transform
+                .output_names
+                .iter()
+                .map(|n| format!("\"{n}\""))
+                .collect::<Vec<_>>()
+                .join(","),
+        );
         x.push('\n');
         for r in 0..d.x.rows {
             let row: Vec<String> = d.x.row(r).iter().map(|v| format!("{v:?}")).collect();

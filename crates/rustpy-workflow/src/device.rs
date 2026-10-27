@@ -6,7 +6,7 @@ use std::fs;
 use rustpy_contracts::config::{DeviceRequest, ExecutionConfig, Precision};
 use rustpy_contracts::device::{Certification, DetectedDevice, DevicePlan, DeviceReceipt};
 use rustpy_contracts::run::EnvironmentInfo;
-use rustpy_contracts::{ErrorCode, Phase, Result, RustpyError, RUSTPY_VERSION};
+use rustpy_contracts::{ErrorCode, Phase, RUSTPY_VERSION, Result, RustpyError};
 
 /// The training engine compiled into this build.
 pub const ENGINE: &str = "burn 0.22.1 / ndarray backend (CPU, single thread)";
@@ -43,7 +43,11 @@ pub fn detect_devices() -> Vec<DetectedDevice> {
     let mut out = vec![DetectedDevice {
         kind: "cpu".into(),
         name: cpu_model().unwrap_or_else(|| format!("{} CPU", std::env::consts::ARCH)),
-        certification: if verified { Certification::Certified } else { Certification::NotCertified },
+        certification: if verified {
+            Certification::Certified
+        } else {
+            Certification::NotCertified
+        },
         note: Some(if verified {
             format!("{} logical CPUs; recipe verified on linux/x86_64", logical_cpus())
         } else {
@@ -94,12 +98,7 @@ pub fn detect_devices() -> Vec<DetectedDevice> {
 }
 
 /// Resolves a device request into a plan. `estimated_peak_mb` is checked against the budget.
-pub fn plan_device(
-    request: DeviceRequest,
-    key: &str,
-    exec: &ExecutionConfig,
-    estimated_peak_mb: f64,
-) -> Result<DevicePlan> {
+pub fn plan_device(request: DeviceRequest, key: &str, exec: &ExecutionConfig, estimated_peak_mb: f64) -> Result<DevicePlan> {
     let detected = detect_devices();
     let mut notes = Vec::new();
     match exec.precision {

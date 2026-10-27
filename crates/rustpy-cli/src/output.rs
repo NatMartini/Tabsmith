@@ -5,7 +5,10 @@ use serde::Serialize;
 
 pub fn print_error(e: &RustpyError, json: bool) {
     if json {
-        println!("{}", serde_json::to_string_pretty(&serde_json::json!({ "ok": false, "error": e })).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({ "ok": false, "error": e })).unwrap_or_default()
+        );
     } else {
         eprint!("{}", e.render());
     }

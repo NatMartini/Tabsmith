@@ -19,10 +19,10 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use rustpy_contracts::config::{parse_override, resolve, ConfigLayer, ProjectFile, ResolvedConfig, ValueSource};
+use rustpy_contracts::config::{ConfigLayer, ProjectFile, ResolvedConfig, ValueSource, parse_override, resolve};
 use rustpy_contracts::{ErrorCode, Phase, Result, RustpyError};
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 pub const CONFIG_FILE: &str = "rustpy.toml";
 pub const STATE_DIR: &str = ".rustpy";
@@ -126,10 +126,7 @@ impl Project {
 
     /// Path relative to the project root (for records), with `/` separators.
     pub fn rel(&self, path: &Path) -> String {
-        path.strip_prefix(&self.root)
-            .unwrap_or(path)
-            .to_string_lossy()
-            .replace('\\', "/")
+        path.strip_prefix(&self.root).unwrap_or(path).to_string_lossy().replace('\\', "/")
     }
 
     pub fn read_config_file(&self) -> Result<ProjectFile> {

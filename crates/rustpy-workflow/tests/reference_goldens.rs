@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use rustpy_contracts::config::Candidate;
 use rustpy_contracts::data::SplitName;
 use rustpy_workflow::pipeline::RunOptions;
-use rustpy_workflow::setup::{init_project, BindRequest};
+use rustpy_workflow::setup::{BindRequest, init_project};
 use rustpy_workflow::{ConfigRequest, Workspace};
 
 fn repo() -> PathBuf {
@@ -48,7 +48,10 @@ fn transform_matches_scikit_learn() {
     assert_eq!(ours.len(), names.len(), "feature sets differ: {ours:?} vs {names:?}");
     let mut worst = 0f64;
     for (j, name) in names.iter().enumerate() {
-        let k = ours.iter().position(|n| n == name).unwrap_or_else(|| panic!("missing feature {name}"));
+        let k = ours
+            .iter()
+            .position(|n| n == name)
+            .unwrap_or_else(|| panic!("missing feature {name}"));
         for (r, row) in rows.iter().enumerate() {
             worst = worst.max((row[j] - f64::from(valid.x.row(r)[k])).abs());
         }
@@ -90,7 +93,12 @@ fn linear_baseline_reaches_the_reference_optimum() {
     let mut loss = 0.0;
     for (i, &t) in tr.y.iter().enumerate() {
         let z: f64 = f64::from(l.bias[0])
-            + tr.x.row(i).iter().zip(&l.weight).map(|(x, w)| f64::from(*x) * f64::from(*w)).sum::<f64>();
+            + tr.x
+                .row(i)
+                .iter()
+                .zip(&l.weight)
+                .map(|(x, w)| f64::from(*x) * f64::from(*w))
+                .sum::<f64>();
         let li = z.max(0.0) - if t { z } else { 0.0 } + (-z.abs()).exp().ln_1p();
         loss += li * if t { w_pos } else { w_neg };
     }
@@ -99,5 +107,8 @@ fn linear_baseline_reaches_the_reference_optimum() {
     let optimum = o["sklearn_optimum"].as_f64().unwrap();
     let gap = (ours - optimum) / optimum;
     assert!(gap > -1e-6, "below the optimum? {ours} vs {optimum}");
-    assert!(gap <= o["max_relative_gap"].as_f64().unwrap(), "objective {ours} is {gap:.4} above the sklearn optimum {optimum}");
+    assert!(
+        gap <= o["max_relative_gap"].as_f64().unwrap(),
+        "objective {ours} is {gap:.4} above the sklearn optimum {optimum}"
+    );
 }
