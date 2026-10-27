@@ -24,7 +24,8 @@ step() {
   local log="$EVID/logs/$name"
   local t0 t1 code
   t0=$(date +%s.%N)
-  (cd "$dir" && "$@") >"$log.out" 2>"$log.err"
+  # No step reads the caller's stdin: a step that reads input gets it explicitly.
+  (cd "$dir" && "$@") </dev/null >"$log.out" 2>"$log.err"
   code=$?
   t1=$(date +%s.%N)
   local secs
@@ -76,8 +77,8 @@ python3 -c "
 import json
 recs=json.load(open('$P/bundles/$BEST/examples/input.json'))['records']
 print('\n'.join(json.dumps(r) for r in recs))" >"$WORK/records.jsonl"
-step 13-app-predict 0 "$APP" ./target/release/predict-app "$P/bundles/$BEST"
-(cd "$APP" && ./target/release/predict-app "$P/bundles/$BEST" <"$WORK/records.jsonl") >"$EVID/app_predictions.txt" 2>&1
+step 13-app-predict 0 "$APP" sh -c "./target/release/predict-app '$P/bundles/$BEST' < '$WORK/records.jsonl'"
+cp "$EVID/logs/13-app-predict.out" "$EVID/app_predictions.txt"
 step 14-app-typed 0 "$APP" ./target/release/typed "$P/bundles/$BEST"
 
 echo "== one command: rustpy train, predict with the newest bundle, serve over HTTP"
