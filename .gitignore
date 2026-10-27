@@ -4,3 +4,4 @@ examples/predict-app/target
 /scratch
 /.claude/
 __pycache__/
+/_cloud-session/
