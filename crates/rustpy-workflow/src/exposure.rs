@@ -31,8 +31,8 @@ fn value_key(v: ValueRef<'_>, out: &mut String) {
         let _ = write!(out, "n{f:?}");
     };
     match v {
-        ValueRef::Null => out.push_str("\u{0}"),
-        ValueRef::Float(f) if f.is_nan() => out.push_str("\u{0}"),
+        ValueRef::Null => out.push('\u{0}'),
+        ValueRef::Float(f) if f.is_nan() => out.push('\u{0}'),
         ValueRef::Float(f) => num(f, out),
         ValueRef::Int(i) => num(i as f64, out),
         ValueRef::Bool(b) => out.push_str(if b { "btrue" } else { "bfalse" }),
@@ -107,14 +107,14 @@ impl RowKeys {
     /// `content` names the columns fingerprinted when there is no id column
     /// (the model's input columns + the target).
     pub fn of(snapshot: &DataSnapshot, table: &Table, rows: &[usize], content: &[String]) -> Self {
-        if let RowIdentity::IdColumn { column } = &snapshot.row_identity {
-            if let Some(col) = table.column(column) {
-                let ids = rows.iter().filter_map(|&r| entity_key(col.get(r))).collect();
-                return RowKeys::Ids {
-                    column: column.clone(),
-                    ids,
-                };
-            }
+        if let RowIdentity::IdColumn { column } = &snapshot.row_identity
+            && let Some(col) = table.column(column)
+        {
+            let ids = rows.iter().filter_map(|&r| entity_key(col.get(r))).collect();
+            return RowKeys::Ids {
+                column: column.clone(),
+                ids,
+            };
         }
         let contents = content_columns(table, content).map(|cols| RowContents {
             columns: content.to_vec(),

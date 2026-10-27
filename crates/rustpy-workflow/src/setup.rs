@@ -254,14 +254,14 @@ impl Workspace {
         }
         let root = crate::project::canonical(&project.root).unwrap_or(project.root.clone());
         let source = project_relative(&root, &abs);
-        if let Some(sp) = &req.split {
-            if !matches!(sp.as_str(), "stratified" | "group" | "time") {
-                return Err(
-                    RustpyError::new(ErrorCode::ConfigInvalid, Phase::Config, format!("unknown split `{sp}`"))
-                        .field("--split")
-                        .expected("stratified (independent rows) or group (with --group <column>)"),
-                );
-            }
+        if let Some(sp) = &req.split
+            && !matches!(sp.as_str(), "stratified" | "group" | "time")
+        {
+            return Err(
+                RustpyError::new(ErrorCode::ConfigInvalid, Phase::Config, format!("unknown split `{sp}`"))
+                    .field("--split")
+                    .expected("stratified (independent rows) or group (with --group <column>)"),
+            );
         }
         // Only the flags given change the file; a new source or target invalidates the
         // keys that describe the old one (they are re-inferred or must be passed again).

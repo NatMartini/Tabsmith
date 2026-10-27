@@ -90,7 +90,36 @@ jobs:
           cargo +${{ steps.msrv.outputs.runtime }} check -p rustpy-contracts -p rustpy-runtime --all-targets --locked
           cargo +${{ steps.msrv.outputs.runtime }} check --manifest-path examples/predict-app/Cargo.toml --all-targets --locked
 
-  # TODO: add a lint job (`cargo fmt --all --check` and
-  # `cargo clippy --workspace --all-targets --locked -- -D warnings`) once the code base
-  # has been formatted with rustfmt in one dedicated commit. It is not formatted yet, so
-  # a formatting gate now would fail every pull request.
+  # Formatting, lints and library docs; warnings fail the build.
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust (stable) with rustfmt and clippy
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy --no-self-update
+          rustup default stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            examples/predict-app -> target
+
+      - name: rustfmt
+        run: |
+          cargo fmt --all --check
+          cargo fmt --manifest-path examples/predict-app/Cargo.toml --check
+
+      - name: clippy
+        run: |
+          cargo clippy --workspace --all-targets --locked -- -D warnings
+          cargo clippy --manifest-path examples/predict-app/Cargo.toml --all-targets --locked -- -D warnings
+
+      - name: rustdoc (library crates)
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --no-deps --locked -p rustpy-contracts -p rustpy-runtime -p rustpy-workflow

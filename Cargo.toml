@@ -40,6 +40,13 @@ tempfile = "3.27.0"
 polars = { version = "=0.55.2", default-features = false, features = ["csv", "parquet", "dtype-date", "dtype-datetime", "dtype-time", "dtype-duration"] }
 burn = { version = "=0.22.1", default-features = false, features = ["std", "ndarray", "autodiff", "optim"] }
 
+[workspace.lints.clippy]
+# `RustpyError` carries the code, phase, field, expected/actual values and the next
+# action by value, on cold paths only; boxing it would make every caller noisier.
+result_large_err = "allow"
+# Index loops read like the formulas in the numeric kernels (matrix products, gradients).
+needless_range_loop = "allow"
+
 [profile.release]
 # Distribution profile for the prebuilt `rustpy` binaries (see .github/workflows/release.yml).
 # Thin LTO with one codegen unit per crate keeps most of the size/speed gain of fat

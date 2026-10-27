@@ -107,10 +107,10 @@ impl FittedTransform {
                     expected
                 ));
             }
-            if let FeatureTransform::Numeric { std, mean, impute, .. } = f {
-                if !(std.is_finite() && *std > 0.0 && mean.is_finite() && impute.is_finite()) {
-                    return Err(format!("feature `{}` has invalid statistics", f.name()));
-                }
+            if let FeatureTransform::Numeric { std, mean, impute, .. } = f
+                && !(std.is_finite() && *std > 0.0 && mean.is_finite() && impute.is_finite())
+            {
+                return Err(format!("feature `{}` has invalid statistics", f.name()));
             }
             expected += f.width();
         }

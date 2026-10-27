@@ -30,6 +30,7 @@ pub fn transform_id(split_id: &str, pre: &PreprocessConfig, plan: &FeaturePlan, 
 
 /// Fits on `train` (a table holding only training rows). `row_ids` maps table rows
 /// back to snapshot row numbers for error messages.
+#[allow(clippy::too_many_arguments)]
 pub fn fit_transform(
     train: &Table,
     row_ids: &[usize],
@@ -71,7 +72,10 @@ pub fn fit_transform(
                     let mean = values.iter().sum::<f64>() / n;
                     let var = values.iter().map(|x| (x - mean) * (x - mean)).sum::<f64>() / n;
                     let std = var.sqrt();
-                    if !(std > 1e-12 * mean.abs().max(1.0)) {
+                    // Negated on purpose: a NaN standard deviation counts as zero variance.
+                    #[allow(clippy::neg_cmp_op_on_partial_ord)]
+                    let constant = !(std > 1e-12 * mean.abs().max(1.0));
+                    if constant {
                         drop_reason = Some(format!("zero variance in the training rows (constant {mean})"));
                     } else {
                         let impute = match pre.numeric_impute {

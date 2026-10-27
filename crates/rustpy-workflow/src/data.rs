@@ -800,7 +800,7 @@ pub fn read_for_prediction(
             let body: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
             if body.len() == 1 {
                 let header = check_header_only(path, body[0], opts.delimiter)?;
-                return Ok(Table::new(
+                return Table::new(
                     header
                         .into_iter()
                         .map(|name| RtColumn {
@@ -808,7 +808,7 @@ pub fn read_for_prediction(
                             data: ColumnData::Text(Vec::new()),
                         })
                         .collect(),
-                )?);
+                );
             }
         }
     }
@@ -844,7 +844,7 @@ pub fn read_for_prediction(
             _ => c.clone(),
         })
         .collect();
-    Ok(Table::new(columns)?)
+    Table::new(columns)
 }
 
 /// Reads only `columns`, as verbatim text (for copying identifiers to the output):
@@ -1053,18 +1053,17 @@ pub fn plan_columns(snapshot: &DataSnapshot, table: &Table, cfg: &DataConfig, ma
         ("data.id_column", cfg.id_column.as_deref()),
         ("data.group_column", cfg.group_column.as_deref()),
     ] {
-        if let Some(c) = col {
-            if let Some(prof) = snapshot.column(c) {
-                if prof.raw_dtype.is_none() {
-                    return Err(RustpyError::new(
-                        ErrorCode::DataUnsupported,
-                        Phase::Data,
-                        format!("{key} `{c}` has the unsupported type {}", prof.engine_dtype),
-                    )
-                    .field(key)
-                    .next("convert the column to text, integer or boolean values"));
-                }
-            }
+        if let Some(c) = col
+            && let Some(prof) = snapshot.column(c)
+            && prof.raw_dtype.is_none()
+        {
+            return Err(RustpyError::new(
+                ErrorCode::DataUnsupported,
+                Phase::Data,
+                format!("{key} `{c}` has the unsupported type {}", prof.engine_dtype),
+            )
+            .field(key)
+            .next("convert the column to text, integer or boolean values"));
         }
     }
 

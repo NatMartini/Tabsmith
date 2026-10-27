@@ -436,9 +436,10 @@ fn unknown_category_error(name: &str, row: usize, v: ValueRef<'_>, categories: &
     .field(name)
     .expected(format!("one of [{}{more}]", known.join(", ")))
     .actual(v.preview())
-    .next(format!(
+    .next(
         "map the value to a known category, or retrain on data that contains it (or with preprocess.unknown_category = \"ignore\")"
-    ))
+            .to_string(),
+    )
 }
 
 #[cfg(test)]

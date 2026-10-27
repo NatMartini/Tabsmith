@@ -97,34 +97,33 @@ pub fn synthetic_examples(fitted: &FittedArtifacts) -> Vec<Record> {
     // Categorical values must use the same raw type as the training data where it matters.
     let mut out = vec![typical, high, alt, missing];
     let unknown_ok = t.unknown_category == rustpy_contracts::config::UnknownCategoryPolicy::Ignore;
-    if unknown_ok {
-        if let Some(cat) = fitted
+    if unknown_ok
+        && let Some(cat) = fitted
             .input_schema
             .fields
             .iter()
             .find(|f| f.kind == FieldKind::Categorical && f.required)
-        {
-            let mut r = out[0].clone();
-            r.insert(cat.name.clone(), "__rustpy_unseen_category__");
-            out.push(r);
-        }
+    {
+        let mut r = out[0].clone();
+        r.insert(cat.name.clone(), "__rustpy_unseen_category__");
+        out.push(r);
     }
     // Fix numeric categories (e.g. int-coded) so they are sent as the training type.
     for rec in &mut out {
         for field in &fitted.input_schema.fields {
-            if field.kind == FieldKind::Categorical && field.raw_dtype == rustpy_contracts::schema::RawDtype::Int {
-                if let Some(Value::Text(s)) = rec.get(&field.name).cloned() {
-                    if let Ok(i) = s.parse::<i64>() {
-                        rec.insert(field.name.clone(), i);
-                    }
-                }
+            if field.kind == FieldKind::Categorical
+                && field.raw_dtype == rustpy_contracts::schema::RawDtype::Int
+                && let Some(Value::Text(s)) = rec.get(&field.name).cloned()
+                && let Ok(i) = s.parse::<i64>()
+            {
+                rec.insert(field.name.clone(), i);
             }
-            if field.kind == FieldKind::Categorical && field.raw_dtype == rustpy_contracts::schema::RawDtype::Bool {
-                if let Some(Value::Text(s)) = rec.get(&field.name).cloned() {
-                    if let Ok(b) = s.parse::<bool>() {
-                        rec.insert(field.name.clone(), b);
-                    }
-                }
+            if field.kind == FieldKind::Categorical
+                && field.raw_dtype == rustpy_contracts::schema::RawDtype::Bool
+                && let Some(Value::Text(s)) = rec.get(&field.name).cloned()
+                && let Ok(b) = s.parse::<bool>()
+            {
+                rec.insert(field.name.clone(), b);
             }
         }
     }
@@ -379,16 +378,16 @@ impl Workspace {
         if let Err(e) = fs::rename(&tmp, &out) {
             let _ = fs::remove_dir_all(&tmp);
             // Another build may have published the same bundle meanwhile.
-            if let Ok(m) = read_json::<BundleManifest>(&out.join(MANIFEST_FILE), Phase::Bundle) {
-                if m.bundle_id == manifest.bundle_id {
-                    let check = Predictor::load(&out, LoadOptions::cpu().with_self_check(true))?.self_check()?;
-                    return Ok(BundleBuildReport {
-                        path: self.project.rel(&out),
-                        manifest: m,
-                        check,
-                        already_existed: true,
-                    });
-                }
+            if let Ok(m) = read_json::<BundleManifest>(&out.join(MANIFEST_FILE), Phase::Bundle)
+                && m.bundle_id == manifest.bundle_id
+            {
+                let check = Predictor::load(&out, LoadOptions::cpu().with_self_check(true))?.self_check()?;
+                return Ok(BundleBuildReport {
+                    path: self.project.rel(&out),
+                    manifest: m,
+                    check,
+                    already_existed: true,
+                });
             }
             return Err(RustpyError::io(Phase::Bundle, &out, e));
         }
