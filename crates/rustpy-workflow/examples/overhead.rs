@@ -109,7 +109,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 rustpy_version: rustpy_contracts::RUSTPY_VERSION.into(),
                 n_train: n,
                 platform: rustpy_workflow::train::platform_fingerprint(),
-        recipe_constants: rustpy_workflow::train::RECIPE_CONSTANTS.to_string(),
+                recipe_constants: rustpy_workflow::train::RECIPE_CONSTANTS.to_string(),
             };
             let inputs = TrainInputs {
                 candidate: Candidate::SmallMlp,

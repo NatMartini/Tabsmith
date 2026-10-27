@@ -58,7 +58,10 @@ println!("{} (p = {:.3})", p.label, p.probability);
 `predict_serialize(&[my_struct])` accepts any `#[derive(Serialize)]` struct whose
 field names match the bundle inputs; `PredictorHandle::try_update` swaps in a
 new bundle only after it loads and self-checks, otherwise the old one keeps
-serving. See [examples/predict-app](examples/predict-app).
+serving. An update that changes the input or output contract (new required
+fields, other labels or threshold, ...) is refused unless you pass
+`LoadOptions::cpu().allow_contract_change(true)`; the returned report lists every
+change either way. See [examples/predict-app](examples/predict-app).
 
 ## What "integrated" means here
 
@@ -87,17 +90,20 @@ More: [architecture](docs/architecture.md) · [configuration](docs/configuration
 
 ## Guarantees that are tested
 
-- Preprocessing parity: raw rows → training-side probabilities equal app-side `Predictor` probabilities (max |Δp| < 1e-9); scikit-learn reproduces RustPy's transformed matrix (max |Δ| ≈ 2e-7, f32).
+- Preprocessing parity: raw rows → training-side probabilities equal app-side `Predictor` probabilities (max |Δp| < 1e-12, checked in a separate process); scikit-learn reproduces RustPy's transformed matrix (max |Δ| ≈ 2e-7, f32).
 - No leakage by construction: split before fit; grouped split never puts one entity in two splits; time-dependent data is refused rather than split randomly.
 - Exact resume (R2): a run that crashed in one process and was resumed in another produces **bit-identical** weights and history to an uninterrupted run (same binary, same CPU features).
-- Test-set discipline: a test split is used once per split; reuse is refused unless explicitly allowed, and then recorded.
+- Test-set discipline: a data snapshot's test split is used by one model; evaluating another model of the same snapshot on it is refused unless explicitly allowed, and then recorded. A bundle evaluated on new data skips the rows its run trained or selected on.
 - Bundles are immutable, content-addressed and verified file by file.
-- Metrics match scikit-learn to 1e-15; gradients match independent finite differences; the first Adam step matches the update rule.
+- Metrics match scikit-learn (frozen goldens, tolerance 1e-12, observed ≤ 3e-16); the linear baseline lands within 0.15 % of scikit-learn's optimum of the same objective; gradients match independent finite differences; the first Adam step matches the update rule.
+- Every run records its own peak memory (Linux) and the comparison shows it next to quality and latency.
 
 ## What is not done yet
 
 - **GPU**: no CUDA or non-NVIDIA backend is compiled in or certified. `candidate_device = "auto-certified"` selects the CPU and says so; `"cuda"` is an error. Cross-vendor GPU support (plan items P2-04/P2-05) needs real hardware.
 - **User validation**: no interviews or user trials have taken place (P0-02, P0-06, P3-03). The usability targets are untested.
+- **Platforms**: only Linux x86_64 was built and tested. Windows and macOS builds, prebuilt binaries and clean-machine install timing are not done (P3-01).
+- **Reference values**: the scikit-learn goldens were generated after the implementation, not frozen before it (P1-03); see the [backlog](docs/implementation-backlog.md).
 - Time-based splits, regression/multiclass, tree models, CNN/sequence/text/LLM recipes are future task packages.
 
 License: MIT OR Apache-2.0. The bundled sample dataset is synthetic (CC0).
