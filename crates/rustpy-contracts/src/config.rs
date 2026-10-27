@@ -620,7 +620,7 @@ fn toml_error(
     };
     let mut err = RustpyError::new(code, Phase::Config, format!("{location}: {message}")).field(location);
     if unknown {
-        err = err.next("fix the spelling; `rustpy plan` lists every effective setting and where it came from");
+        err = err.next("fix the spelling; `rustpy config` lists every effective setting and where it came from");
     } else {
         err = err.next("fix the value; see docs/configuration.md for the allowed values and types");
     }
@@ -715,13 +715,24 @@ impl ResolvedConfig {
         let table = toml::Table::try_from(&self.config).expect("config serializes");
         let mut leaves = Vec::new();
         collect_leaves(&table, "", &mut leaves);
-        leaves
+        let mut out: Vec<(String, String, ValueSource)> = leaves
             .into_iter()
             .map(|(path, value)| {
                 let source = self.sources.get(&path).cloned().unwrap_or(ValueSource::Default);
                 (path, value.to_string(), source)
             })
-            .collect()
+            .collect();
+        // Optional settings that are not set do not appear in TOML; list them too.
+        let data = serde_json::to_value(&self.config.data).expect("config serializes");
+        if let Some(obj) = data.as_object() {
+            for (k, v) in obj {
+                if v.is_null() {
+                    out.push((format!("data.{k}"), "(unset)".into(), ValueSource::Default));
+                }
+            }
+        }
+        out.sort_by(|a, b| a.0.cmp(&b.0));
+        out
     }
 }
 
@@ -1023,6 +1034,7 @@ epochs = 3
         let r = resolve(&[]).unwrap();
         let vals = r.effective_values();
         assert!(vals.iter().any(|(p, _, _)| p == "train.small-mlp.hidden"));
+        assert!(vals.iter().any(|(p, v, _)| p == "data.id_column" && v == "(unset)"));
         assert!(vals.iter().all(|(_, _, s)| *s == ValueSource::Default));
     }
 }

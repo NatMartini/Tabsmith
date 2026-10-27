@@ -125,7 +125,7 @@ fn file_entry(dir: &Path, rel: &str) -> Result<FileEntry> {
 impl Workspace {
     /// Builds an immutable bundle from a completed run.
     pub fn build_bundle(&self, run_id: &str, opts: &BundleOptions) -> Result<BundleBuildReport> {
-        let run: RunRecord = self.load_run(run_id)?;
+        let run: RunRecord = self.load_run(run_id).map_err(|e| e.in_phase(Phase::Bundle))?;
         if run.status != RunStatus::Completed {
             return Err(RustpyError::new(
                 ErrorCode::RunStateInvalid,

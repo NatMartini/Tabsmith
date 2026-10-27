@@ -24,6 +24,7 @@ rustpy compare                                 # 只用验证集比较，并给�
 rustpy evaluate --run run-002 --split test     # 锁定最终候选；测试集只使用一次
 rustpy bundle build --run run-002              # 不可变模型包：权重 + 预处理 + schema + 评价证据
 rustpy bundle check bundles/run-002            # 在本机校验哈希、版本和样例预测
+rustpy sample-data new.csv --rows 200 --seed 7 # 生成一些新的合成数据用于预测
 rustpy predict --bundle bundles/run-002 --input new.csv --output preds.csv
 rustpy report                                  # 离线 HTML/JSON 报告，位于 .rustpy/reports/
 ```
@@ -35,6 +36,23 @@ rustpy init churn && cd churn
 rustpy data bind ../customers.csv --target churned --positive yes --group customer_id
 rustpy plan
 ```
+
+`--group customer_id` 让同一客户的所有行留在同一个子集里。如果每一行都有唯一的键，请改用 `--id <列名>`：文件增长时各行保持原来的切分。没有 id 时，行按内容（输入列 + 目标列）识别；只要旧行没有被修改，这在不同数据版本之间同样有效。
+
+### 新数据到达时
+
+替换同一路径下的文件或在末尾追加数据，然后：
+
+```text
+rustpy run                                       # 新快照、新 Run；旧 Run 和旧模型包保持不变
+rustpy compare                                   # 对新 Run 排名（以最新数据版本为准）
+rustpy evaluate --run run-004 --split test       # 新候选在新测试行上的表现
+rustpy evaluate --bundle bundles/run-002 --split test   # 旧模型在同一批行上的表现；跳过它训练时用过的行
+rustpy bundle build --run run-004
+rustpy predict --bundle bundles/run-004 --input new.csv --keep customer_id,month --output preds.csv
+```
+
+当输入中出现模型包从未见过的类别（新月份、新产品或新代码）时，`predict` 会发出警告；`--keep` 会把用于识别行的列原样复制到输出。在应用中，`PredictorHandle::try_update` 只有在新包加载并通过自检后才切换，`rollback_to` 可以切回旧包。
 
 在应用中（只依赖 `rustpy-runtime`：没有 Burn、没有 Polars、没有 Python）：
 
@@ -50,6 +68,8 @@ let reading = Record::new()
 let p = predictor.predict_one(&reading)?;
 println!("{} (p = {:.3})", p.label, p.probability);
 ```
+
+错误是 `RustpyError` 值，包含错误码、字段、期望值/实际值和下一步建议；`e.render()`（以及 `{:?}`，因此 `fn main() -> Result<…>` 也一样）会打印多行报告。`p.unseen_categories` 列出该预测中模型包从未见过其取值的输入字段。
 
 `predict_serialize(&[my_struct])` 接受任何字段名与模型包输入一致的 `#[derive(Serialize)]` 结构体；
 `PredictorHandle::try_update` 只在新包加载并自检通过后才切换，否则旧模型继续服务。如果更新改变了输入或输出契约（新增必需字段、标签或阈值改变等），默认会被拒绝，除非传入 `LoadOptions::cpu().allow_contract_change(true)`；无论是否允许，返回的报告都会列出每一处变化。见 [examples/predict-app](examples/predict-app)。

@@ -1,6 +1,7 @@
 //! Orchestration of the stages: plan, run, resume, evaluate, compare.
 //! The CLI and the Rust SDK both call these functions; neither has its own logic.
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -23,13 +24,23 @@ use crate::data::{plan_columns, snapshot_source, load_snapshot, FeaturePlan};
 use crate::device::{environment, estimate_peak_mb, plan_device, receipt, ENGINE};
 use crate::fit::{fit_transform, transform_id, FittedArtifacts};
 use crate::metrics::binary_metrics;
-use crate::exposure::{ExposureCheck, RowKeys};
+use crate::exposure::{schema_content_columns, ExposureCheck, RowKeys};
 use crate::project::{append_jsonl, read_json, write_json, ConfigRequest, Project};
 use crate::split::{labels, make_split};
 use crate::train::{
     latest_checkpoint, list_checkpoints, model_config, platform_fingerprint, train, verify_checkpoint, ResumeKey,
     RunControl, StartFrom, TrainInputs, TrainOutcome, TrainState,
 };
+
+/// Ledger entry for one use of a test split (see `check_test_reuse`).
+#[derive(Debug, Default)]
+struct TestLedger {
+    /// The same model was already evaluated on exactly these rows.
+    existing: Option<EvaluationRecord>,
+    index: u32,
+    shared_with: Vec<String>,
+    notes: Vec<String>,
+}
 
 /// All stages before training, either computed or reused from cache (R1).
 #[derive(Debug, Clone)]
@@ -59,7 +70,15 @@ pub enum Progress {
     Stage(String),
     RunStarted { run_id: String, candidate: Candidate, steps_planned: u64 },
     Epoch { run_id: String, epoch: usize, epochs: usize, train_loss: f64, valid_loss: f64, valid_metric: f64 },
-    RunFinished { run_id: String, status: RunStatus },
+    RunFinished {
+        run_id: String,
+        status: RunStatus,
+        /// `early_stopping`, `epochs` or `time_budget` for completed runs.
+        stop_reason: Option<String>,
+        /// Epoch whose weights were kept (lowest validation loss).
+        best_epoch: Option<usize>,
+        epochs_done: usize,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -190,7 +209,7 @@ impl Workspace {
     ) -> Result<Prepared> {
         let cfg = &resolved.config;
         let features = plan_columns(&snapshot, &table, &cfg.data, cfg.preprocess.max_categories)?;
-        let split = make_split(&snapshot.snapshot_id, &table, &features.target, &cfg.data)?;
+        let split = make_split(&snapshot.snapshot_id, &table, &features.target, &cfg.data, &features.content_columns())?;
         let split_path = self.project.dir("splits").join(format!("{}.json", split.split_id));
         if split_path.is_file() && !no_cache {
             let cached: SplitManifest = read_json(&split_path, Phase::Split)?;
@@ -388,6 +407,25 @@ impl Workspace {
         ids
     }
 
+    /// A note when the data snapshot differs from the one the latest run used
+    /// (typically: the file at the same path received new content).
+    pub fn data_change_note(&self, snapshot: &DataSnapshot) -> Option<String> {
+        let runs = self.list_runs().ok()?;
+        let latest = runs.iter().max_by_key(|r| id_number(&r.run_id))?;
+        if latest.snapshot_id == snapshot.snapshot_id {
+            return None;
+        }
+        let on_previous: Vec<&str> =
+            runs.iter().filter(|r| r.snapshot_id == latest.snapshot_id).map(|r| r.run_id.as_str()).collect();
+        Some(format!(
+            "new data version: {} is now snapshot {}, while {} used snapshot {}. Earlier runs and bundles keep their own data version and stay usable; to compare an old model with a new one on the same new rows use `rustpy evaluate --bundle <old bundle> --split test`",
+            snapshot.source.path,
+            snapshot.snapshot_id,
+            on_previous.join(", "),
+            latest.snapshot_id
+        ))
+    }
+
     pub fn list_runs(&self) -> Result<Vec<RunRecord>> {
         self.run_ids().iter().map(|id| self.load_run(id)).collect()
     }
@@ -414,6 +452,10 @@ impl Workspace {
         let resolved = self.resolve(req)?;
         progress(Progress::Stage("preparing data, split and preprocessing".into()));
         let prepared = self.prepare(resolved, opts.no_cache)?;
+        let data_note = self.data_change_note(&prepared.snapshot);
+        if let Some(n) = &data_note {
+            progress(Progress::Stage(n.clone()));
+        }
         let candidates = opts
             .candidates
             .clone()
@@ -460,6 +502,7 @@ impl Workspace {
         }
         let mut comparison = self.compare_records(&runs, &prepared.resolved.config)?;
         comparison.notes.extend(Self::unstarted_note(&group, &runs));
+        comparison.notes.extend(data_note);
         Ok(RunGroupResult {
             group,
             runs,
@@ -701,6 +744,9 @@ impl Workspace {
         progress(Progress::RunFinished {
             run_id: run_id.clone(),
             status: run.status,
+            stop_reason: run.stop_reason.clone(),
+            best_epoch: run.metrics.as_ref().map(|m| m.best_epoch),
+            epochs_done: run.history.len(),
         });
         Ok(run)
     }
@@ -1080,7 +1126,8 @@ impl Workspace {
                     // Ancestors' validation rows selected their weights, too.
                     rows.extend(split.rows(SplitName::Valid));
                 }
-                Ok(RowKeys::of(&snapshot, &table, &rows))
+                let content = self.run_content_columns(&r).unwrap_or_default();
+                Ok(RowKeys::of(&snapshot, &table, &rows, &content))
             })()
             .ok();
             out.push((r.run_id.clone(), keys));
@@ -1092,15 +1139,37 @@ impl Workspace {
         out
     }
 
-    /// Verifies that the evaluated rows were not seen by the model.
-    fn check_unseen(&self, exposure: &[(String, Option<RowKeys>)], evaluated: &RowKeys, subject: &str) -> Result<ExposureCheck> {
-        let mut check = ExposureCheck::default();
+    /// Input columns + target of a run's model (its content columns).
+    fn run_content_columns(&self, run: &RunRecord) -> Option<Vec<String>> {
+        let f: FittedArtifacts = read_json(
+            &self.project.dir("transforms").join(&run.transform_id).join("fitted.json"),
+            Phase::Evaluate,
+        )
+        .ok()?;
+        Some(schema_content_columns(&f.input_schema, &f.output_schema.target))
+    }
+
+    /// Rows among `rows` (positions in `p.table`) that the exposure sources saw,
+    /// and the sources whose rows cannot be matched with this data.
+    fn seen_rows(exposure: &[(String, Option<RowKeys>)], p: &Prepared, rows: &[usize]) -> (BTreeSet<usize>, Vec<String>) {
+        let mut seen = BTreeSet::new();
+        let mut unverifiable = Vec::new();
         for (source, keys) in exposure {
-            match keys.as_ref().and_then(|k| k.overlap(evaluated)) {
-                Some(n) => check.overlapping_rows += n,
-                None => check.unverifiable.push(source.clone()),
+            match keys.as_ref().and_then(|k| k.matcher(&p.snapshot, &p.table)) {
+                Some(m) => seen.extend(rows.iter().copied().filter(|&r| m(r))),
+                None => unverifiable.push(source.clone()),
             }
         }
+        (seen, unverifiable)
+    }
+
+    /// Verifies that the evaluated rows were not seen by the model.
+    fn check_unseen(&self, exposure: &[(String, Option<RowKeys>)], p: &Prepared, rows: &[usize], subject: &str) -> Result<ExposureCheck> {
+        let (seen, unverifiable) = Self::seen_rows(exposure, p, rows);
+        let check = ExposureCheck {
+            overlapping_rows: seen.len(),
+            unverifiable,
+        };
         if check.overlapping_rows > 0 {
             let sources: Vec<&str> = exposure.iter().map(|(s, _)| s.as_str()).collect();
             return Err(RustpyError::new(
@@ -1109,7 +1178,7 @@ impl Workspace {
                 format!(
                     "{} of the {} evaluated rows were used to train or select {subject} (training/validation rows of {})",
                     check.overlapping_rows,
-                    evaluated.len(),
+                    rows.len(),
                     sources.join(" <- ")
                 ),
             )
@@ -1122,21 +1191,15 @@ impl Workspace {
 
     /// Test-set discipline: rows of a test split may be used to evaluate one model.
     /// Returns an existing evaluation when the same model was already evaluated on
-    /// the same rows, or the use index (1 = first use).
+    /// the same rows, otherwise the ledger entry for this use.
     ///
     /// Reuse that is refused: another model trained on the *same data snapshot*
     /// (a competing candidate) evaluated on overlapping test rows. Overlap with
-    /// models of an earlier data generation (the standing hold-out across releases)
-    /// is allowed and noted.
-    fn check_test_reuse(
-        &self,
-        model_sha: &str,
-        model_snapshot: &str,
-        rows: &RowKeys,
-        allow_reuse: bool,
-    ) -> Result<(Option<EvaluationRecord>, u32, Vec<String>)> {
+    /// models of another data version (the shared hold-out of an old-vs-new
+    /// comparison) is allowed and recorded in `test_shared_with`.
+    fn check_test_reuse(&self, model_sha: &str, model_snapshot: &str, rows: &RowKeys, allow_reuse: bool) -> Result<TestLedger> {
         let mut other_models: Vec<(String, String, usize)> = Vec::new();
-        let mut earlier_generations: Vec<String> = Vec::new();
+        let mut other_versions: Vec<String> = Vec::new();
         let mut unverifiable = 0usize;
         for prev in self.evaluations().into_iter().filter(|e| e.protocol.split == SplitName::Test) {
             let Some(prev_rows) = self.evaluation_rows(&prev.evaluation_id) else {
@@ -1147,7 +1210,10 @@ impl Workspace {
             let same_model = prev.model_sha256.as_deref() == Some(model_sha);
             match overlap {
                 Some(n) if same_model && n == rows.len() && n == prev_rows.len() => {
-                    return Ok((Some(prev), 0, vec![]));
+                    return Ok(TestLedger {
+                        existing: Some(prev),
+                        ..Default::default()
+                    });
                 }
                 Some(n) if n > 0 && !same_model => {
                     let subject = match &prev.subject {
@@ -1155,9 +1221,11 @@ impl Workspace {
                         EvaluationSubject::Bundle { bundle_id, .. } => bundle_id.clone(),
                     };
                     let label = format!("{subject} ({})", prev.evaluation_id);
-                    let same_generation = prev.model_snapshot_id.as_deref().is_none_or(|s| s == model_snapshot);
-                    if !same_generation {
-                        earlier_generations.push(label);
+                    let same_version = prev.model_snapshot_id.as_deref().is_none_or(|s| s == model_snapshot);
+                    if !same_version {
+                        if !other_versions.contains(&label) {
+                            other_versions.push(label);
+                        }
                     } else if !other_models.iter().any(|(m, _, _)| Some(m.as_str()) == prev.model_sha256.as_deref()) {
                         other_models.push((prev.model_sha256.clone().unwrap_or_default(), label, n));
                     }
@@ -1174,7 +1242,7 @@ impl Workspace {
                     ErrorCode::TestSetReuse,
                     Phase::Evaluate,
                     format!(
-                        "{n} of these {} test rows were already used to evaluate another model, {first}; evaluating more models on them would turn the test set into a selection set",
+                        "{n} of these {} test rows were already used to evaluate another model of the same data version, {first}; evaluating more models on them would turn the test set into a selection set",
                         rows.len()
                     ),
                 )
@@ -1188,18 +1256,23 @@ impl Workspace {
                 other_models.iter().map(|(_, s, _)| s.as_str()).collect::<Vec<_>>().join(", ")
             ));
         }
-        if !earlier_generations.is_empty() {
+        if !other_versions.is_empty() {
             notes.push(format!(
-                "some of these test rows were used before to evaluate models of an earlier data version ({}); kept as the standing hold-out",
-                earlier_generations.join(", ")
+                "some of these test rows were also used for models trained on another data version ({}): a shared hold-out for comparing old and new models; picking among many models this way would make it a selection set",
+                other_versions.join(", ")
             ));
         }
         if unverifiable > 0 {
             notes.push(format!(
-                "{unverifiable} earlier test evaluation(s) could not be matched row by row (different data version without data.id_column)"
+                "{unverifiable} earlier test evaluation(s) could not be matched row by row with these rows (their input columns differ)"
             ));
         }
-        Ok((None, other_models.len() as u32 + 1, notes))
+        Ok(TestLedger {
+            existing: None,
+            index: other_models.len() as u32 + 1,
+            shared_with: other_versions,
+            notes,
+        })
     }
 
     fn save_evaluation(&self, mut rec: EvaluationRecord, rows: &RowKeys) -> Result<EvaluationRecord> {
@@ -1222,31 +1295,40 @@ impl Workspace {
 
     /// Evaluates a completed run on one split of its own snapshot. Test rows may be
     /// used for one model; later uses need `allow_test_reuse` and are recorded.
-    pub fn evaluate_run(&self, run_id: &str, split: SplitName, allow_test_reuse: bool) -> Result<EvaluationRecord> {
-        let run = self.load_run(run_id)?;
+    /// When the rows seen by runs it was warm-started from cannot be matched with
+    /// this data, the evaluation is refused unless `allow_unverified_rows`.
+    pub fn evaluate_run(
+        &self,
+        run_id: &str,
+        split: SplitName,
+        allow_test_reuse: bool,
+        allow_unverified_rows: bool,
+    ) -> Result<EvaluationRecord> {
+        let run = self.load_run(run_id).map_err(|e| e.in_phase(Phase::Evaluate))?;
         let model = self.run_weights(&run)?;
         let model_sha = Self::run_model_sha(&run);
         let p = self.prepare_for_run(&run)?;
         let data = self.split_data(&p, split)?;
-        let rows = RowKeys::of(&p.snapshot, &p.table, &data.rows);
+        let content = schema_content_columns(&p.fitted.input_schema, &p.fitted.output_schema.target);
+        let rows = RowKeys::of(&p.snapshot, &p.table, &data.rows, &content);
         let mut notes = Vec::new();
-        let mut test_index = None;
+        let mut ledger = TestLedger::default();
         if split == SplitName::Test {
-            let (existing, idx, n) = self.check_test_reuse(&model_sha, &run.snapshot_id, &rows, allow_test_reuse)?;
-            if let Some(mut rec) = existing {
+            ledger = self.check_test_reuse(&model_sha, &run.snapshot_id, &rows, allow_test_reuse)?;
+            if let Some(mut rec) = ledger.existing.take() {
                 rec.notes.push("existing evaluation returned; the test set was not used again".into());
                 return Ok(rec);
             }
-            test_index = Some(idx);
-            notes.extend(n);
+            notes.append(&mut ledger.notes);
         }
         let exposure = self.run_exposure(&run, split == SplitName::Test);
         // Evaluating a run on its own validation split is its selection metric, not a held-out estimate.
-        let check = self.check_unseen(&exposure, &rows, &format!("run {run_id}"))?;
+        let check = self.check_unseen(&exposure, &p, &data.rows, &format!("run {run_id}"))?;
         let verified = check.unverifiable.is_empty();
         if !verified {
+            Self::refuse_unverified(&check.unverifiable, allow_unverified_rows, &format!("run {run_id}"))?;
             notes.push(format!(
-                "rows could not be matched with those seen by {} (add data.id_column): unseen rows not verified",
+                "rows could not be matched with those seen by {} (allowed with --allow-unverified-rows): unseen rows not verified",
                 check.unverifiable.join(", ")
             ));
         }
@@ -1260,7 +1342,8 @@ impl Workspace {
             subject: EvaluationSubject::Run { run_id: run_id.to_string() },
             protocol: self.protocol(&p, split),
             metrics: binary_metrics(&pr, &data.y, run.threshold),
-            test_use_index: test_index,
+            test_use_index: (split == SplitName::Test).then_some(ledger.index),
+            test_shared_with: ledger.shared_with,
             latency: Some(measure_latency(&p.fitted, &model, &p.table, &data.rows)),
             model_sha256: Some(model_sha),
             model_snapshot_id: Some(run.snapshot_id.clone()),
@@ -1270,16 +1353,36 @@ impl Workspace {
         self.save_evaluation(rec, &rows)
     }
 
+    /// Refuses an evaluation whose rows cannot be checked against what the model saw.
+    fn refuse_unverified(sources: &[String], allow: bool, subject: &str) -> Result<()> {
+        if allow {
+            return Ok(());
+        }
+        Err(RustpyError::new(
+            ErrorCode::LeakageDetected,
+            Phase::Evaluate,
+            format!(
+                "cannot verify that the evaluated rows are unseen by {subject}: the rows seen by {} cannot be matched with this data",
+                sources.join(", ")
+            ),
+        )
+        .expected("rows that can be matched by id column, by snapshot, or by content (the model's input columns + target)")
+        .actual("the source run, its snapshot or some of its input columns are not available here")
+        .next("evaluate inside the project that trained the model, keep the model's input columns in the data, or pass --allow-unverified-rows to accept a possibly optimistic estimate (recorded)"))
+    }
+
     /// Evaluates a bundle (its frozen transform and weights) on a split of the
     /// *current* data snapshot — e.g. old vs new model on the same new data. Rows
-    /// the bundle's source run trained or selected on are refused when they can be
-    /// matched (id column, or the same data version).
+    /// the bundle's source run trained or selected on are excluded (matched by id
+    /// column, snapshot position or row content); if they cannot be matched the
+    /// evaluation is refused unless `allow_unverified_rows`.
     pub fn evaluate_bundle(
         &self,
         bundle_dir: &Path,
         split: SplitName,
         req: &ConfigRequest,
         allow_test_reuse: bool,
+        allow_unverified_rows: bool,
     ) -> Result<EvaluationRecord> {
         let predictor = Predictor::load(bundle_dir, LoadOptions::cpu())?;
         let resolved = self.resolve(req)?;
@@ -1308,34 +1411,14 @@ impl Workspace {
             "bundle built from snapshot {} evaluated on snapshot {}",
             model_snapshot, p.snapshot.snapshot_id
         )];
-        // Rows the bundle's source run trained or selected on are excluded (when they
-        // can be matched), so an old model is never scored on its own training rows.
+        // Rows the bundle's source run trained or selected on are excluded, so an
+        // old model is never scored on its own training rows.
         let source_run = predictor.manifest().provenance.run_id.clone();
-        let verified = match self.load_run(&source_run) {
+        let subject = format!("bundle {} (run {source_run})", predictor.bundle_id());
+        let unverifiable = match self.load_run(&source_run) {
             Ok(run) => {
                 let exposure = self.run_exposure(&run, true);
-                let mut seen: std::collections::BTreeSet<usize> = Default::default();
-                let mut unverifiable = Vec::new();
-                for (src, keys) in &exposure {
-                    let Some(keys) = keys else {
-                        unverifiable.push(src.clone());
-                        continue;
-                    };
-                    let mut matched = false;
-                    for &r in &split_rows {
-                        match keys.contains_row(&p.snapshot, &p.table, r) {
-                            Some(true) => {
-                                seen.insert(r);
-                                matched = true;
-                            }
-                            Some(false) => matched = true,
-                            None => {}
-                        }
-                    }
-                    if !matched {
-                        unverifiable.push(src.clone());
-                    }
-                }
+                let (seen, unverifiable) = Self::seen_rows(&exposure, &p, &split_rows);
                 if !seen.is_empty() {
                     let before = split_rows.len();
                     split_rows.retain(|r| !seen.contains(r));
@@ -1343,7 +1426,7 @@ impl Workspace {
                         return Err(RustpyError::new(
                             ErrorCode::LeakageDetected,
                             Phase::Evaluate,
-                            format!("all {before} rows of this split were used to train or select bundle {}", predictor.bundle_id()),
+                            format!("all {before} rows of this split were used to train or select {subject}"),
                         )
                         .next("evaluate on data the bundle never saw (e.g. the test split, or new rows)"));
                     }
@@ -1353,35 +1436,42 @@ impl Workspace {
                         split_rows.len()
                     ));
                 }
-                if !unverifiable.is_empty() {
-                    notes.push(format!(
-                        "rows could not be matched with those seen by {} (add data.id_column): unseen rows not verified",
-                        unverifiable.join(", ")
-                    ));
-                }
-                unverifiable.is_empty()
+                unverifiable
             }
-            Err(_) => {
-                notes.push(format!(
-                    "source run {source_run} is not in this project: cannot verify that the evaluated rows are unseen by the bundle"
-                ));
-                false
-            }
+            Err(_) => vec![format!("run {source_run} (not in this project)")],
         };
-        let rows = RowKeys::of(&p.snapshot, &p.table, &split_rows);
-        let mut test_index = None;
+        let verified = unverifiable.is_empty();
+        if !verified {
+            Self::refuse_unverified(&unverifiable, allow_unverified_rows, &subject)?;
+            notes.push(format!(
+                "rows could not be matched with those seen by {} (allowed with --allow-unverified-rows): unseen rows not verified",
+                unverifiable.join(", ")
+            ));
+        }
+        let content = schema_content_columns(predictor.input_schema(), &out.target);
+        let rows = RowKeys::of(&p.snapshot, &p.table, &split_rows, &content);
+        let mut ledger = TestLedger::default();
         if split == SplitName::Test {
-            let (existing, idx, n) = self.check_test_reuse(&model_sha, &model_snapshot, &rows, allow_test_reuse)?;
-            if let Some(rec) = existing {
+            ledger = self.check_test_reuse(&model_sha, &model_snapshot, &rows, allow_test_reuse)?;
+            if let Some(rec) = ledger.existing.take() {
                 return Ok(rec);
             }
-            test_index = Some(idx);
-            notes.extend(n);
+            notes.append(&mut ledger.notes);
         }
         let names: Vec<&str> = predictor.input_schema().fields.iter().map(|f| f.name.as_str()).collect();
         let sub = p.table.take(&split_rows);
         let y = labels(&sub, t);
-        let pr = predictor.probabilities(&sub.select(&names)).map_err(|e| e.in_phase(Phase::Evaluate))?;
+        let inputs = sub.select(&names);
+        let pr = predictor.probabilities(&inputs).map_err(|e| e.in_phase(Phase::Evaluate))?;
+        for u in predictor.unseen_categories(&inputs) {
+            notes.push(format!(
+                "{} of {} rows have a `{}` value the bundle never saw (e.g. {}): encoded as all zeros",
+                u.rows,
+                split_rows.len(),
+                u.field,
+                u.examples.join(", ")
+            ));
+        }
         let mut protocol = self.protocol(&p, split);
         protocol.threshold = format!("{}", out.threshold);
         let rec = EvaluationRecord {
@@ -1393,7 +1483,8 @@ impl Workspace {
             },
             protocol,
             metrics: binary_metrics(&pr, &y, out.threshold),
-            test_use_index: test_index,
+            test_use_index: (split == SplitName::Test).then_some(ledger.index),
+            test_shared_with: ledger.shared_with,
             latency: None,
             model_sha256: Some(model_sha),
             model_snapshot_id: Some(model_snapshot),
@@ -1423,7 +1514,10 @@ impl Workspace {
         } else {
             run_ids.to_vec()
         };
-        let runs: Vec<RunRecord> = ids.iter().map(|id| self.load_run(id)).collect::<Result<_>>()?;
+        let runs: Vec<RunRecord> = ids
+            .iter()
+            .map(|id| self.load_run(id).map_err(|e| e.in_phase(Phase::Compare)))
+            .collect::<Result<_>>()?;
         // Use the selection settings the runs were trained with (profile/--set
         // included), not whatever rustpy.toml says now.
         let recorded: Vec<(String, ProjectConfig)> = runs
@@ -1468,7 +1562,14 @@ impl Workspace {
             threshold: format!("{}", r.threshold),
             metrics_version: METRICS_VERSION.to_string(),
         };
-        let reference = runs.iter().find(|r| r.status == RunStatus::Completed).map(protocol_of);
+        // The reference protocol is that of the newest completed run: on mixed data
+        // versions, models are ranked on the latest data, never on an older version
+        // just because its run was listed first.
+        let reference = runs
+            .iter()
+            .filter(|r| r.status == RunStatus::Completed)
+            .max_by_key(|r| id_number(&r.run_id))
+            .map(protocol_of);
         let mut rows = Vec::new();
         for r in runs {
             let proto = protocol_of(r);
@@ -1544,6 +1645,20 @@ impl Workspace {
         )];
         if rows.iter().any(|r| !r.comparable) {
             notes.push("rows marked not comparable are shown but excluded from the recommendation".into());
+        }
+        if let Some(refp) = &reference {
+            let older: Vec<&str> = rows
+                .iter()
+                .filter(|r| r.snapshot_id != refp.snapshot_id)
+                .map(|r| r.run_id.as_str())
+                .collect();
+            if !older.is_empty() {
+                notes.push(format!(
+                    "{} trained on another data version and cannot be ranked by validation scores of different data; to compare an old model with the new one on the same new rows: rustpy bundle build --run <old> (if needed), then rustpy evaluate --bundle bundles/<old> --split test and rustpy evaluate --run {} --split test",
+                    older.join(", "),
+                    recommended.as_deref().unwrap_or("<new>")
+                ));
+            }
         }
         Ok(Comparison {
             metric: metric.to_string(),

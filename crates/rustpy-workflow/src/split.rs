@@ -9,10 +9,16 @@ use rustpy_contracts::{ErrorCode, Phase, Result, RustpyError};
 use rustpy_runtime::{coerce_category, Table};
 
 use crate::data::TargetInfo;
+use crate::exposure::{content_columns, row_fingerprint};
 use crate::rng::SplitMix64;
 
-/// Version of the positional stratified split algorithm; part of the split id.
+/// Version of the positional stratified split algorithm (no longer produced; kept
+/// so older split manifests stay readable).
 pub const SPLIT_ALGORITHM: &str = "rustpy.split.v1";
+/// Stratified split without an id column: rows are ordered by a hash of their
+/// content (input columns + target), so a row keeps its split when data is
+/// appended or re-ordered, and identical rows always share a split.
+pub const SPLIT_ALGORITHM_CONTENT: &str = "rustpy.split.v3-content-hash";
 /// Version of the stable, key-hashed assignment (grouped splits, or any split with
 /// an id column): a row/group keeps its split when the data grows or is re-ordered.
 pub const SPLIT_ALGORITHM_STABLE: &str = "rustpy.split.v2-stable-hash";
@@ -73,12 +79,14 @@ fn refuse_time_split(cfg: &DataConfig) -> Result<()> {
     Ok(())
 }
 
-/// Computes the split manifest for a snapshot.
+/// Computes the split manifest for a snapshot. `content` names the columns that
+/// identify a row when there is no id column (feature columns + target).
 pub fn make_split(
     snapshot_id: &str,
     table: &Table,
     target: &TargetInfo,
     cfg: &DataConfig,
+    content: &[String],
 ) -> Result<SplitManifest> {
     refuse_time_split(cfg)?;
     if cfg.group_column.is_some() && cfg.split != SplitStrategy::Group {
@@ -99,16 +107,25 @@ pub fn make_split(
     let mut group_counts = None;
     let mut warnings = Vec::new();
     let id_column = cfg.id_column.as_deref().and_then(|c| table.column(c));
-    match (cfg.split, id_column) {
-        (SplitStrategy::Stratified, Some(ids)) => {
+    let content_cols = if id_column.is_none() { content_columns(table, content) } else { None };
+    let row_key = |i: usize| -> String {
+        match (id_column, &content_cols) {
+            (Some(ids), _) => key_text(ids.get(i)).unwrap_or_default(),
+            (None, Some(cols)) => format!("{:016x}", row_fingerprint(cols, i)),
+            (None, None) => i.to_string(),
+        }
+    };
+    match (cfg.split, id_column.is_some() || content_cols.is_some()) {
+        (SplitStrategy::Stratified, true) => {
             // Stratified and stable: within each class, rows are ordered by a hash of
-            // (seed, id) and cut at the configured fractions. Re-ordering the file never
+            // (seed, row key) and cut at the configured fractions. The row key is the
+            // id, or the row's content without one. Re-ordering the file never
             // changes the split; appending data moves at most a few rows near the cuts
             // (the row-level evaluation checks catch any row that moves).
             for class in [false, true] {
                 let mut idx: Vec<(f64, usize)> = (0..n)
                     .filter(|&i| y[i] == class)
-                    .map(|i| (stable_unit(cfg.seed, "row", &key_text(ids.get(i)).unwrap_or_default()), i))
+                    .map(|i| (stable_unit(cfg.seed, "row", &row_key(i)), i))
                     .collect();
                 idx.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
                 let label = if class { &target.positive_label } else { &target.negative_label };
@@ -119,6 +136,15 @@ pub fn make_split(
                     n_test = n_test.max(1);
                     n_valid = n_valid.max(1);
                 }
+                // Never cut between rows with the same key: identical rows share a split.
+                let extend = |mut cut: usize| {
+                    while cut > 0 && cut < nc && idx[cut].0 == idx[cut - 1].0 {
+                        cut += 1;
+                    }
+                    cut
+                };
+                n_test = extend(n_test);
+                n_valid = extend(n_test + n_valid).saturating_sub(n_test);
                 if n_test + n_valid >= nc {
                     return Err(degenerate(label, nc));
                 }
@@ -130,7 +156,7 @@ pub fn make_split(
                 }
             }
         }
-        (SplitStrategy::Stratified, None) => {
+        (SplitStrategy::Stratified, false) => {
             for class in [false, true] {
                 let mut idx: Vec<usize> = (0..n).filter(|&i| y[i] == class).collect();
                 let label = if class { &target.positive_label } else { &target.negative_label };
@@ -260,10 +286,12 @@ pub fn make_split(
         }
     }
     let assignment = String::from_utf8(assignment).expect("ascii digits");
-    let algorithm = if cfg.split == SplitStrategy::Group || id_column.is_some() {
-        SPLIT_ALGORITHM_STABLE
+    let (algorithm, keyed_by) = if cfg.split == SplitStrategy::Group || id_column.is_some() {
+        (SPLIT_ALGORITHM_STABLE, Vec::new())
+    } else if content_cols.is_some() {
+        (SPLIT_ALGORITHM_CONTENT, content.to_vec())
     } else {
-        SPLIT_ALGORITHM
+        (SPLIT_ALGORITHM, Vec::new())
     };
     let identity = canonical_hash(&(
         snapshot_id,
@@ -275,6 +303,7 @@ pub fn make_split(
         &cfg.group_column,
         &cfg.id_column,
         algorithm,
+        keyed_by,
     ));
     let manifest = SplitManifest {
         split_id: format!("sp-{}", short(&identity)),
@@ -352,15 +381,49 @@ mod tests {
     fn stratified_is_deterministic_and_balanced() {
         let (t, info) = table(1000);
         let cfg = DataConfig::default();
-        let a = make_split("s-1", &t, &info, &cfg).unwrap();
-        let b = make_split("s-1", &t, &info, &cfg).unwrap();
+        let a = make_split("s-1", &t, &info, &cfg, &[]).unwrap();
+        let b = make_split("s-1", &t, &info, &cfg, &[]).unwrap();
         assert_eq!(a, b);
         assert_eq!(a.train.rows + a.valid.rows + a.test.rows, 1000);
         assert_eq!(a.test.positives, 30);
         assert_eq!(a.valid.positives, 30);
         let mut other = cfg.clone();
         other.seed = 43;
-        assert_ne!(make_split("s-1", &t, &info, &other).unwrap().assignment, a.assignment);
+        assert_ne!(make_split("s-1", &t, &info, &other, &[]).unwrap().assignment, a.assignment);
+    }
+
+    #[test]
+    fn content_keyed_split_is_stable_under_append_and_reorder() {
+        let build = |xs: &[i64]| {
+            let y: Vec<Option<i64>> = xs.iter().map(|x| Some(i64::from(x % 5 == 0))).collect();
+            Table::new(vec![
+                Column { name: "x".into(), data: ColumnData::Int(xs.iter().map(|&x| Some(x / 2)).collect()) },
+                Column { name: "y".into(), data: ColumnData::Int(y) },
+            ])
+            .unwrap()
+        };
+        let (_, info) = table(10);
+        let cfg = DataConfig::default();
+        let cols = vec!["x".to_string(), "y".to_string()];
+        let base: Vec<i64> = (0..2000).collect();
+        let t1 = build(&base);
+        let s1 = make_split("s-1", &t1, &info, &cfg, &cols).unwrap();
+        assert!(s1.algorithm.contains("content"), "{}", s1.algorithm);
+        // Identical rows (x/2 repeats each value twice when y agrees) share a split.
+        let a1 = s1.assignment.as_bytes();
+        for i in (0..2000).step_by(2) {
+            if (i % 5 == 0) == ((i + 1) % 5 == 0) {
+                assert_eq!(a1[i], a1[i + 1], "rows {i} and {} are identical", i + 1);
+            }
+        }
+        // Reversed and extended by 25%: almost every original row keeps its split.
+        let mut grown: Vec<i64> = (0..2500).collect();
+        grown.reverse();
+        let t2 = build(&grown);
+        let s2 = make_split("s-2", &t2, &info, &cfg, &cols).unwrap();
+        let a2 = s2.assignment.as_bytes();
+        let moved = (0..2000).filter(|&x| a1[x] != a2[2499 - x]).count();
+        assert!(moved < 60, "{moved} of 2000 rows changed split");
     }
 
     #[test]
@@ -369,7 +432,7 @@ mod tests {
         let mut cfg = DataConfig::default();
         cfg.split = SplitStrategy::Group;
         cfg.group_column = Some("g".into());
-        let s = make_split("s-1", &t, &info, &cfg).unwrap();
+        let s = make_split("s-1", &t, &info, &cfg, &[]).unwrap();
         check_group_leakage(&t, &s).unwrap();
         assert!(s.test.groups.unwrap() > 0);
     }
@@ -379,9 +442,9 @@ mod tests {
         let (t, info) = table(100);
         let mut cfg = DataConfig::default();
         cfg.time_column = Some("ts".into());
-        assert_eq!(make_split("s", &t, &info, &cfg).unwrap_err().code, ErrorCode::SplitUnsupported);
+        assert_eq!(make_split("s", &t, &info, &cfg, &[]).unwrap_err().code, ErrorCode::SplitUnsupported);
         let mut cfg = DataConfig::default();
         cfg.group_column = Some("g".into());
-        assert_eq!(make_split("s", &t, &info, &cfg).unwrap_err().code, ErrorCode::LeakageDetected);
+        assert_eq!(make_split("s", &t, &info, &cfg, &[]).unwrap_err().code, ErrorCode::LeakageDetected);
     }
 }

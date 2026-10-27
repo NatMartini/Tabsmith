@@ -144,18 +144,18 @@ fn test_discipline_survives_resplits_and_warm_starts() {
         "data.exclude=[\"line\", \"shift\", \"supplier\", \"device_type\", \"firmware\", \"maintenance_flag\"]";
     let req = quick(&[NUMERIC_ONLY]);
     let a = ws.run(&req, &linear(), &mut |_| {}).unwrap().runs.remove(0);
-    let ev = ws.evaluate_run(&a.run_id, SplitName::Test, false).unwrap();
+    let ev = ws.evaluate_run(&a.run_id, SplitName::Test, false, false).unwrap();
     assert_eq!(ev.test_use_index, Some(1));
     // A run and its own bundle are the same model: idempotent, not "another model".
     let b = ws.build_bundle(&a.run_id, &BundleOptions::default()).unwrap();
     let same = ws
-        .evaluate_bundle(&tmp.path().join(&b.path), SplitName::Test, &req, false)
+        .evaluate_bundle(&tmp.path().join(&b.path), SplitName::Test, &req, false, false)
         .unwrap();
     assert_eq!(same.evaluation_id, ev.evaluation_id);
     // New seed => new split id; the overlapping test rows are still detected.
     let reseeded = quick(&[NUMERIC_ONLY, "data.seed=99"]);
     let c = ws.run(&reseeded, &linear(), &mut |_| {}).unwrap().runs.remove(0);
-    let e = ws.evaluate_run(&c.run_id, SplitName::Test, false).unwrap_err();
+    let e = ws.evaluate_run(&c.run_id, SplitName::Test, false, false).unwrap_err();
     assert!(
         matches!(e.code, ErrorCode::TestSetReuse | ErrorCode::LeakageDetected),
         "{e}"
@@ -166,7 +166,7 @@ fn test_discipline_survives_resplits_and_warm_starts() {
         .resume(&a.run_id, true, &reseeded, &RunControl::default(), &mut |_| {})
         .unwrap();
     assert_eq!(w.lineage.as_ref().unwrap().level, ResumeLevel::WarmStart);
-    let e = ws.evaluate_run(&w.run_id, SplitName::Test, true).unwrap_err();
+    let e = ws.evaluate_run(&w.run_id, SplitName::Test, true, false).unwrap_err();
     assert_eq!(e.code, ErrorCode::LeakageDetected, "{e}");
 }
 
@@ -178,7 +178,7 @@ fn id_based_splits_are_stable_across_data_versions() {
     let ws = project(tmp.path(), 1200, true);
     let req = quick(&[]);
     let a = ws.run(&req, &linear(), &mut |_| {}).unwrap().runs.remove(0);
-    ws.evaluate_run(&a.run_id, SplitName::Test, false).unwrap();
+    ws.evaluate_run(&a.run_id, SplitName::Test, false, false).unwrap();
     let b = ws.build_bundle(&a.run_id, &BundleOptions::default()).unwrap();
     // Append rows: same first 1200 rows (same seed), then 600 new ones.
     let old = fs::read_to_string(tmp.path().join("data/defects.csv")).unwrap();
@@ -187,13 +187,13 @@ fn id_based_splits_are_stable_across_data_versions() {
     // Test split: with stable id/group splits the old test rows are still test rows,
     // never rows the old bundle trained on.
     let r = ws
-        .evaluate_bundle(&tmp.path().join(&b.path), SplitName::Test, &req, false)
+        .evaluate_bundle(&tmp.path().join(&b.path), SplitName::Test, &req, false, false)
         .unwrap();
     assert_eq!(r.unseen_rows_verified, Some(true), "{:?}", r.notes);
     assert!(r.metrics.n > 0);
     // Validation split: rows the bundle used for early stopping are excluded, not scored.
     let v = ws
-        .evaluate_bundle(&tmp.path().join(&b.path), SplitName::Valid, &req, false)
+        .evaluate_bundle(&tmp.path().join(&b.path), SplitName::Valid, &req, false, false)
         .unwrap();
     assert!(v.notes.iter().any(|n| n.contains("are excluded")), "{:?}", v.notes);
 }
@@ -469,4 +469,100 @@ fn target_cannot_be_excluded_or_typed() {
         let e = ws.plan(&quick(&[o])).unwrap_err();
         assert_eq!(e.code, ErrorCode::ConfigInvalid, "{o}: {e}");
     }
+}
+
+/// walkthrough-1: without an id column, rows are matched by content, so an old
+/// bundle evaluated on appended data never scores rows it trained or selected on,
+/// and an evaluation whose rows cannot be matched is refused unless allowed.
+#[test]
+fn bundle_evaluation_without_id_matches_rows_by_content() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    init_project(dir, "tabular-binary", false).unwrap();
+    write_defects_csv(&dir.join("data/defects.csv"), 1200, 11, SampleVariant::Base).unwrap();
+    let ws = Workspace::open(dir).unwrap();
+    ws.bind_data(&BindRequest {
+        file: dir.join("data/defects.csv"),
+        target: "defect".into(),
+        positive: Some("1".into()),
+        exclude: vec!["device_id".into(), "unit_id".into()],
+        ..Default::default()
+    })
+    .unwrap();
+    let req = quick(&[]);
+    let p = ws.prepare(ws.resolve(&req).unwrap(), false).unwrap();
+    assert!(p.split.algorithm.contains("content"), "{}", p.split.algorithm);
+    let a = ws.run(&req, &linear(), &mut |_| {}).unwrap().runs.remove(0);
+    ws.evaluate_run(&a.run_id, SplitName::Test, false, false).unwrap();
+    let b = ws.build_bundle(&a.run_id, &BundleOptions::default()).unwrap();
+    let old_p = ws.prepare_for_run(&a).unwrap();
+    let old_rows = old_p.split.rows(SplitName::Train).len() + old_p.split.rows(SplitName::Valid).len();
+    // Append 600 rows and shuffle the file: positions no longer identify rows.
+    let old = fs::read_to_string(dir.join("data/defects.csv")).unwrap();
+    let more = rustpy_workflow::sample::defects_csv(600, 12, SampleVariant::Shifted);
+    let mut lines: Vec<&str> = old.lines().skip(1).chain(more.lines().skip(1)).collect();
+    lines.reverse();
+    fs::write(dir.join("data/defects.csv"), format!("{}\n{}\n", old.lines().next().unwrap(), lines.join("\n"))).unwrap();
+    let bundle_dir = dir.join(&b.path);
+    // Validation rows of the old run are recognised by content and excluded.
+    let v = ws.evaluate_bundle(&bundle_dir, SplitName::Valid, &req, false, false).unwrap();
+    assert_eq!(v.unseen_rows_verified, Some(true), "{:?}", v.notes);
+    assert!(v.notes.iter().any(|n| n.contains("are excluded")), "{:?}", v.notes);
+    // Test split: verified, and none of the evaluated rows is an old training/validation row.
+    let t = ws.evaluate_bundle(&bundle_dir, SplitName::Test, &req, false, false).unwrap();
+    assert_eq!(t.unseen_rows_verified, Some(true), "{:?}", t.notes);
+    let new_p = ws.prepare(ws.resolve(&req).unwrap(), false).unwrap();
+    let exposure = ws.run_exposure(&a, true);
+    let keys = exposure[0].1.as_ref().unwrap();
+    let seen = keys.matcher(&new_p.snapshot, &new_p.table).unwrap();
+    let new_test = new_p.split.rows(SplitName::Test);
+    let leaked = new_test.iter().filter(|&&r| seen(r)).count();
+    assert_eq!(t.metrics.n as usize + leaked, new_test.len(), "excluded rows = seen rows");
+    assert!(leaked < old_rows / 20, "content-keyed split kept almost every old row in its split ({leaked} moved)");
+
+    // A bundle whose source run is unknown here cannot be checked: refused unless allowed.
+    let other = tempfile::tempdir().unwrap();
+    init_project(other.path(), "tabular-binary", false).unwrap();
+    fs::copy(dir.join("data/defects.csv"), other.path().join("data/defects.csv")).unwrap();
+    let ws2 = Workspace::open(other.path()).unwrap();
+    ws2.bind_data(&BindRequest {
+        file: other.path().join("data/defects.csv"),
+        target: "defect".into(),
+        positive: Some("1".into()),
+        exclude: vec!["device_id".into(), "unit_id".into()],
+        ..Default::default()
+    })
+    .unwrap();
+    let e = ws2.evaluate_bundle(&bundle_dir, SplitName::Test, &req, false, false).unwrap_err();
+    assert_eq!(e.code, ErrorCode::LeakageDetected, "{e}");
+    assert!(e.next_action.as_deref().unwrap_or("").contains("--allow-unverified-rows"));
+    let ok = ws2.evaluate_bundle(&bundle_dir, SplitName::Test, &req, false, true).unwrap();
+    assert_eq!(ok.unseen_rows_verified, None);
+    assert!(ok.notes.iter().any(|n| n.contains("not verified")), "{:?}", ok.notes);
+}
+
+/// walkthrough-5/4: the test ledger records rows shared with a model of another
+/// data version, and `compare` ranks on the newest data version.
+#[test]
+fn shared_hold_out_and_newest_reference() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ws = project(tmp.path(), 1200, true);
+    let req = quick(&[]);
+    let a = ws.run(&req, &linear(), &mut |_| {}).unwrap().runs.remove(0);
+    let b = ws.build_bundle(&a.run_id, &BundleOptions { allow_unevaluated: true, ..Default::default() }).unwrap();
+    let old = fs::read_to_string(tmp.path().join("data/defects.csv")).unwrap();
+    let more = rustpy_workflow::sample::defects_csv(600, 12, SampleVariant::Shifted);
+    fs::write(tmp.path().join("data/defects.csv"), format!("{old}{}", more.split_once('\n').unwrap().1)).unwrap();
+    let n = ws.run(&req, &linear(), &mut |_| {}).unwrap().runs.remove(0);
+    let new_eval = ws.evaluate_run(&n.run_id, SplitName::Test, false, false).unwrap();
+    assert_eq!(new_eval.test_use_index, Some(1));
+    let old_eval = ws.evaluate_bundle(&tmp.path().join(&b.path), SplitName::Test, &req, false, false).unwrap();
+    assert_eq!(old_eval.test_use_index, Some(1));
+    assert_eq!(old_eval.test_shared_with.len(), 1, "{:?}", old_eval.notes);
+    assert!(old_eval.test_shared_with[0].contains(&n.run_id));
+    assert!(old_eval.notes.iter().any(|x| x.contains("another data version")), "{:?}", old_eval.notes);
+    // Listing the old run first must not make it the reference.
+    let cmp = ws.compare(&[a.run_id.clone(), n.run_id.clone()]).unwrap();
+    assert_eq!(cmp.recommended.as_deref(), Some(n.run_id.as_str()));
+    assert!(cmp.notes.iter().any(|x| x.contains("evaluate --bundle")), "{:?}", cmp.notes);
 }

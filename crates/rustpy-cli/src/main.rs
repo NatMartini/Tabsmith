@@ -97,7 +97,8 @@ pub enum Command {
     Status { run: String },
     /// Compare runs on the validation split (default: the latest `rustpy run`).
     Compare {
-        #[arg(long, num_args = 1..)]
+        /// Runs to compare (space- or comma-separated); default: the latest `rustpy run`.
+        #[arg(long, num_args = 1.., value_delimiter = ',')]
         runs: Vec<String>,
     },
     /// Continue an interrupted/cancelled run exactly (R2), or warm-start a new one.
@@ -125,6 +126,10 @@ pub enum Command {
         /// Allow evaluating another model on already-used test rows (recorded as reuse).
         #[arg(long)]
         allow_test_reuse: bool,
+        /// Evaluate even when the rows the model saw cannot be matched with this data
+        /// (recorded; the estimate may be optimistic).
+        #[arg(long)]
+        allow_unverified_rows: bool,
         #[command(flatten)]
         config: ConfigArgs,
     },
@@ -140,6 +145,11 @@ pub enum Command {
         /// Output file (.csv or .jsonl); default: CSV on stdout.
         #[arg(long)]
         output: Option<std::path::PathBuf>,
+        /// Input columns copied verbatim to the output to identify rows
+        /// (comma-separated, e.g. --keep customer_id,month). The bundle's id
+        /// column is always copied when the input has it.
+        #[arg(long, value_delimiter = ',')]
+        keep: Vec<String>,
     },
     /// Write a static HTML + JSON report of the project to .rustpy/reports/.
     Report,
@@ -154,7 +164,7 @@ pub enum DataCommand {
         file: std::path::PathBuf,
         #[arg(long)]
         target: String,
-        /// Target value that means "positive" (inferred for 0/1 and false/true labels).
+        /// Target value that means "positive" (inferred for 0/1, false/true and no/yes labels).
         #[arg(long)]
         positive: Option<String>,
         /// stratified (independent rows) or group (repeated entities).
@@ -183,9 +193,9 @@ pub enum BundleCommand {
     Build {
         #[arg(long)]
         run: String,
-        /// Target profile (only cpu in this release).
-        #[arg(long, default_value = "cpu")]
-        profile: String,
+        /// Device the bundle is built for (only cpu in this release).
+        #[arg(long, alias = "profile", default_value = "cpu")]
+        device: String,
         #[arg(long)]
         out: Option<std::path::PathBuf>,
         #[arg(long)]

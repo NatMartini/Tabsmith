@@ -116,11 +116,16 @@ pub struct EvaluationRecord {
     pub subject: EvaluationSubject,
     pub protocol: ComparisonProtocol,
     pub metrics: BinaryMetrics,
-    /// For test-split evaluations: 1 for the first use of this test split in the
-    /// project, >1 when the same test rows were used before (results are then
-    /// no longer an unbiased estimate).
+    /// For test-split evaluations: 1 for the first model of this data version
+    /// evaluated on these test rows, >1 when competing models of the same data
+    /// version already used them (results are then no longer an unbiased estimate).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub test_use_index: Option<u32>,
+    /// Earlier test evaluations of models trained on *another* data version that
+    /// used some of the same rows (the shared hold-out of an old-vs-new comparison),
+    /// as `subject (evaluation id)`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub test_shared_with: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub latency: Option<LatencyStats>,
     /// SHA-256 of the evaluated weights (`model.safetensors`); a run and its bundle share it.
@@ -131,8 +136,8 @@ pub struct EvaluationRecord {
     pub model_snapshot_id: Option<String>,
     /// `Some(true)`: the evaluated rows were verified to be unseen by the model
     /// (training rows, and validation rows for a test evaluation, of the model and of
-    /// runs it was warm-started from). `None`: rows could not be matched (no id column
-    /// across data versions), so this could not be verified.
+    /// runs it was warm-started from). `None`: rows could not be matched, so this
+    /// could not be verified (such evaluations need `allow_unverified_rows`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unseen_rows_verified: Option<bool>,
     #[serde(default)]
