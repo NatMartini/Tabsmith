@@ -308,7 +308,34 @@ pub fn weighted_bce_from_logits(logits: &[f32], y: &[bool], w_neg: f32, w_pos: f
     s / y.len().max(1) as f64
 }
 
-fn adam() -> AdamConfig {
+/// Training objective for one minibatch: class-weighted mean BCE-with-logits plus
+/// `l2 / 2 * sum(W^2)` over weights (biases excluded). Returns `(objective, data_loss)`.
+pub fn batch_objective(
+    model: &DenseNet,
+    xb: Vec<f32>,
+    yb: Vec<f32>,
+    wb: Vec<f32>,
+    d: usize,
+    l2: f32,
+    device: &Device,
+) -> (Tensor<1>, Tensor<1>) {
+    let b = yb.len();
+    let x = Tensor::<2>::from_data(TensorData::new(xb, [b, d]), device);
+    let y = Tensor::<1>::from_data(TensorData::new(yb, [b]), device);
+    let w = Tensor::<1>::from_data(TensorData::new(wb, [b]), device);
+    let z: Tensor<1> = model.forward(x).reshape([b]);
+    // BCE with logits: (1 - y) * z - log_sigmoid(z)
+    let per_row = y.neg().add_scalar(1.0) * z.clone() - log_sigmoid(z);
+    let data_loss = (per_row * w).mean();
+    let loss = if l2 > 0.0 {
+        data_loss.clone() + model.weight_sq_sum().mul_scalar(l2 / 2.0)
+    } else {
+        data_loss.clone()
+    };
+    (loss, data_loss)
+}
+
+pub fn adam() -> AdamConfig {
     AdamConfig::new().with_beta_1(0.9).with_beta_2(0.999).with_epsilon(1e-8)
 }
 
@@ -362,18 +389,7 @@ pub fn train(
                 yb.push(if t { 1f32 } else { 0f32 });
                 wb.push(if t { w_pos } else { w_neg });
             }
-            let x = Tensor::<2>::from_data(TensorData::new(xb, [b, d]), &device);
-            let y = Tensor::<1>::from_data(TensorData::new(yb, [b]), &device);
-            let w = Tensor::<1>::from_data(TensorData::new(wb, [b]), &device);
-            let z: Tensor<1> = model.forward(x).reshape([b]);
-            // BCE with logits: (1 - y) * z - log_sigmoid(z)
-            let per_row = y.neg().add_scalar(1.0) * z.clone() - log_sigmoid(z);
-            let data_loss = (per_row * w).mean();
-            let loss = if l2 > 0.0 {
-                data_loss.clone() + model.weight_sq_sum().mul_scalar(l2 / 2.0)
-            } else {
-                data_loss.clone()
-            };
+            let (loss, data_loss) = batch_objective(&model, xb, yb, wb, d, l2, &device);
             let loss_value = data_loss.into_scalar::<f32>();
             if !loss_value.is_finite() {
                 let kept = latest_checkpoint(&inputs.checkpoint_dir).map(|p| p.display().to_string());
@@ -621,4 +637,157 @@ pub fn weights_hash(model: &DenseModel) -> String {
         .flat_map(|l| [l.weight.iter().map(|v| v.to_bits()).collect(), l.bias.iter().map(|v| v.to_bits()).collect()])
         .collect();
     canonical_hash(&bits)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rustpy_runtime::model::DenseModel;
+
+    fn data(n: usize, d: usize) -> (Vec<f32>, Vec<f32>, Vec<f32>) {
+        let mut rng = SplitMix64::new(11);
+        let x: Vec<f32> = (0..n * d).map(|_| rng.normal() as f32).collect();
+        let y: Vec<f32> = (0..n).map(|i| if x[i * d] + 0.5 * x[i * d + 1] > 0.2 { 1.0 } else { 0.0 }).collect();
+        let w: Vec<f32> = y.iter().map(|&t| if t > 0.5 { 1.7 } else { 0.6 }).collect();
+        (x, y, w)
+    }
+
+    /// Independent f64 objective from exported weights.
+    fn objective_f64(m: &DenseModel, x: &[f32], y: &[f32], w: &[f32], d: usize, l2: f64) -> f64 {
+        let n = y.len();
+        let mut total = 0.0;
+        for i in 0..n {
+            let mut h: Vec<f64> = x[i * d..(i + 1) * d].iter().map(|&v| f64::from(v)).collect();
+            for l in &m.layers {
+                let mut out = vec![0.0; l.out_dim];
+                for o in 0..l.out_dim {
+                    let mut acc = f64::from(l.bias[o]);
+                    for k in 0..l.in_dim {
+                        acc += f64::from(l.weight[o * l.in_dim + k]) * h[k];
+                    }
+                    out[o] = if l.activation == rustpy_contracts::model::Activation::Relu { acc.max(0.0) } else { acc };
+                }
+                h = out;
+            }
+            let z = h[0];
+            let t = f64::from(y[i]);
+            total += f64::from(w[i]) * (z.max(0.0) - t * z + (-z.abs()).exp().ln_1p());
+        }
+        let reg: f64 = m.layers.iter().flat_map(|l| l.weight.iter()).map(|&v| f64::from(v) * f64::from(v)).sum();
+        total / n as f64 + 0.5 * l2 * reg
+    }
+
+    #[allow(deprecated)]
+    fn grads_of(model: &DenseNet, x: &[f32], y: &[f32], w: &[f32], d: usize, l2: f32) -> (f64, Vec<Vec<f32>>) {
+        let device = Device::ndarray().autodiff();
+        let (loss, _) = batch_objective(model, x.to_vec(), y.to_vec(), w.to_vec(), d, l2, &device);
+        let value = f64::from(loss.clone().into_scalar::<f32>());
+        let grads = loss.backward();
+        let mut out = Vec::new();
+        for l in &model.layers {
+            out.push(l.weight.val().grad(&grads).unwrap().into_data().to_vec::<f32>().unwrap());
+            out.push(l.bias.as_ref().unwrap().val().grad(&grads).unwrap().into_data().to_vec::<f32>().unwrap());
+        }
+        (value, out)
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn loss_and_gradients_match_independent_f64_reference() {
+        let (n, d, l2) = (64, 5, 0.01f32);
+        let (x, y, w) = data(n, d);
+        let device = Device::ndarray().autodiff();
+        for hidden in [vec![], vec![7]] {
+            let family = if hidden.is_empty() { "linear" } else { "small-mlp" };
+            let config = ModelConfig::dense(family, d, &hidden);
+            // Non-zero weights for the linear case too, so the L2 term matters.
+            let mut model = DenseNet::init(&config, 3, &device);
+            if hidden.is_empty() {
+                let exported = DenseModel::new(
+                    config.clone(),
+                    vec![rustpy_runtime::model::DenseLayer {
+                        in_dim: d,
+                        out_dim: 1,
+                        weight: vec![0.3, -0.2, 0.1, 0.05, -0.4],
+                        bias: vec![0.1],
+                        activation: rustpy_contracts::model::Activation::Identity,
+                    }],
+                )
+                .unwrap();
+                model = DenseNet::from_dense(&exported, &device);
+            }
+            let exported = model.export(&config).unwrap();
+            let (burn_loss, burn_grads) = grads_of(&model, &x, &y, &w, d, l2);
+            let ref_loss = objective_f64(&exported, &x, &y, &w, d, f64::from(l2));
+            assert!((burn_loss - ref_loss).abs() < 1e-5 * ref_loss.max(1.0), "{family}: loss {burn_loss} vs {ref_loss}");
+            // Central finite differences of the f64 objective, per parameter.
+            let h = 1e-4f32;
+            for (li, layer) in exported.layers.iter().enumerate() {
+                for (pi, is_bias) in [(0usize, false), (1usize, true)] {
+                    let n_params = if is_bias { layer.out_dim } else { layer.in_dim * layer.out_dim };
+                    let burn_g = &burn_grads[li * 2 + pi];
+                    for k in 0..n_params {
+                        let mut plus = exported.clone();
+                        let mut minus = exported.clone();
+                        // Runtime layout is [out, in]; Burn's is [in, out].
+                        let (idx_rt, idx_burn) = if is_bias {
+                            (k, k)
+                        } else {
+                            let (o, i) = (k / layer.in_dim, k % layer.in_dim);
+                            (k, i * layer.out_dim + o)
+                        };
+                        let step = if is_bias {
+                            plus.layers[li].bias[idx_rt] += h;
+                            minus.layers[li].bias[idx_rt] -= h;
+                            f64::from(plus.layers[li].bias[idx_rt]) - f64::from(minus.layers[li].bias[idx_rt])
+                        } else {
+                            plus.layers[li].weight[idx_rt] += h;
+                            minus.layers[li].weight[idx_rt] -= h;
+                            f64::from(plus.layers[li].weight[idx_rt]) - f64::from(minus.layers[li].weight[idx_rt])
+                        };
+                        // Divide by the exact (f32-rounded) step.
+                        let fd = (objective_f64(&plus, &x, &y, &w, d, f64::from(l2))
+                            - objective_f64(&minus, &x, &y, &w, d, f64::from(l2)))
+                            / step;
+                        let g = f64::from(burn_g[idx_burn]);
+                        assert!(
+                            (g - fd).abs() <= 2e-3 * fd.abs().max(1e-2),
+                            "{family} layer {li} {} param {k}: autodiff {g} vs finite difference {fd}",
+                            if is_bias { "bias" } else { "weight" }
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn first_adam_step_matches_the_update_rule() {
+        let (n, d, l2) = (32, 4, 0.0f32);
+        let (x, y, w) = data(n, d);
+        let device = Device::ndarray().autodiff();
+        let config = ModelConfig::dense("small-mlp", d, &[3]);
+        let model = DenseNet::init(&config, 5, &device);
+        let before = model.export(&config).unwrap();
+        let (_, g) = grads_of(&model, &x, &y, &w, d, l2);
+        let (loss, _) = batch_objective(&model, x.clone(), y.clone(), w.clone(), d, l2, &device);
+        let grads = GradientsParams::from_grads(loss.backward(), &model);
+        let lr = 0.01;
+        let after = adam().init().step(lr, model, grads).export(&config).unwrap();
+        // Adam, first step: m_hat = g, v_hat = g^2  =>  delta = -lr * g / (|g| + eps)
+        for (li, (b, a)) in before.layers.iter().zip(&after.layers).enumerate() {
+            for o in 0..b.out_dim {
+                for i in 0..b.in_dim {
+                    let gk = f64::from(g[li * 2][i * b.out_dim + o]);
+                    let expected = f64::from(b.weight[o * b.in_dim + i]) - lr * gk / (gk.abs() + 1e-8);
+                    let got = f64::from(a.weight[o * b.in_dim + i]);
+                    assert!((got - expected).abs() < 1e-6, "layer {li} w[{o},{i}]: {got} vs {expected}");
+                }
+                let gb = f64::from(g[li * 2 + 1][o]);
+                let expected = f64::from(b.bias[o]) - lr * gb / (gb.abs() + 1e-8);
+                assert!((f64::from(a.bias[o]) - expected).abs() < 1e-6);
+            }
+        }
+    }
 }

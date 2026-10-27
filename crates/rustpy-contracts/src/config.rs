@@ -332,12 +332,14 @@ impl CandidateTrainConfig {
     pub fn linear() -> Self {
         Self {
             hidden: Vec::new(),
-            epochs: 40,
+            // Chosen against the scikit-learn lbfgs optimum of the same objective
+            // (see reports/evidence/reference): objective within ~0.2%.
+            epochs: 60,
             batch_size: 256,
-            learning_rate: 0.05,
+            learning_rate: 0.02,
             l2: 1e-4,
             class_weight: ClassWeight::Balanced,
-            early_stopping_patience: 6,
+            early_stopping_patience: 10,
             checkpoint_every_epochs: 1,
         }
     }
