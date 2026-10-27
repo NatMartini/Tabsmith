@@ -64,8 +64,8 @@ epochs = 12
 | `selection.max_p95_latency_us` | `0` (off) | Single-row latency constraint, measured on this machine |
 | `selection.max_model_kib` | `0` (off) | Model size constraint |
 | `train.seed` | `7` | Weight initialisation and minibatch order |
-| `train.linear.*` | epochs 60, batch 256, lr 0.02, l2 1e-4, patience 10 | Logistic-regression baseline (Adam) |
-| `train.small-mlp.*` | hidden [32, 16], epochs 60, batch 128, lr 0.005, l2 1e-4, patience 8 | Small MLP (ReLU, Adam) |
+| `train.linear.*` | `epochs` 60, `batch_size` 256, `learning_rate` 0.02, `l2` 1e-4, `early_stopping_patience` 10, `hidden` [] | Logistic-regression baseline (Adam); `hidden` must stay empty |
+| `train.small-mlp.*` | `hidden` [32, 16], `epochs` 60, `batch_size` 128, `learning_rate` 0.005, `l2` 1e-4, `early_stopping_patience` 8 | Small MLP (ReLU, Adam) |
 | `train.<c>.class_weight` | `"balanced"` | `balanced` (n / (2·n_class)) or `none` |
 | `train.<c>.early_stopping_patience` | see above | Epochs without validation-loss improvement (0 = off) |
 | `train.<c>.checkpoint_every_epochs` | `1` | Checkpoint at most every N epochs |

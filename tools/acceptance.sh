@@ -197,7 +197,9 @@ fail_step f03-missing-column 3 E_SCHEMA_MISSING_COLUMN sh -c "echo '{\"line\": \
 fail_step f04-cardinality-budget 3 E_CARDINALITY_BUDGET "$BIN" --json plan --set preprocess.max_categories=3
 fail_step f05-device-unavailable 5 E_DEVICE_UNSUPPORTED "$BIN" --json run --set 'execution.candidate_device="cuda"'
 fail_step f06-memory-budget 5 E_RESOURCE_BUDGET_EXCEEDED "$BIN" --json run --set execution.max_memory_mb=1
-fail_step f07-test-reuse 7 E_TEST_SET_REUSE "$BIN" --json evaluate --run run-001 --split test
+# The other first-iteration candidate saw the same snapshot as $BEST, whose test result is already known.
+OTHER=$([ "$BEST" = run-001 ] && echo run-002 || echo run-001)
+fail_step f07-test-reuse 7 E_TEST_SET_REUSE "$BIN" --json evaluate --run "$OTHER" --split test
 fail_step f08-corrupt-bundle 4 E_BUNDLE_CORRUPT "$BIN" --json bundle check "$WORK/broken"
 rm -f "$WORK/broken/transform.json"
 fail_step f09-incomplete-bundle 4 E_BUNDLE_MISSING_FILE "$BIN" --json bundle check "$WORK/broken"
@@ -218,6 +220,29 @@ if [ -n "$PY" ]; then
     step "71-sklearn-$r" 0 "$REPO" "$PY" -I tools/reference/sklearn_reference.py "$WORK/ref-$r" "$EVID/sklearn_$r.json"
   done
 fi
+
+echo "== wrapper overhead (release example; each mode in its own process, 5 interleaved repetitions)"
+step 80-overhead-build 0 "$REPO" cargo build --release --quiet -p rustpy-workflow --example overhead
+OH="$REPO/target/release/examples/overhead"
+for i in 1 2 3 4 5; do
+  for m in direct rustpy rustpy-final-checkpoint-only; do
+    "$OH" "$WORK/det-1" "$m" 30 >>"$EVID/overhead.jsonl" 2>>"$EVID/logs/overhead.err"
+  done
+done
+python3 - "$EVID/overhead.jsonl" >"$EVID/overhead_summary.json" <<'PY2'
+import json, statistics, sys
+rows = [json.loads(l) for l in open(sys.argv[1])]
+med = lambda m, k: statistics.median(r[k] for r in rows if r["mode"] == m)
+modes = sorted({r["mode"] for r in rows})
+out = {m: {"median_seconds": med(m, "train_seconds"), "median_peak_rss_mb": med(m, "peak_rss_mb"),
+           "runs": sum(r["mode"] == m for r in rows)} for m in modes}
+base = out["direct"]["median_seconds"]
+for m in modes:
+    out[m]["time_vs_direct"] = out[m]["median_seconds"] / base - 1
+out["steps"] = rows[0]["steps"]; out["train_rows"] = rows[0]["train_rows"]; out["features"] = rows[0]["features"]
+print(json.dumps(out, indent=2))
+PY2
+cat "$EVID/overhead_summary.json"
 
 echo
 echo "steps not matching the expected exit code: $FAILED"

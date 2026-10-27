@@ -52,7 +52,7 @@ println!("{} (p = {:.3})", p.label, p.probability);
 ```
 
 `predict_serialize(&[my_struct])` 接受任何字段名与模型包输入一致的 `#[derive(Serialize)]` 结构体；
-`PredictorHandle::try_update` 只在新包加载并自检通过后才切换，否则旧模型继续服务。见 [examples/predict-app](examples/predict-app)。
+`PredictorHandle::try_update` 只在新包加载并自检通过后才切换，否则旧模型继续服务。如果更新改变了输入或输出契约（新增必需字段、标签或阈值改变等），默认会被拒绝，除非传入 `LoadOptions::cpu().allow_contract_change(true)`；无论是否允许，返回的报告都会列出每一处变化。见 [examples/predict-app](examples/predict-app)。
 
 ## “高度集成”在这里的含义
 
@@ -79,17 +79,20 @@ println!("{} (p = {:.3})", p.label, p.probability);
 
 ## 有测试覆盖的保证
 
-- 预处理一致：原始行 → 训练侧概率与应用侧 `Predictor` 概率相等（最大 |Δp| < 1e-9）；scikit-learn 复现了 RustPy 的变换矩阵（最大 |Δ| ≈ 2e-7，f32 精度）。
+- 预处理一致：原始行 → 训练侧概率与应用侧 `Predictor` 概率相等（最大 |Δp| < 1e-12，在独立进程中检查）；scikit-learn 复现了 RustPy 的变换矩阵（最大 |Δ| ≈ 2e-7，f32 精度）。
 - 结构上防泄漏：先切分再拟合；分组切分不会把同一实体放进两个子集；时间相关数据会被拒绝，而不是随机切分。
 - 精确续训（R2）：在一个进程中崩溃、在另一个进程中恢复的 Run，得到与不中断训练**逐位相同**的权重和历史（同一二进制、同一 CPU 指令集）。
-- 测试集纪律：每个切分的测试集只用一次；再次使用会被拒绝，除非显式允许，并且会被记录。
+- 测试集纪律：一个数据快照的测试集只给一个模型使用；用它评估同一快照的另一个模型会被拒绝，除非显式允许，并且会被记录。在新数据上评估模型包时，会跳过其来源 Run 训练或选择时用过的行。
 - 模型包不可变、按内容寻址，并逐文件校验。
-- 指标与 scikit-learn 一致到 1e-15；梯度与独立有限差分一致；第一步 Adam 更新符合更新公式。
+- 指标与 scikit-learn 一致（冻结的 goldens，容差 1e-12，实测 ≤ 3e-16）；线性基线与 scikit-learn 在同一目标函数上的最优值相差 0.15% 以内；梯度与独立有限差分一致；第一步 Adam 更新符合更新公式。
+- 每个 Run 都记录自己的峰值内存（Linux），比较表把它与质量、延迟并列显示。
 
 ## 尚未完成的部分
 
 - **GPU**：没有编译或认证任何 CUDA 或非 NVIDIA 后端。`candidate_device = "auto-certified"` 会选择 CPU 并明确说明；`"cuda"` 会报错。跨厂商 GPU 支持（计划 P2-04/P2-05）需要真实硬件。
 - **用户验证**：尚未进行访谈或用户试用（P0-02、P0-06、P3-03）。易用性目标未经检验。
+- **平台**：只在 Linux x86_64 上构建和测试过。Windows、macOS 构建、预编译二进制和清洁机器安装计时尚未完成（P3-01）。
+- **参考值**：scikit-learn goldens 是在实现之后生成的，而不是实现前冻结的（P1-03）；见[实施待办](docs/implementation-backlog.md)。
 - 按时间切分、回归/多分类、树模型、CNN/序列/文本/LLM 等任务包属于后续工作。
 
 许可：MIT OR Apache-2.0。附带的样例数据是合成数据（CC0）。
