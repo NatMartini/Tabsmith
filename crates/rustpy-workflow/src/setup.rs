@@ -172,6 +172,43 @@ fn as_flag_error(mut e: RustpyError) -> RustpyError {
     e
 }
 
+/// Path written to `data.source`: relative to the project when the file is inside
+/// it or at most two levels above it (the project can move together with its
+/// data), absolute otherwise.
+fn project_relative(root: &Path, file: &Path) -> String {
+    let mut up = 0;
+    let mut base = root.to_path_buf();
+    loop {
+        if let Ok(rest) = file.strip_prefix(&base) {
+            let rest = rest.to_string_lossy().replace('\\', "/");
+            return "../".repeat(up) + &rest;
+        }
+        if up == 2 || !base.pop() {
+            return file.display().to_string();
+        }
+        up += 1;
+    }
+}
+
+/// Removes the template's "Filled in by `rustpy data bind`" comment block once
+/// the real values are written.
+fn strip_bind_hint(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut skipping = false;
+    for line in text.split_inclusive('\n') {
+        if line.starts_with("# Filled in by `rustpy data bind") {
+            skipping = true;
+            continue;
+        }
+        if skipping && line.starts_with("# ") {
+            continue;
+        }
+        skipping = false;
+        out.push_str(line);
+    }
+    out
+}
+
 impl Workspace {
     /// Records the data source and target in `rustpy.toml` after validating them
     /// against the data. The file is only changed if validation succeeds.
@@ -200,10 +237,7 @@ impl Workspace {
             .next("check the path (relative paths are resolved from the current directory)"));
         }
         let root = project.root.canonicalize().unwrap_or(project.root.clone());
-        let source = abs
-            .strip_prefix(&root)
-            .map(|p| p.to_string_lossy().replace('\\', "/"))
-            .unwrap_or_else(|_| abs.display().to_string());
+        let source = project_relative(&root, &abs);
         if let Some(sp) = &req.split {
             if !matches!(sp.as_str(), "stratified" | "group" | "time") {
                 return Err(RustpyError::new(ErrorCode::ConfigInvalid, Phase::Config, format!("unknown split `{sp}`"))
@@ -317,8 +351,15 @@ impl Workspace {
         let cfg = &resolved.config;
         let features =
             plan_columns(&snap.snapshot, &snap.table, &cfg.data, cfg.preprocess.max_categories).map_err(as_flag_error)?;
-        let split = make_split(&snap.snapshot.snapshot_id, &snap.table, &features.target, &cfg.data).map_err(as_flag_error)?;
-        write_atomic(&project.config_path(), doc.to_string().as_bytes())?;
+        let split = make_split(&snap.snapshot.snapshot_id, &snap.table, &features.target, &cfg.data, &features.content_columns())
+            .map_err(as_flag_error)?;
+        if req.exclude.is_empty() && !cfg.data.exclude.is_empty() {
+            kept_notes.push(format!(
+                "kept data.exclude = {:?} from the previous binding (edit data.exclude in rustpy.toml to change it)",
+                cfg.data.exclude
+            ));
+        }
+        write_atomic(&project.config_path(), strip_bind_hint(&doc.to_string()).as_bytes())?;
         Ok(BindReport {
             source,
             snapshot: snap.snapshot,
@@ -371,6 +412,7 @@ impl Workspace {
         let mut warnings = p.features.warnings.clone();
         warnings.extend(p.split.warnings.iter().cloned());
         warnings.extend(p.snapshot.limitations.iter().cloned());
+        warnings.extend(self.data_change_note(&p.snapshot));
         for d in &p.fitted.transform.dropped {
             warnings.push(format!("feature `{}` dropped: {}", d.name, d.reason));
         }

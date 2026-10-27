@@ -11,7 +11,7 @@
 
 Every layer is validated on its own: unknown keys (`E_CONFIG_UNKNOWN_FIELD`) and
 wrong types (`E_CONFIG_INVALID`) are errors that name the key and, for the file,
-the line. `rustpy config` prints every effective value and the layer it came
+the line. `rustpy config` prints every effective value (unset optional keys as `(unset)`) and the layer it came
 from; each Run stores the fully resolved configuration (`resolved.json`) and its
 hash. Environment variables never change behaviour.
 
@@ -35,16 +35,16 @@ epochs = 12
 
 | Key | Default | Meaning |
 |---|---|---|
-| `data.source` | — (required) | CSV/Parquet path |
+| `data.source` | — (required) | CSV/Parquet path; a relative path is resolved against the project directory. `data bind` writes a relative path when the file is inside the project or at most two levels above it, otherwise an absolute path |
 | `data.format` | `"auto"` | `auto` (by extension), `csv`, `parquet` |
 | `data.target` | — (required) | Binary target column |
 | `data.positive_label` | — (required; `data bind` infers it for 0/1, false/true, no/yes) | Target value of the positive class |
-| `data.id_column` | none | Unique row id; never a feature |
+| `data.id_column` | none | Unique row id; never a feature. Rows keep their split across data versions and are copied to prediction output. Without it, rows are identified by content (feature columns + target): identical rows share a split, an edited row counts as a new row |
 | `data.group_column` | none | Entity column; requires `split = "group"` |
 | `data.time_column` | none | Declaring it means a time split is needed: refused in 0.1 (`E_SPLIT_UNSUPPORTED`) |
 | `data.exclude` | `[]` | Columns never used as features |
 | `data.columns.<name>` | inferred | `"numeric"`, `"categorical"` (read as text, keeps leading zeros) or `"ignore"` |
-| `data.split` | `"stratified"` | `stratified`, `group`; `time` is refused |
+| `data.split` | `"stratified"` | `stratified` (stable hash of the id, or of the row content without one), `group` (stable hash of the group key); `time` is refused |
 | `data.seed` | `42` | Split seed |
 | `data.train_fraction` / `valid_fraction` / `test_fraction` | `0.7` / `0.15` / `0.15` | Must sum to 1 |
 | `data.snapshot` | `"copy"` | `copy`: the file is copied into `.rustpy/` so runs are replayable; `reference`: hash only |
@@ -92,11 +92,13 @@ scikit-learn's `LogisticRegression(C = 1 / (n_train · l2), class_weight="balanc
 3. 用 `--profile <name>` 选择的 profile（`[profiles.<name>]` 表）
 4. `--set key.path=value` 覆盖（CLI）或覆盖表（SDK）
 
-每一层都单独校验：未知字段（`E_CONFIG_UNKNOWN_FIELD`）和类型错误（`E_CONFIG_INVALID`）都会报出字段名，对文件还会给出行号。`rustpy config` 列出每个生效值及其来源层；每个 Run 保存完整解析后的配置（`resolved.json`）及其哈希。环境变量不会改变行为。
+每一层都单独校验：未知字段（`E_CONFIG_UNKNOWN_FIELD`）和类型错误（`E_CONFIG_INVALID`）都会报出字段名，对文件还会给出行号。`rustpy config` 列出每个生效值（未设置的可选键显示为 `(unset)`）及其来源层；每个 Run 保存完整解析后的配置（`resolved.json`）及其哈希。环境变量不会改变行为。
 
 上表列出了所有设置（键名、默认值、含义）。要点：
 
 - `data.positive_label` 是要检测的类别；`data bind` 对 0/1、false/true、no/yes 会自动推断。
+- `data.source` 的相对路径以项目目录为基准；`data bind` 在文件位于项目内或项目上方至多两级时写入相对路径，否则写入绝对路径。
+- `data.id_column` 是唯一行 id：数据增长时各行保持原切分，并被复制到预测输出中。没有 id 时，行按内容（特征列 + 目标列）识别：完全相同的行在同一子集，被修改过的行视为新行。
 - `data.group_column` 要求 `split = "group"`：同一实体的行不会跨越两个子集。
 - 声明 `data.time_column` 表示需要按时间切分，0.1 版会拒绝（`E_SPLIT_UNSUPPORTED`），不会退回随机切分。
 - `data.snapshot = "copy"` 会把数据文件复制进 `.rustpy/`，使 Run 可以重放；`reference` 只记录哈希。

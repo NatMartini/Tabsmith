@@ -73,14 +73,14 @@ fn full_cpu_loop_with_consistent_preprocessing() {
     assert_eq!(again.reused, vec!["snapshot", "split", "transform"]);
 
     // Test split: first use is recorded; a different run is refused; same run is idempotent.
-    let eval = ws.evaluate_run(&best, SplitName::Test, false).unwrap();
+    let eval = ws.evaluate_run(&best, SplitName::Test, false, false).unwrap();
     assert_eq!(eval.test_use_index, Some(1));
-    let same = ws.evaluate_run(&best, SplitName::Test, false).unwrap();
+    let same = ws.evaluate_run(&best, SplitName::Test, false, false).unwrap();
     assert_eq!(same.evaluation_id, eval.evaluation_id);
     let other = result.runs.iter().find(|r| r.run_id != best).unwrap();
-    let refused = ws.evaluate_run(&other.run_id, SplitName::Test, false).unwrap_err();
+    let refused = ws.evaluate_run(&other.run_id, SplitName::Test, false, false).unwrap_err();
     assert_eq!(refused.code, ErrorCode::TestSetReuse);
-    let reused = ws.evaluate_run(&other.run_id, SplitName::Test, true).unwrap();
+    let reused = ws.evaluate_run(&other.run_id, SplitName::Test, true, false).unwrap();
     assert_eq!(reused.test_use_index, Some(2));
 
     // Bundle requires the test evaluation (best has one).
@@ -281,7 +281,7 @@ fn data_update_creates_new_snapshot_and_old_bundle_stays_usable() {
     };
     let v1 = ws.run(&req, &opts, &mut |_| {}).unwrap();
     let r1 = v1.runs[0].run_id.clone();
-    ws.evaluate_run(&r1, SplitName::Test, false).unwrap();
+    ws.evaluate_run(&r1, SplitName::Test, false, false).unwrap();
     let b1 = ws.build_bundle(&r1, &BundleOptions::default()).unwrap();
 
     // New data arrives at the same path: a new snapshot is created automatically.
@@ -295,7 +295,7 @@ fn data_update_creates_new_snapshot_and_old_bundle_stays_usable() {
     // The old bundle is still loadable and can be re-evaluated on the new data
     // (it has never seen supplier S7: unknown category encodes as zeros).
     let e_old = ws
-        .evaluate_bundle(&tmp.path().join(&b1.path), SplitName::Valid, &req, false)
+        .evaluate_bundle(&tmp.path().join(&b1.path), SplitName::Valid, &req, false, false)
         .unwrap();
     assert_eq!(e_old.protocol.snapshot_id, v2.group.snapshot_id);
     // Old runs on the old snapshot remain loadable (the snapshot copy is immutable).

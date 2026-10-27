@@ -39,6 +39,16 @@ error[E_DEVICE_UNSUPPORTED]: device `cuda` is not available: no cuda backend is 
 | 130 | `E_CANCELLED` (Ctrl-C; a checkpoint is written at the next step boundary) |
 | 1 | `E_IO`, `E_INTERNAL` |
 
+Evaluation guards: `E_LEAKAGE_DETECTED` is raised when evaluated rows were used
+to train or select the model (or a run it was warm-started from), and also when
+that cannot be checked because the rows the model saw cannot be matched with the
+current data (source run not in the project, input columns missing). The second
+case can be accepted with `--allow-unverified-rows`; the evaluation then records
+`unseen_rows_verified: null`. `E_TEST_SET_REUSE` is raised when another model of
+the same data version already used the test rows (`--allow-test-reuse` records
+the reuse). Models of another data version may share test rows with a note
+(`test_shared_with`), which is what an old-vs-new comparison needs.
+
 Run states: `planned`, `running`, `completed`, `failed`, `cancelled` (Ctrl-C),
 `interrupted` (the process died; detected the next time the run is listed or
 resumed). `rustpy resume <run>` continues `cancelled`/`interrupted`/`failed`
@@ -53,5 +63,7 @@ labelled as such, never as a resume.
 CLI 和 SDK 中的每个失败都是同一种 `RustpyError`，字段含义见上表：错误代码（稳定、不复用）、阶段、消息、位置（Run、列、配置键、文件）、期望值与实际值、仍然有效的产物（检查点、旧模型包、评估记录）、下一步操作（通常是一条命令）、诊断 id。
 
 人类可读输出写到 stderr；使用 `--json` 时，CLI 在 stdout 输出 `{"ok": false, "error": {...}}`。退出码按错误类别划分（见上表）：2 配置，3 数据/schema，4 模型包，5 设备与资源，6 Run/续训，7 评估纪律，130 用户取消，1 I/O 与内部错误。
+
+评估保护：当被评估的行曾用于训练或选择该模型（或它 warm start 所依据的 Run）时，报 `E_LEAKAGE_DETECTED`；当无法检查这一点时也会报这个错误，即模型见过的行无法与当前数据匹配（来源 Run 不在本项目中、输入列缺失）。第二种情况可以用 `--allow-unverified-rows` 接受，评估记录中 `unseen_rows_verified` 为 null。当同一数据版本的另一个模型已经使用过这些测试行时，报 `E_TEST_SET_REUSE`（`--allow-test-reuse` 会记录这次复用）。不同数据版本的模型可以共享测试行，并附带说明（`test_shared_with`），这正是新旧模型对比所需要的。
 
 Run 状态：`planned`、`running`、`completed`、`failed`、`cancelled`（Ctrl-C）、`interrupted`（进程意外结束，在下一次列出或恢复时检测到）。`rustpy resume <run>` 从最近的检查点精确继续 `cancelled`/`interrupted`/`failed` 的 Run（R2），生成一个与父 Run 关联的新 Run；`--warm-start` 用已完成 Run 的权重开始新训练，并明确标注为 warm start，绝不冒充续训。

@@ -267,3 +267,51 @@ fn separate_process_predictions_equal_training_side_probabilities() {
     }
     assert!(worst < 1e-12, "train-side vs separate-process predict: max |Δp| = {worst}");
 }
+
+/// Cold-start walkthrough findings: relative data paths, `(unset)` settings,
+/// comma-separated run lists, `--keep` columns, unseen-category warnings and a
+/// predict error that points at `--input`.
+#[test]
+fn walkthrough_details() {
+    let tmp = tempfile::tempdir().unwrap();
+    ok(tmp.path(), &["init", "w"]);
+    let dir = tmp.path().join("w");
+    ok(tmp.path(), &["sample-data", "data.csv", "--rows", "1200"]);
+    ok(&dir, &["data", "bind", "../data.csv", "--target", "defect", "--group", "device_id"]);
+    let toml = std::fs::read_to_string(dir.join("rustpy.toml")).unwrap();
+    assert!(toml.contains("source = \"../data.csv\""), "{toml}");
+    assert!(!toml.contains("Filled in by"), "template hint left behind:\n{toml}");
+    let cfg = json(&dir, &["config"]);
+    let rows = cfg["result"].as_array().unwrap();
+    assert!(rows.iter().any(|r| r[0] == "data.id_column" && r[1] == "(unset)"), "{cfg}");
+
+    let run = json(&dir, &args(&["run"], &QUICK));
+    let ids: Vec<String> = run["result"]["runs"].as_array().unwrap().iter().map(|r| r["run_id"].as_str().unwrap().to_string()).collect();
+    let both = ids.join(",");
+    let cmp = json(&dir, &["compare", "--runs", &both]);
+    assert_eq!(cmp["result"]["rows"].as_array().unwrap().len(), 2, "{cmp}");
+    let missing = fails(&dir, &["compare", "--runs", "run-404"], "E_RUN_NOT_FOUND", 6);
+    assert_eq!(missing["error"]["phase"], "compare");
+
+    ok(&dir, &["bundle", "build", "--run", &ids[0], "--allow-unevaluated"]);
+    let bundle = format!("bundles/{}", ids[0]);
+    // A later delivery with a new supplier: predictions warn and name the field.
+    ok(&dir, &["sample-data", "later.csv", "--rows", "60", "--seed", "9", "--shifted"]);
+    let out = json(&dir, &["predict", "--bundle", &bundle, "--input", "later.csv", "--keep", "unit_id"]);
+    let preds = out["result"]["predictions"].as_array().unwrap();
+    assert_eq!(preds.len(), 60);
+    assert!(preds[0]["unit_id"].is_string(), "{}", preds[0]);
+    assert!(out["result"]["unseen_categories"].as_array().is_some_and(|u| !u.is_empty()), "{out}");
+    assert!(preds.iter().any(|p| p["unseen_categories"].is_array()));
+    let human = rustpy(&dir, &["predict", "--bundle", &bundle, "--input", "later.csv", "--keep", "unit_id,line"]);
+    assert!(human.status.success());
+    let stdout = String::from_utf8_lossy(&human.stdout);
+    assert!(stdout.starts_with("unit_id,line,label,probability,unseen_categories"), "{stdout}");
+    assert!(String::from_utf8_lossy(&human.stderr).contains("warning: categories not seen in training"));
+    // Without key columns, rows are numbered from 1.
+    let numbered = json(&dir, &["predict", "--bundle", &bundle, "--input", "later.csv"]);
+    assert_eq!(numbered["result"]["predictions"][0]["row"], 1);
+    let e = fails(&dir, &["predict", "--bundle", &bundle, "--input", "nope.csv"], "E_DATA_SOURCE_NOT_FOUND", 3);
+    assert_eq!(e["error"]["field"], "--input");
+    fails(&dir, &["predict", "--bundle", &bundle, "--input", "later.csv", "--keep", "no_such"], "E_SCHEMA_MISSING_COLUMN", 3);
+}

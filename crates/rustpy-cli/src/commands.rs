@@ -64,7 +64,10 @@ fn progress_printer(json: bool) -> impl FnMut(Progress) {
         match p {
             Progress::Stage(s) => eprintln!("· {s}"),
             Progress::RunStarted { run_id, candidate, steps_planned } => {
-                eprintln!("· {run_id}: training {candidate} (up to {steps_planned} steps)")
+                eprintln!("· {run_id}: training {candidate} (up to {steps_planned} steps)");
+                eprintln!(
+                    "  (loss = class-weighted log loss, the training objective; early stopping keeps the epoch with the lowest validation loss. The comparison's log_loss is unweighted.)"
+                );
             }
             Progress::Epoch { run_id, epoch, epochs, train_loss, valid_loss, valid_metric } => {
                 if epoch == 1 || epoch % 5 == 0 || epoch == epochs {
@@ -73,7 +76,19 @@ fn progress_printer(json: bool) -> impl FnMut(Progress) {
                     );
                 }
             }
-            Progress::RunFinished { run_id, status } => eprintln!("· {run_id}: {}", status.as_str()),
+            Progress::RunFinished { run_id, status, stop_reason, best_epoch, epochs_done } => {
+                let detail = match (status, stop_reason.as_deref(), best_epoch) {
+                    (RunStatus::Completed, Some("early_stopping"), Some(b)) => {
+                        format!(" (early stopping after epoch {epochs_done}; weights of best epoch {b} kept)")
+                    }
+                    (RunStatus::Completed, Some("time_budget"), Some(b)) => {
+                        format!(" (time budget reached after epoch {epochs_done}; weights of best epoch {b} kept)")
+                    }
+                    (RunStatus::Completed, _, Some(b)) => format!(" ({epochs_done} epochs; weights of best epoch {b} kept)"),
+                    _ => String::new(),
+                };
+                eprintln!("· {run_id}: {}{detail}", status.as_str())
+            }
         }
     }
 }
@@ -306,7 +321,7 @@ pub fn dispatch(cli: Cli) -> Result<u8> {
             }
             Ok(code)
         }
-        Command::Evaluate { run, bundle, split, allow_test_reuse, config } => {
+        Command::Evaluate { run, bundle, split, allow_test_reuse, allow_unverified_rows, config } => {
             let ws = workspace(&cli.project)?;
             let split = parse_split(&split)?;
             let rec = match (run, bundle) {
@@ -320,9 +335,9 @@ pub fn dispatch(cli: Cli) -> Result<u8> {
                         .field("--set/--profile")
                         .next("drop the flags; to evaluate other settings, train a run with them (`rustpy run --set ...`)"));
                     }
-                    ws.evaluate_run(&r, split, allow_test_reuse)?
+                    ws.evaluate_run(&r, split, allow_test_reuse, allow_unverified_rows)?
                 }
-                (None, Some(b)) => ws.evaluate_bundle(&b, split, &config_request(&config), allow_test_reuse)?,
+                (None, Some(b)) => ws.evaluate_bundle(&b, split, &config_request(&config), allow_test_reuse, allow_unverified_rows)?,
                 _ => {
                     return Err(RustpyError::new(ErrorCode::ConfigInvalid, Phase::Evaluate, "pass exactly one of --run or --bundle")
                         .next("rustpy evaluate --run run-002 --split test"));
@@ -356,7 +371,11 @@ pub fn dispatch(cli: Cli) -> Result<u8> {
                 println!("  single-row latency (transform + model): p50 {:.0} µs, p95 {:.0} µs", l.single_row_p50_us, l.single_row_p95_us);
             }
             match rec.test_use_index {
-                Some(1) => println!("  test split: first use (recorded in the test ledger)"),
+                Some(1) if rec.test_shared_with.is_empty() => println!("  test split: first use (recorded in the test ledger)"),
+                Some(1) => println!(
+                    "  test split: first use for a model of this data version; the rows were also used for {} (another data version): a shared hold-out for an old-vs-new comparison",
+                    rec.test_shared_with.join(", ")
+                ),
                 Some(n) => println!("  test split: REUSE #{n} — not an unbiased estimate"),
                 None => {}
             }
@@ -365,14 +384,14 @@ pub fn dispatch(cli: Cli) -> Result<u8> {
             }
             Ok(0)
         }
-        Command::Bundle(BundleCommand::Build { run, profile, out, allow_unevaluated }) => {
-            if profile != "cpu" {
+        Command::Bundle(BundleCommand::Build { run, device, out, allow_unevaluated }) => {
+            if device != "cpu" {
                 return Err(RustpyError::new(
                     ErrorCode::DeviceUnsupported,
                     Phase::Bundle,
-                    format!("bundle profile `{profile}` is not available in this release"),
+                    format!("bundles for device `{device}` are not available in this release"),
                 )
-                .field("--profile")
+                .field("--device")
                 .expected("cpu"));
             }
             let ws = workspace(&cli.project)?;
@@ -443,7 +462,7 @@ pub fn dispatch(cli: Cli) -> Result<u8> {
             print!("{}", t.render());
             Ok(0)
         }
-        Command::Predict { bundle, input, output } => predict_file(&bundle, &input, output.as_deref(), json),
+        Command::Predict { bundle, input, output, keep } => predict_file(&bundle, &input, output.as_deref(), &keep, json),
         Command::Report => {
             let ws = workspace(&cli.project)?;
             let path = ws.write_report()?;
@@ -635,11 +654,28 @@ fn csv_escape(s: &str) -> String {
     }
 }
 
-fn predict_file(bundle: &Path, input: &Path, output: Option<&Path>, json: bool) -> Result<u8> {
+fn predict_file(bundle: &Path, input: &Path, output: Option<&Path>, keep: &[String], json: bool) -> Result<u8> {
     let predictor = Predictor::load(bundle, LoadOptions::cpu())?;
+    if !input.is_file() {
+        return Err(RustpyError::new(
+            ErrorCode::DataSourceNotFound,
+            Phase::Predict,
+            format!("input file {} does not exist", input.display()),
+        )
+        .field("--input")
+        .next("check the --input path (relative to the current directory); for a quick try, write synthetic rows with `rustpy sample-data new.csv --rows 200`"));
+    }
     let ext = input.extension().and_then(|e| e.to_str()).map(str::to_lowercase).unwrap_or_default();
+    // Key columns copied verbatim to the output: the bundle's id column (when the
+    // input has it) and any --keep columns.
     let id_field = predictor.input_schema().passthrough_id.clone();
-    let (preds, ids): (Vec<rustpy_runtime::Prediction>, Vec<Option<String>>) = match ext.as_str() {
+    let mut key_cols: Vec<String> = Vec::new();
+    for k in id_field.iter().chain(keep) {
+        if !k.is_empty() && !key_cols.contains(k) {
+            key_cols.push(k.clone());
+        }
+    }
+    let table = match ext.as_str() {
         "json" | "jsonl" | "ndjson" => {
             let text = std::fs::read_to_string(input).map_err(|e| RustpyError::io(Phase::Predict, input, e))?;
             let values: Vec<serde_json::Value> = if ext == "json" {
@@ -663,62 +699,91 @@ fn predict_file(bundle: &Path, input: &Path, output: Option<&Path>, json: bool) 
                     .collect::<Result<_>>()?
             };
             let records = values.iter().map(Record::from_json).collect::<Result<Vec<_>>>()?;
-            let ids = records
-                .iter()
-                .map(|r| id_field.as_ref().and_then(|f| r.get(f)).map(value_text))
-                .collect();
-            (predictor.predict(&records)?, ids)
+            predictor.records_table(&records, &key_cols)?
         }
-        _ => {
-            let table = rustpy_workflow::data::read_for_prediction(input, predictor.input_schema(), &predictor.bundle().transform)?;
-            let ids = match id_field.as_ref().and_then(|f| table.column(f)) {
-                Some(col) => (0..table.n_rows())
-                    .map(|i| match col.get(i) {
-                        rustpy_runtime::ValueRef::Null => Some(String::new()),
-                        rustpy_runtime::ValueRef::Text(s) => Some(s.to_string()),
-                        rustpy_runtime::ValueRef::Int(v) => Some(v.to_string()),
-                        rustpy_runtime::ValueRef::Float(v) => Some(v.to_string()),
-                        rustpy_runtime::ValueRef::Bool(v) => Some(v.to_string()),
-                    })
-                    .collect(),
-                None => vec![None; table.n_rows()],
-            };
-            (predictor.predict_table(&table)?, ids)
+        _ => rustpy_workflow::data::read_for_prediction(input, predictor.input_schema(), &predictor.bundle().transform, &key_cols)?,
+    };
+    // --keep columns must exist; the id column is used only when the input has it.
+    for k in keep {
+        if table.column(k).is_none() {
+            let mut present = table.names();
+            present.sort_unstable();
+            return Err(RustpyError::new(ErrorCode::SchemaMissingColumn, Phase::Predict, format!("--keep column `{k}` is not in the input"))
+                .field(k.clone())
+                .actual(format!("columns present: [{}]", present.join(", ")))
+                .next("pass columns that exist in the input file, separated by commas (--keep customer_id,month)"));
         }
+    }
+    key_cols.retain(|k| table.column(k).is_some());
+    // --keep columns are declared identifiers, not model inputs: drop them before
+    // predicting so `extra_columns = "error"` bundles accept them.
+    let schema = predictor.input_schema();
+    let model_cols: Vec<&str> = table
+        .names()
+        .into_iter()
+        .filter(|n| schema.field(n).is_some() || schema.passthrough_id.as_deref() == Some(*n) || !keep.iter().any(|k| k == n))
+        .collect();
+    let model_table = table.select(&model_cols);
+    let preds = predictor.predict_table(&model_table)?;
+    let unseen = predictor.unseen_categories(&model_table);
+    let key_values: Vec<Vec<String>> = (0..table.n_rows())
+        .map(|i| key_cols.iter().map(|k| value_ref_text(table.column(k).expect("checked above").get(i))).collect())
+        .collect();
+    // Without key columns, rows are numbered from 1 in input order.
+    let headers: Vec<String> = if key_cols.is_empty() { vec!["row".into()] } else { key_cols.clone() };
+    let keys_of = |i: usize| -> Vec<String> { if key_cols.is_empty() { vec![(i + 1).to_string()] } else { key_values[i].clone() } };
+    let any_unseen = preds.iter().any(|p| !p.unseen_categories.is_empty());
+    let json_row = |i: usize, p: &rustpy_runtime::Prediction| {
+        let mut o = serde_json::Map::new();
+        for (h, v) in headers.iter().zip(keys_of(i)) {
+            let v = if key_cols.is_empty() { serde_json::Value::from(i + 1) } else { serde_json::Value::String(v) };
+            o.insert(h.clone(), v);
+        }
+        o.insert("label".into(), p.label.clone().into());
+        o.insert("probability".into(), p.probability.into());
+        o.insert("is_positive".into(), p.is_positive.into());
+        if !p.unseen_categories.is_empty() {
+            o.insert("unseen_categories".into(), serde_json::json!(p.unseen_categories));
+        }
+        serde_json::Value::Object(o)
     };
-    // The id column is used only when the input has it; otherwise rows are numbered.
-    let id_header = match &id_field {
-        Some(f) if ids.iter().any(Option::is_some) => f.clone(),
-        _ => "row".into(),
-    };
+    let warnings = unseen_warnings(&unseen, preds.len(), predictor.bundle().transform.unknown_category);
     if json && output.is_none() {
         // One JSON document on stdout.
-        let rows: Vec<serde_json::Value> = preds
-            .iter()
-            .zip(&ids)
-            .enumerate()
-            .map(|(i, (p, id))| {
-                let idv = id.clone().map(serde_json::Value::String).unwrap_or(serde_json::Value::from(i));
-                serde_json::json!({ id_header.as_str(): idv, "label": p.label, "probability": p.probability, "is_positive": p.is_positive })
-            })
-            .collect();
-        print_json(&serde_json::json!({"bundle_id": predictor.bundle_id(), "predictions": rows}));
+        let rows: Vec<serde_json::Value> = preds.iter().enumerate().map(|(i, p)| json_row(i, p)).collect();
+        print_json(&serde_json::json!({"bundle_id": predictor.bundle_id(), "predictions": rows, "unseen_categories": unseen, "warnings": warnings}));
         return Ok(0);
     }
     // The file format follows --output's extension (.jsonl or CSV).
     let jsonl = output.is_some_and(|o| o.extension().is_some_and(|e| e == "jsonl" || e == "ndjson"));
     let mut text = String::new();
     if jsonl {
-        for (i, (p, id)) in preds.iter().zip(&ids).enumerate() {
-            let idv = id.clone().map(serde_json::Value::String).unwrap_or(serde_json::Value::from(i));
-            text.push_str(&serde_json::json!({ id_header.as_str(): idv, "label": p.label, "probability": p.probability, "is_positive": p.is_positive }).to_string());
+        for (i, p) in preds.iter().enumerate() {
+            text.push_str(&json_row(i, p).to_string());
             text.push('\n');
         }
     } else {
-        text.push_str(&format!("{},label,probability\n", csv_escape(&id_header)));
-        for (i, (p, id)) in preds.iter().zip(&ids).enumerate() {
-            let idv = id.clone().unwrap_or_else(|| i.to_string());
-            text.push_str(&format!("{},{},{:.6}\n", csv_escape(&idv), csv_escape(&p.label), p.probability));
+        let mut header: Vec<String> = headers.iter().map(|h| csv_escape(h)).collect();
+        header.extend(["label".to_string(), "probability".to_string()]);
+        if any_unseen {
+            header.push("unseen_categories".into());
+        }
+        text.push_str(&header.join(","));
+        text.push('\n');
+        for (i, p) in preds.iter().enumerate() {
+            let mut cells: Vec<String> = keys_of(i).iter().map(|v| csv_escape(v)).collect();
+            cells.push(csv_escape(&p.label));
+            cells.push(format!("{:.6}", p.probability));
+            if any_unseen {
+                cells.push(csv_escape(&p.unseen_categories.join(";")));
+            }
+            text.push_str(&cells.join(","));
+            text.push('\n');
+        }
+    }
+    if !json {
+        for w in &warnings {
+            eprintln!("warning: {w}");
         }
     }
     match output {
@@ -726,7 +791,7 @@ fn predict_file(bundle: &Path, input: &Path, output: Option<&Path>, json: bool) 
             std::fs::write(path, text).map_err(|e| RustpyError::io(Phase::Predict, path, e))?;
             let pos = preds.iter().filter(|p| p.is_positive).count();
             if json {
-                print_json(&serde_json::json!({"path": path, "rows": preds.len(), "positive": pos, "bundle_id": predictor.bundle_id()}));
+                print_json(&serde_json::json!({"path": path, "rows": preds.len(), "positive": pos, "bundle_id": predictor.bundle_id(), "unseen_categories": unseen, "warnings": warnings}));
             } else {
                 eprintln!("wrote {} predictions ({pos} positive) to {} using bundle {}", preds.len(), path.display(), predictor.bundle_id());
             }
@@ -738,15 +803,41 @@ fn predict_file(bundle: &Path, input: &Path, output: Option<&Path>, json: bool) 
     Ok(0)
 }
 
-fn value_text(v: &rustpy_runtime::Value) -> String {
+/// Human-readable warnings for categorical values the bundle has never seen.
+fn unseen_warnings(
+    unseen: &[rustpy_runtime::UnseenCategories],
+    rows: usize,
+    policy: rustpy_contracts::config::UnknownCategoryPolicy,
+) -> Vec<String> {
+    if unseen.is_empty() {
+        return Vec::new();
+    }
+    let parts: Vec<String> = unseen
+        .iter()
+        .map(|u| format!("{}: {} of {rows} rows (e.g. {})", u.field, u.rows, u.examples.join(", ")))
+        .collect();
+    let effect = match policy {
+        rustpy_contracts::config::UnknownCategoryPolicy::Ignore => {
+            "they are encoded as all zeros, so these predictions rely on the other fields only"
+        }
+        rustpy_contracts::config::UnknownCategoryPolicy::Error => "they are refused by this bundle",
+    };
+    vec![format!(
+        "categories not seen in training — {}; {effect}. If this is new data (a new month, product or code), retrain on data that contains it",
+        parts.join("; ")
+    )]
+}
+
+fn value_ref_text(v: rustpy_runtime::ValueRef<'_>) -> String {
     match v {
-        rustpy_runtime::Value::Null => String::new(),
-        rustpy_runtime::Value::Bool(b) => b.to_string(),
-        rustpy_runtime::Value::Int(i) => i.to_string(),
-        rustpy_runtime::Value::Float(f) => f.to_string(),
-        rustpy_runtime::Value::Text(s) => s.clone(),
+        rustpy_runtime::ValueRef::Null => String::new(),
+        rustpy_runtime::ValueRef::Text(s) => s.to_string(),
+        rustpy_runtime::ValueRef::Int(v) => v.to_string(),
+        rustpy_runtime::ValueRef::Float(v) => v.to_string(),
+        rustpy_runtime::ValueRef::Bool(v) => v.to_string(),
     }
 }
+
 
 fn doctor(project: &Option<PathBuf>, json: bool) -> Result<u8> {
     use rustpy_workflow::device::{detect_devices, environment, COMPILED_BACKENDS};

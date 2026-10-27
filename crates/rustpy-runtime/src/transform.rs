@@ -22,8 +22,9 @@ pub enum CoerceError {
 }
 
 impl CoerceError {
+    /// `row` is a 0-based row index; messages show it 1-based ("record 1" is the first data row).
     pub fn into_error(self, field: &str, row: usize, value: ValueRef<'_>, phase: Phase) -> RustpyError {
-        let at = format!("field `{field}`, row {row}");
+        let at = format!("field `{field}`, record {}", row + 1);
         match self {
             CoerceError::TypeMismatch { expected, actual } => RustpyError::new(
                 ErrorCode::SchemaTypeMismatch,
@@ -154,17 +155,17 @@ pub(crate) fn missing_column_error(
     phase: Phase,
 ) -> RustpyError {
     let shown: Vec<&str> = present.iter().take(30).copied().collect();
-    let where_ = record.map(|r| format!("record {r} ")).unwrap_or_default();
+    let subject = record.map(|r| format!("record {}", r + 1)).unwrap_or_else(|| "the input".into());
     RustpyError::new(
         ErrorCode::SchemaMissingColumn,
         phase,
-        format!("{where_}is missing required field `{name}`"),
+        format!("{subject} is missing required field `{name}`"),
     )
     .field(name)
-    .expected(format!("field `{name}` ({}; use null for a missing value)", kind.as_str()))
+    .expected(format!("field `{name}` ({}; a missing value is allowed: null in records, an empty cell in CSV)", kind.as_str()))
     .actual(format!("fields present: [{}]", shown.join(", ")))
     .next(format!(
-        "add `{name}` to the input (null is allowed and is imputed); the bundle's input.schema.json lists every field"
+        "add `{name}` to the input (missing values are imputed as in training); the bundle's input.schema.json lists every field"
     ))
 }
 
@@ -201,14 +202,14 @@ pub fn apply_transform(t: &FittedTransform, table: &Table, phase: Phase) -> Resu
                     let v = column.get(row);
                     let v = tokens.numeric(v);
                     let x = coerce_numeric(v, t.nan)
-                        .map_err(|e| e.into_error(name, row, v, phase))?
+                        .map_err(|e| with_missing_tokens(e.into_error(name, row, v, phase), &t.missing_tokens))?
                         .unwrap_or(*impute);
                     let z = ((x - mean) / std) as f32;
                     if !z.is_finite() {
                         return Err(RustpyError::new(
                             ErrorCode::InvalidValue,
                             phase,
-                            format!("field `{name}`, row {row}: value {x} is too large to encode (out of the f32 range after scaling)"),
+                            format!("field `{name}`, record {}: value {x} is too large to encode (out of the f32 range after scaling)", row + 1),
                         )
                         .field(name)
                         .expected(format!("a value within the f32 range after standardization (training mean {mean:.4}, std {std:.4})"))
@@ -309,6 +310,85 @@ pub fn check_category_type(trained: Option<RawDtype>, v: ValueRef<'_>) -> Result
     }
 }
 
+/// A type mismatch on a numeric field is often a missing-value marker the
+/// bundle does not know ("N/A", "-"): say which markers it accepts.
+fn with_missing_tokens(mut e: RustpyError, tokens: &[String]) -> RustpyError {
+    if e.code == ErrorCode::SchemaTypeMismatch {
+        let shown: Vec<String> = tokens.iter().map(|t| format!("{t:?}")).collect();
+        let field = e.field.clone().unwrap_or_default();
+        e = e.next(format!(
+            "send `{field}` as a number; for a missing value send null, an empty cell, or one of the missing-value markers this bundle was trained with [{}] (data.null_values at training time)",
+            shown.join(", ")
+        ));
+    }
+    e
+}
+
+/// Categorical values that the frozen transform has no slot for, per field.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct UnseenCategories {
+    pub field: String,
+    /// Rows with a value not seen in training (encoded as all zeros when
+    /// `unknown_category = "ignore"`).
+    pub rows: usize,
+    /// Up to five distinct unseen values, in order of appearance.
+    pub examples: Vec<String>,
+}
+
+/// Counts categorical values not seen in training, per field. Values that fail
+/// type coercion are skipped here (`apply_transform` reports them).
+pub fn unseen_categories(t: &FittedTransform, table: &Table) -> Vec<UnseenCategories> {
+    let mut out: Vec<UnseenCategories> = Vec::new();
+    for_each_unseen(t, table, |field, _row, value| {
+        if out.last().is_none_or(|u| u.field != field) {
+            out.push(UnseenCategories {
+                field: field.to_string(),
+                rows: 0,
+                examples: Vec::new(),
+            });
+        }
+        let u = out.last_mut().expect("pushed above");
+        u.rows += 1;
+        if u.examples.len() < 5 && !u.examples.iter().any(|e| e == value) {
+            u.examples.push(value.to_string());
+        }
+    });
+    out
+}
+
+/// For each row, the categorical fields whose value was not seen in training.
+pub(crate) fn unseen_fields_by_row(t: &FittedTransform, table: &Table) -> Vec<Vec<String>> {
+    let mut out = vec![Vec::new(); table.n_rows()];
+    for_each_unseen(t, table, |field, row, _| out[row].push(field.to_string()));
+    out
+}
+
+/// Calls `f(field, row, value)` for every categorical value without a slot in
+/// the frozen transform (a missing value counts when there is no missing slot).
+fn for_each_unseen(t: &FittedTransform, table: &Table, mut f: impl FnMut(&str, usize, &str)) {
+    let tokens = MissingTokens::new(&t.missing_tokens);
+    for feature in &t.features {
+        let FeatureTransform::Categorical {
+            name,
+            categories,
+            missing_slot,
+            ..
+        } = feature
+        else {
+            continue;
+        };
+        let Some(column) = table.column(name) else { continue };
+        let known: std::collections::HashSet<&str> = categories.iter().map(String::as_str).collect();
+        for row in 0..table.n_rows() {
+            match coerce_category(tokens.categorical(column.get(row)), t.nan) {
+                Ok(Some(c)) if !known.contains(c.as_ref()) => f(name, row, c.as_ref()),
+                Ok(None) if !missing_slot => f(name, row, "<missing>"),
+                _ => {}
+            }
+        }
+    }
+}
+
 fn feature_kind(f: &FeatureTransform) -> FieldKind {
     match f {
         FeatureTransform::Numeric { .. } => FieldKind::Numeric,
@@ -328,7 +408,7 @@ fn unknown_category_error(
     RustpyError::new(
         ErrorCode::UnknownCategory,
         phase,
-        format!("field `{name}`, row {row}: category {} was not seen in training", v.preview()),
+        format!("field `{name}`, record {}: category {} was not seen in training", row + 1, v.preview()),
     )
     .field(name)
     .expected(format!("one of [{}{more}]", known.join(", ")))
@@ -418,6 +498,34 @@ mod tests {
         // Finite but huge inputs that overflow f32 after scaling are rejected.
         let tab = table(vec![Value::Float(1e39)], vec![Value::from("a")]);
         assert_eq!(apply_transform(&t, &tab, Phase::Predict).unwrap_err().code, ErrorCode::InvalidValue);
+    }
+
+    #[test]
+    fn unseen_categories_are_counted_per_field_and_row() {
+        let t = transform(UnknownCategoryPolicy::Ignore);
+        let tab = table(
+            vec![Value::Float(1.0), Value::Float(1.0), Value::Float(1.0), Value::Float(1.0)],
+            vec![Value::from("zzz"), Value::from("a"), Value::from("yyy"), Value::from("zzz")],
+        );
+        let u = unseen_categories(&t, &tab);
+        assert_eq!(u.len(), 1);
+        assert_eq!((u[0].field.as_str(), u[0].rows), ("c", 3));
+        assert_eq!(u[0].examples, vec!["zzz".to_string(), "yyy".to_string()]);
+        let by_row = unseen_fields_by_row(&t, &tab);
+        assert_eq!(by_row[0], vec!["c".to_string()]);
+        assert!(by_row[1].is_empty());
+    }
+
+    #[test]
+    fn messages_use_one_based_records_and_name_missing_markers() {
+        let t = transform(UnknownCategoryPolicy::Ignore);
+        let tab = table(vec![Value::Float(1.0), Value::from("N/A")], vec![Value::from("a"), Value::from("a")]);
+        let e = apply_transform(&t, &tab, Phase::Predict).unwrap_err();
+        assert!(e.message.contains("record 2"), "{}", e.message);
+        let next = e.next_action.unwrap();
+        assert!(next.contains("\"NA\"") && next.contains("\"-999\""), "{next}");
+        let e = missing_column_error("x", FieldKind::Numeric, &["c"], None, Phase::Predict);
+        assert!(e.message.starts_with("the input is missing"), "{}", e.message);
     }
 
     #[test]

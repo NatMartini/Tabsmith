@@ -115,7 +115,11 @@ impl fmt::Display for Phase {
 }
 
 /// The single structured error type of RustPy.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+///
+/// `{:?}` prints the same multi-line report as [`RustpyError::render`], so
+/// `fn main() -> Result<(), RustpyError>` and `.unwrap()` show a readable error;
+/// `{:#?}` prints the raw struct.
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct RustpyError {
     pub code: ErrorCode,
     pub phase: Phase,
@@ -242,6 +246,27 @@ impl RustpyError {
     }
 }
 
+impl fmt::Debug for RustpyError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if f.alternate() {
+            f.debug_struct("RustpyError")
+                .field("code", &self.code)
+                .field("phase", &self.phase)
+                .field("message", &self.message)
+                .field("run_id", &self.run_id)
+                .field("field", &self.field)
+                .field("expected", &self.expected)
+                .field("actual", &self.actual)
+                .field("retained_artifacts", &self.retained_artifacts)
+                .field("next_action", &self.next_action)
+                .field("diagnostic_id", &self.diagnostic_id)
+                .finish()
+        } else {
+            f.write_str(self.render().trim_end())
+        }
+    }
+}
+
 impl fmt::Display for RustpyError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "[{}] {}", self.code, self.message)?;
@@ -283,5 +308,14 @@ mod tests {
         assert_eq!(back, e);
         assert!(e.render().contains("next:"));
         assert!(e.diagnostic_id.starts_with("d-"));
+    }
+
+    #[test]
+    fn debug_is_the_readable_report() {
+        let e = RustpyError::new(ErrorCode::SchemaMissingColumn, Phase::Predict, "missing").next("add column");
+        let short = format!("{e:?}");
+        assert!(short.starts_with("error[E_SCHEMA_MISSING_COLUMN]: missing"), "{short}");
+        assert!(short.contains("next:     add column"));
+        assert!(format!("{e:#?}").contains("next_action"));
     }
 }

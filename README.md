@@ -28,6 +28,7 @@ rustpy compare                                 # validation-only comparison and 
 rustpy evaluate --run run-002 --split test     # locks the final candidate; the test split is used once
 rustpy bundle build --run run-002              # immutable bundle: weights + preprocessing + schemas + evidence
 rustpy bundle check bundles/run-002            # verifies hashes, versions and example predictions here
+rustpy sample-data new.csv --rows 200 --seed 7 # some fresh synthetic rows to predict
 rustpy predict --bundle bundles/run-002 --input new.csv --output preds.csv
 rustpy report                                  # offline HTML/JSON report in .rustpy/reports/
 ```
@@ -39,6 +40,30 @@ rustpy init churn && cd churn
 rustpy data bind ../customers.csv --target churned --positive yes --group customer_id
 rustpy plan
 ```
+
+`--group customer_id` keeps all rows of one customer in the same split. If every
+row has its own unique key, pass it as `--id <column>` instead: rows then keep
+their split when the file grows. Without an id, rows are recognised by their
+content (input columns + target), which also works across data versions as long
+as old rows are not edited.
+
+### When new data arrives
+
+Replace or append to the file at the same path, then:
+
+```text
+rustpy run                                       # new snapshot, new runs; old runs and bundles stay as they were
+rustpy compare                                   # ranks the new runs (on the newest data version)
+rustpy evaluate --run run-004 --split test       # the new candidate, on the new test rows
+rustpy evaluate --bundle bundles/run-002 --split test   # the old model on the same rows; rows it trained on are skipped
+rustpy bundle build --run run-004
+rustpy predict --bundle bundles/run-004 --input new.csv --keep customer_id,month --output preds.csv
+```
+
+`predict` warns when an input has a category the bundle never saw (a new month,
+product or code); `--keep` copies identifying columns into the output. In an
+application, `PredictorHandle::try_update` switches to the new bundle only if it
+loads and passes its self-check, and `rollback_to` returns to the old one.
 
 In your application (depends only on `rustpy-runtime`: no Burn, no Polars, no Python):
 
@@ -54,6 +79,11 @@ let reading = Record::new()
 let p = predictor.predict_one(&reading)?;
 println!("{} (p = {:.3})", p.label, p.probability);
 ```
+
+Errors are `RustpyError` values with a code, the field, expected/actual and a
+next step; `e.render()` (and `{:?}`, so also `fn main() -> Result<…>`) prints
+the multi-line report. `p.unseen_categories` lists input fields whose value the
+bundle never saw.
 
 `predict_serialize(&[my_struct])` accepts any `#[derive(Serialize)]` struct whose
 field names match the bundle inputs; `PredictorHandle::try_update` swaps in a

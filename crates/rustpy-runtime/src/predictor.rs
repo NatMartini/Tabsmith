@@ -12,7 +12,10 @@ use serde::Serialize;
 
 use crate::bundle::{Bundle, LoadOptions};
 use crate::model::sigmoid;
-use crate::transform::{apply_transform, check_table_columns, extra_column_error, missing_column_error, Matrix};
+use crate::transform::{
+    apply_transform, check_table_columns, extra_column_error, missing_column_error, unseen_categories, unseen_fields_by_row,
+    Matrix, UnseenCategories,
+};
 use crate::value::{Record, Table};
 
 /// One prediction.
@@ -24,6 +27,11 @@ pub struct Prediction {
     pub probability: f64,
     /// `probability >= threshold`.
     pub is_positive: bool,
+    /// Categorical input fields whose value was not seen in training. With
+    /// `unknown_category = "ignore"` such a value contributes nothing (all-zero
+    /// encoding), so the prediction relies on the other fields only.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unseen_categories: Vec<String>,
 }
 
 /// Result of [`Predictor::self_check`].
@@ -101,7 +109,7 @@ impl Predictor {
 
     /// Predicts a batch of records.
     pub fn predict(&self, records: &[Record]) -> Result<Vec<Prediction>> {
-        let table = self.records_to_table(records)?;
+        let table = self.records_table(records, &[])?;
         self.predict_table(&table)
     }
 
@@ -140,18 +148,27 @@ impl Predictor {
     /// Predicts a columnar table (used by offline batch prediction and evaluation).
     pub fn predict_table(&self, table: &Table) -> Result<Vec<Prediction>> {
         let probs = self.probabilities(table)?;
+        let unseen = unseen_fields_by_row(&self.bundle.transform, table);
         let out = &self.bundle.output_schema;
         Ok(probs
             .into_iter()
-            .map(|p| {
+            .zip(unseen)
+            .map(|(p, unseen_categories)| {
                 let is_positive = p >= out.threshold;
                 Prediction {
                     label: if is_positive { out.positive_label.clone() } else { out.negative_label.clone() },
                     probability: p,
                     is_positive,
+                    unseen_categories,
                 }
             })
             .collect())
+    }
+
+    /// Per-field counts of categorical values in `table` that were not seen in
+    /// training (useful to detect drift such as a new month or product code).
+    pub fn unseen_categories(&self, table: &Table) -> Vec<UnseenCategories> {
+        unseen_categories(&self.bundle.transform, table)
     }
 
     /// P(positive) per row of a table.
@@ -171,7 +188,10 @@ impl Predictor {
             .collect()
     }
 
-    fn records_to_table(&self, records: &[Record]) -> Result<Table> {
+    /// Checks records against the input contract and turns them into a table with
+    /// the schema's fields, plus the `keep` columns (identifiers to carry along,
+    /// allowed even when extra columns are refused) where records have them.
+    pub fn records_table(&self, records: &[Record], keep: &[String]) -> Result<Table> {
         let schema = &self.bundle.input_schema;
         for (i, r) in records.iter().enumerate() {
             for field in schema.fields.iter().filter(|f| f.required) {
@@ -182,19 +202,26 @@ impl Predictor {
             }
             if schema.extra_columns == ExtraColumnPolicy::Error {
                 for name in r.names() {
-                    let known = schema.field(name).is_some() || schema.passthrough_id.as_deref() == Some(name);
+                    let known = schema.field(name).is_some()
+                        || schema.passthrough_id.as_deref() == Some(name)
+                        || keep.iter().any(|k| k == name);
                     if !known {
                         return Err(extra_column_error(name, Phase::Predict));
                     }
                 }
             }
         }
-        let names: Vec<&str> = schema
+        let mut names: Vec<&str> = schema
             .fields
             .iter()
             .filter(|f| f.required || records.iter().any(|r| r.contains(&f.name)))
             .map(|f| f.name.as_str())
             .collect();
+        for k in keep {
+            if schema.field(k).is_none() && !names.contains(&k.as_str()) && records.iter().any(|r| r.contains(k)) {
+                names.push(k.as_str());
+            }
+        }
         Ok(Table::from_records(records, &names))
     }
 

@@ -614,7 +614,10 @@ pub fn snapshot_source(project: &Project, cfg: &DataConfig) -> Result<SnapshotDa
     let row_identity = match &cfg.id_column {
         Some(id) => RowIdentity::IdColumn { column: id.clone() },
         None => {
-            limitations.push("rows are identified by position in this exact file content".to_string());
+            limitations.push(
+                "no id column: across data versions rows are matched by their content (input columns + target); identical rows count as one row, an edited row as a new row"
+                    .to_string(),
+            );
             RowIdentity::RowIndex
         }
     };
@@ -698,10 +701,14 @@ pub fn load_snapshot(project: &Project, snapshot_id: &str) -> Result<(DataSnapsh
 
 /// Reads a CSV/Parquet file for offline prediction with a bundle: categorical
 /// fields that were text in training are read as text (keeps e.g. leading zeros).
+/// Reads a file for prediction with the training data's delimiter and
+/// missing-value tokens. `keep` columns (identifiers to copy to the output) and
+/// the id column are read as verbatim text.
 pub fn read_for_prediction(
     path: &Path,
     schema: &rustpy_contracts::schema::InputSchema,
     transform: &rustpy_contracts::transform::FittedTransform,
+    keep: &[String],
 ) -> Result<Table> {
     // Read with the training data's delimiter and missing-value tokens.
     let mut cfg = DataConfig::default();
@@ -716,6 +723,7 @@ pub fn read_for_prediction(
         .filter(|f| f.kind == rustpy_contracts::schema::FieldKind::Categorical && f.raw_dtype == RawDtype::Text)
         .map(|f| f.name.clone())
         .chain(schema.passthrough_id.clone()) // ids are copied verbatim (leading zeros kept)
+        .chain(keep.iter().filter(|k| schema.field(k).is_none()).cloned())
         .collect();
     if opts.format == SourceFormat::Csv {
         // A header-only file is a valid empty batch for prediction.
@@ -784,6 +792,12 @@ pub struct FeaturePlan {
 }
 
 impl FeaturePlan {
+    /// Columns that identify a row by its content when there is no id column:
+    /// every feature column plus the target.
+    pub fn content_columns(&self) -> Vec<String> {
+        self.features().map(|(c, _)| c.name.clone()).chain([self.target.name.clone()]).collect()
+    }
+
     pub fn features(&self) -> impl Iterator<Item = (&ColumnDecision, rustpy_contracts::schema::FieldKind)> {
         self.columns.iter().filter_map(|c| match c.role {
             ColumnRole::Feature { kind } => Some((c, kind)),
@@ -798,13 +812,27 @@ fn looks_like_id_name(name: &str) -> bool {
     lower == "id" || lower.ends_with("_id") || lower.ends_with("-id") || name.ends_with("Id") || name.ends_with("ID")
 }
 
+/// ISO-like dates and months (`2026-01`, `2026/01/31`, `2026-01-31T08:00`) and
+/// day-first or month-first dates with a four-digit year (`31.01.2026`, `1/31/2026`).
 fn looks_like_date(s: &str) -> bool {
-    let b = s.as_bytes();
-    b.len() >= 8
-        && b[..4].iter().all(u8::is_ascii_digit)
-        && (b[4] == b'-' || b[4] == b'/')
-        && b[5..7].iter().all(u8::is_ascii_digit)
-        && (b[7] == b'-' || b[7] == b'/')
+    let b = s.trim().as_bytes();
+    let digits = |r: std::ops::Range<usize>| b.get(r).is_some_and(|x| x.iter().all(u8::is_ascii_digit));
+    let sep = |i: usize| matches!(b.get(i), Some(b'-' | b'/' | b'.'));
+    let month_ok = |r: std::ops::Range<usize>| {
+        std::str::from_utf8(&b[r]).ok().and_then(|m| m.parse::<u32>().ok()).is_some_and(|m| (1..=12).contains(&m))
+    };
+    // YYYY-MM[-DD[...]]
+    if digits(0..4) && sep(4) && digits(5..7) && month_ok(5..7) {
+        return b.len() == 7 || (sep(7) && digits(8..10));
+    }
+    // D/M/YYYY, DD.MM.YYYY, M-D-YYYY (optionally followed by a time)
+    let parts: Vec<&[u8]> = b.split(|c| matches!(c, b'-' | b'/' | b'.')).collect();
+    if parts.len() == 3 {
+        let year = parts[2].iter().take_while(|c| c.is_ascii_digit()).count() == 4;
+        let small = |p: &[u8]| (1..=2).contains(&p.len()) && p.iter().all(u8::is_ascii_digit);
+        return small(parts[0]) && small(parts[1]) && year;
+    }
+    false
 }
 
 /// Decides the role of every column and validates the target.
@@ -1139,6 +1167,16 @@ mod tests {
         let p = dir.join(name);
         fs::write(&p, text).unwrap();
         p
+    }
+
+    #[test]
+    fn date_like_text() {
+        for d in ["2026-01", "2026/12", "2026-01-31", "2026-01-31T08:00:00", "31.01.2026", "1/31/2026", "12-5-2026 10:00"] {
+            assert!(looks_like_date(d), "{d}");
+        }
+        for t in ["2026-13", "A-17", "S01", "12-34", "1.2.3", "2026", "line-B", "2026-1"] {
+            assert!(!looks_like_date(t), "{t}");
+        }
     }
 
     #[test]
