@@ -2,16 +2,18 @@
 
 [中文](#中文)
 
-Status of every task in the v2 task list (`执行路线与任务清单.md`) after the first
-implementation pass, dated 2026-10-27. Status values are the four the task list
-allows: **Not started**, **In progress**, **Waiting on external conditions**,
-**Accepted**. "Accepted" here means *accepted by internal engineering evidence*
-(tests, the acceptance script, reference comparisons) on one Linux x86_64 machine.
-No task is marked accepted on the basis of user trials, interviews or GPU
-hardware, because none of those happened.
+Status of every task in the project's v2 task list (an internal planning
+document that is not part of this repository; each row says what its task is),
+dated 2026-10-27. Status values are the four the task list allows: **Not
+started**, **In progress**, **Waiting on external conditions**, **Accepted**.
+"Accepted" here means *accepted by internal engineering evidence* (tests, the
+acceptance script, reference comparisons) on Linux x86_64. No task is marked
+accepted on the basis of user trials, interviews or GPU hardware, because none
+of those happened.
 
-Evidence for "Accepted" rows: the automated tests (`cargo test --workspace`,
-67 tests) and the acceptance run in
+Evidence for "Accepted" rows: the automated tests (`cargo test --workspace`:
+89 tests and a doctest, passing on Linux x86_64 and Windows x86_64) and the
+acceptance run in
 [reports/implementation-acceptance.md](../reports/implementation-acceptance.md).
 
 ## P0 — is it worth building?
@@ -30,7 +32,7 @@ Evidence for "Accepted" rows: the automated tests (`cargo test --workspace`,
 | ID | Task | Status | Evidence |
 |---|---|---|---|
 | P1-01 | 4-crate skeleton, pinned versions, config parsing | Accepted | `rustpy-contracts` / `-runtime` / `-workflow` / `-cli`; `Cargo.lock` committed; unknown keys rejected with location and suggestion; `rustpy config` shows the layer of every value. Tests: `unknown_field_is_reported_with_location`, `layering_and_sources`, `effective_values_cover_every_leaf`. |
-| P1-02 | Input snapshot, schema, split | Accepted | CSV/Parquet; content-hashed snapshots; stratified, id-stable (`rustpy.split.v2-stable-hash`) and group splits; same path with new content creates a new snapshot. Tests: `id_based_splits_are_stable_across_data_versions`, `group_split_has_no_leakage`, `data_update_creates_new_snapshot_and_old_bundle_stays_usable`. |
+| P1-02 | Input snapshot, schema, split | Accepted | CSV/Parquet; content-hashed snapshots; stratified, id-stable (`rustpy.split.v4-stable-key`) and group splits; same path with new content creates a new snapshot. Tests: `id_based_splits_are_stable_across_data_versions`, `group_split_has_no_leakage`, `data_update_creates_new_snapshot_and_old_bundle_stays_usable`. |
 | P1-03 | Reference values and tolerances before implementation | In progress | scikit-learn goldens exist (`fixtures/reference/goldens.json`, 3 tests) but were generated **after** the implementation, not frozen before it. The tolerances (1e-5 transform, 1e-12 metrics, 1 % objective gap) were chosen when the goldens were made. The linear defaults were tuned once afterwards (gap 0.15 %). This does not meet "frozen before implementation"; a fresh golden set should be frozen before the next change to preprocessing or training. |
 | P1-04 | Shared fit/transform | Accepted | One `apply_transform` in `rustpy-runtime` is used by training, evaluation, CLI prediction and the app. Max difference vs. scikit-learn 2.1e-7; training-side vs. separate-process app probabilities < 1e-12. |
 | P1-05 | Run states and immutable artifacts | Accepted | planned / running / completed / failed / cancelled / interrupted; `process.lock` liveness; atomic writes; content hashes in `run.json`. |
@@ -57,7 +59,7 @@ Evidence for "Accepted" rows: the automated tests (`cargo test --workspace`,
 
 | ID | Task | Status | Evidence / gap |
 |---|---|---|---|
-| P3-01 | Install and runtime-only distribution | In progress | Linux x86_64 clean release build timed (CLI ≈ 5 min with dependencies already downloaded; app ≈ 24 s). No Windows build, no prebuilt binaries, no clean-runner download timing. |
+| P3-01 | Install and runtime-only distribution | In progress | Linux x86_64 clean release build timed (see the acceptance report). The full test suite passes on Windows 11 x86_64 (run locally). CI (Linux, macOS, Windows), a release workflow with prebuilt binaries for five targets, `install.sh`, `install.ps1` and cargo-binstall metadata exist but have not run on GitHub yet (no public repository and no release tag so far). Linux arm64 and macOS Intel binaries are built but never tested; no clean-runner download timing. |
 | P3-02 | Local report and diagnostics | Accepted | `rustpy report` writes HTML + JSON: data issues, quality, resources, configuration differences between runs, and non-comparable runs flagged. |
 | P3-03 | Independent user trials | Waiting on external conditions | No participants. No pass rate is claimed. |
 | P3-04 | Upstream and bundle upgrade drill | In progress | Bundle-side rules exist and are tested (strict versions, `min_runtime_version`, unknown fields rejected). No real dependency upgrade (e.g. a new Burn release) was rehearsed. |
@@ -74,7 +76,7 @@ real demand. The LLM contract walkthrough (P2-08) is the only work done there.
 
 1. Interviews and alternative-tool sessions (P0-02, P0-03, P0-06).
 2. An NVIDIA machine and one AMD/Intel/Apple machine (P0-05, P2-01, P2-04, P2-05, P3-05).
-3. A Windows runner and a release pipeline with prebuilt binaries (P3-01).
+3. The first CI run and tagged release on GitHub, and test runners for Linux arm64 and macOS Intel (P3-01).
 4. Five matching users for timed independent tasks (P3-03).
 5. Re-freezing reference goldens before the next numeric change (P1-03).
 
@@ -84,9 +86,9 @@ real demand. The LLM contract walkthrough (P2-08) is the only work done there.
 
 # 实施待办
 
-本文记录 v2 任务清单（`执行路线与任务清单.md`）中每个任务在首轮实现后的状态，日期 2026-10-27。状态只使用任务清单允许的四种：**未开始**、**进行中**、**等待外部条件**、**已验收**。这里的“已验收”指*在一台 Linux x86_64 机器上，由内部工程证据验收*（自动测试、验收脚本、参考对照）。没有任何任务依据用户试验、访谈或 GPU 硬件被标为已验收，因为这些都没有进行。
+本文记录项目 v2 任务清单（内部规划文档，不在本仓库中；每一行都说明了对应任务的内容）中每个任务的状态，日期 2026-10-27。状态只使用任务清单允许的四种：**未开始**、**进行中**、**等待外部条件**、**已验收**。这里的“已验收”指*在 Linux x86_64 上，由内部工程证据验收*（自动测试、验收脚本、参考对照）。没有任何任务依据用户试验、访谈或 GPU 硬件被标为已验收，因为这些都没有进行。
 
-“已验收”的证据：自动测试（`cargo test --workspace`，67 个测试）以及 [reports/implementation-acceptance.md](../reports/implementation-acceptance.md) 中的验收运行。
+“已验收”的证据：自动测试（`cargo test --workspace`：89 个测试和 1 个文档测试，在 Linux x86_64 和 Windows x86_64 上通过）以及 [reports/implementation-acceptance.md](../reports/implementation-acceptance.md) 中的验收运行。
 
 ## P0 —— 是否值得构建
 
@@ -104,7 +106,7 @@ real demand. The LLM contract walkthrough (P2-08) is the only work done there.
 | ID | 任务 | 状态 | 证据 |
 |---|---|---|---|
 | P1-01 | 4-crate 骨架、锁版本、配置解析 | 已验收 | `rustpy-contracts` / `-runtime` / `-workflow` / `-cli`；提交了 `Cargo.lock`；未知键会被拒绝并给出位置和建议；`rustpy config` 显示每个值来自哪一层。测试：`unknown_field_is_reported_with_location`、`layering_and_sources`、`effective_values_cover_every_leaf`。 |
-| P1-02 | 输入快照、schema 与 split | 已验收 | CSV/Parquet；基于内容哈希的快照；分层、基于 id 的稳定切分（`rustpy.split.v2-stable-hash`）和分组切分；同一路径换了内容会生成新快照。测试：`id_based_splits_are_stable_across_data_versions`、`group_split_has_no_leakage`、`data_update_creates_new_snapshot_and_old_bundle_stays_usable`。 |
+| P1-02 | 输入快照、schema 与 split | 已验收 | CSV/Parquet；基于内容哈希的快照；分层、基于 id 的稳定切分（`rustpy.split.v4-stable-key`）和分组切分；同一路径换了内容会生成新快照。测试：`id_based_splits_are_stable_across_data_versions`、`group_split_has_no_leakage`、`data_update_creates_new_snapshot_and_old_bundle_stays_usable`。 |
 | P1-03 | 实现前的参考值与容差 | 进行中 | 已有 scikit-learn goldens（`fixtures/reference/goldens.json`，3 个测试），但它们是在实现**之后**生成的，而非实现前冻结。容差（变换 1e-5、指标 1e-12、目标函数差距 1%）是在生成 goldens 时选定的。线性默认参数事后调过一次（差距 0.15%）。这不满足“实现前冻结”；下一次修改预处理或训练前，应先重新冻结一套 goldens。 |
 | P1-04 | 共享 fit/transform | 已验收 | `rustpy-runtime` 中只有一个 `apply_transform`，训练、评估、CLI 预测和应用都使用它。与 scikit-learn 的最大差异 2.1e-7；训练侧与独立进程应用的概率差 < 1e-12。 |
 | P1-05 | Run 状态与不可变产物 | 已验收 | planned / running / completed / failed / cancelled / interrupted；用 `process.lock` 判断存活；原子写入；`run.json` 中记录内容哈希。 |
@@ -131,7 +133,7 @@ real demand. The LLM contract walkthrough (P2-08) is the only work done there.
 
 | ID | 任务 | 状态 | 证据 / 缺口 |
 |---|---|---|---|
-| P3-01 | 安装与仅运行时分发 | 进行中 | 已计时 Linux x86_64 清洁 release 构建（依赖已下载时 CLI 约 5 分钟；应用约 24 秒）。没有 Windows 构建、预编译二进制，也没有在清洁 runner 上计时下载。 |
+| P3-01 | 安装与仅运行时分发 | 进行中 | 已计时 Linux x86_64 清洁 release 构建（见验收报告）。完整测试套件在 Windows 11 x86_64 上通过（本地运行）。CI（Linux、macOS、Windows）、为五个目标平台构建预编译二进制的发布流程、`install.sh`、`install.ps1` 和 cargo-binstall 元数据均已就绪，但尚未在 GitHub 上运行（目前还没有公开仓库和发布标签）。Linux arm64 和 macOS Intel 二进制只构建、从未测试；没有在清洁 runner 上计时下载。 |
 | P3-02 | 本地报告与诊断 | 已验收 | `rustpy report` 生成 HTML + JSON：数据问题、质量、资源、运行之间的配置差异，并标出不可比的运行。 |
 | P3-03 | 用户独立任务试验 | 等待外部条件 | 没有参与者。不声称任何通过率。 |
 | P3-04 | 上游与模型包升级演练 | 进行中 | 模型包侧规则已实现并测试（严格版本号、`min_runtime_version`、拒绝未知字段）。未演练真实的依赖升级（例如新版 Burn）。 |
@@ -146,6 +148,6 @@ real demand. The LLM contract walkthrough (P2-08) is the only work done there.
 
 1. 访谈和替代工具对照（P0-02、P0-03、P0-06）。
 2. 一台 NVIDIA 机器和一台 AMD/Intel/Apple 机器（P0-05、P2-01、P2-04、P2-05、P3-05）。
-3. Windows runner 和带预编译二进制的发布流水线（P3-01）。
+3. 在 GitHub 上首次运行 CI 并发布带标签的版本，以及 Linux arm64 和 macOS Intel 的测试 runner（P3-01）。
 4. 五名画像匹配的用户进行计时独立任务（P3-03）。
 5. 下一次数值相关修改前，重新冻结参考 goldens（P1-03）。

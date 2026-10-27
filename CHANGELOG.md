@@ -17,12 +17,22 @@ README.
 
 ### Added
 
+- **One command** (`rustpy train data.csv --target y`): split, preprocess,
+  train both candidates, choose on validation, test once and bundle. Run again
+  after new data arrives and it scores the previous bundle and the new model on
+  the same unseen test rows; run it again on unchanged data and it keeps the
+  existing bundle.
+- **Serving**: `rustpy serve` exposes a bundle over HTTP/JSON (`POST /predict`,
+  `GET /schema`, `GET /health`, and `POST /reload` with `--allow-reload`, which
+  swaps only to a bundle that passes its self-check).
 - **CLI workflow** (`rustpy`): `init` (optionally with a synthetic CC0 sample
-  dataset), `data bind` / `data inspect`, `plan`, `config`, `run`, `runs`,
-  `status`, `compare`, `resume`, `evaluate`, `bundle build` / `check` / `list`,
-  `predict` (CSV, Parquet, JSON and JSONL input), `report` and `doctor`. One
-  `rustpy.toml` with profiles and `--set` overrides, each effective value
-  recording its source; `--json` output and exit codes per error family.
+  dataset), `sample-data`, `data bind` / `data inspect`, `plan`, `config`,
+  `run`, `runs`, `status`, `compare`, `resume`, `evaluate`, `bundle build` /
+  `check` / `list`, `predict` (CSV, Parquet, JSON and JSONL input; defaults to
+  the newest evaluated bundle; `--keep` copies key columns verbatim), `report`
+  and `doctor`. One `rustpy.toml` with profiles and `--set` overrides, each
+  effective value recording its source; `--json` output and exit codes per
+  error family.
 - **Shared preprocessing**: statistics are fitted on training rows only, and the
   same frozen transform encodes training, evaluation, CLI prediction and in-app
   prediction.
@@ -59,8 +69,9 @@ README.
 
 - No GPU backend is compiled in or certified; explicitly requesting a GPU device
   is an error (no silent fallback to the CPU).
-- Before this release only Linux x86_64 had been built and tested by the
-  maintainers; macOS and Windows are covered by CI from this release on.
+- The CPU path is certified on Linux x86_64 only. The full test suite also
+  passes on Windows x86_64; macOS builds are produced and tested by CI; the
+  Linux arm64 and macOS Intel binaries are built but not tested.
 - Regression, multiclass, time-based splits and tree models are not implemented.
 
 [Unreleased]: https://github.com/__OWNER__/__REPO__/compare/v0.1.0...HEAD
