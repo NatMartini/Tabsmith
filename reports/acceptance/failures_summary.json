@@ -1,0 +1,116 @@
+{
+  "scenarios": 12,
+  "actionable": 12,
+  "rows": [
+    {
+      "scenario": "f01-config-typo",
+      "expected_code": "E_CONFIG_UNKNOWN_FIELD",
+      "code": "E_CONFIG_UNKNOWN_FIELD",
+      "message": "--set train.small-mlp.epoch=3, key `train.small-mlp.epoch`: unknown field `epoch`, expected one of `hidden`, `epochs`, `batch_size`, `learning_rate`, `l2`, `class_weight`, `early_stopping_patience`, `checkpoint_every_epochs`, `checkpoint_min_interval_seconds`",
+      "next_action": "did you mean `epochs`? fix the spelling; docs/configuration.md lists every setting",
+      "retained": [],
+      "actionable": true
+    },
+    {
+      "scenario": "f02-unknown-category",
+      "expected_code": "E_UNKNOWN_CATEGORY",
+      "code": "E_UNKNOWN_CATEGORY",
+      "message": "field `supplier`, record 1: category \"S99\" was not seen in training",
+      "next_action": "map the value to a known category, or retrain on data that contains it (or with preprocess.unknown_category = \"ignore\")",
+      "retained": [],
+      "actionable": true
+    },
+    {
+      "scenario": "f03-missing-column",
+      "expected_code": "E_SCHEMA_MISSING_COLUMN",
+      "code": "E_SCHEMA_MISSING_COLUMN",
+      "message": "record 1 is missing required field `shift`",
+      "next_action": "add `shift` to the input (missing values are imputed as in training); the bundle's input.schema.json lists every field",
+      "retained": [],
+      "actionable": true
+    },
+    {
+      "scenario": "f04-cardinality-budget",
+      "expected_code": "E_CARDINALITY_BUDGET",
+      "code": "E_CARDINALITY_BUDGET",
+      "message": "text column `line` has 4 distinct values (each repeated ~3000 times), above preprocess.max_categories = 3",
+      "next_action": "exclude it (data.exclude = [\"line\"]), group rare values upstream, or raise preprocess.max_categories",
+      "retained": [],
+      "actionable": true
+    },
+    {
+      "scenario": "f05-device-unavailable",
+      "expected_code": "E_DEVICE_UNSUPPORTED",
+      "code": "E_DEVICE_UNSUPPORTED",
+      "message": "device `cuda` is not available: no cuda backend is compiled into this build and it is not certified for tabular-binary@0.1",
+      "next_action": "set execution.candidate_device = \"cpu\" (or \"auto-certified\"); RustPy never falls back silently",
+      "retained": [],
+      "actionable": true
+    },
+    {
+      "scenario": "f06-memory-budget",
+      "expected_code": "E_RESOURCE_BUDGET_EXCEEDED",
+      "code": "E_RESOURCE_BUDGET_EXCEEDED",
+      "message": "estimated peak memory 77 MB exceeds execution.max_memory_mb = 1",
+      "next_action": "raise execution.max_memory_mb if the machine has the memory, or use a smaller dataset / fewer categorical levels",
+      "retained": [],
+      "actionable": true
+    },
+    {
+      "scenario": "f07-test-reuse",
+      "expected_code": "E_TEST_SET_REUSE",
+      "code": "E_TEST_SET_REUSE",
+      "message": "1386 of these 1386 test rows were already used to evaluate another model of the same data version, run-002 (eval-001); evaluating more models on them would turn the test set into a selection set",
+      "next_action": "compare candidates on the validation split (`--split valid`); if you accept a biased estimate, pass --allow-test-reuse (recorded in reports and bundles)",
+      "retained": [
+        "evaluation run-002 (eval-001)"
+      ],
+      "actionable": true
+    },
+    {
+      "scenario": "f08-corrupt-bundle",
+      "expected_code": "E_BUNDLE_CORRUPT",
+      "code": "E_BUNDLE_CORRUPT",
+      "message": "bundle file `model.safetensors` does not match its manifest hash",
+      "next_action": "the file was modified or damaged; rebuild the bundle or restore it from a known-good copy",
+      "retained": [],
+      "actionable": true
+    },
+    {
+      "scenario": "f09-incomplete-bundle",
+      "expected_code": "E_BUNDLE_MISSING_FILE",
+      "code": "E_BUNDLE_MISSING_FILE",
+      "message": "bundle file `transform.json` is missing",
+      "next_action": "the bundle is incomplete; rebuild it with `rustpy bundle build` or restore a complete copy",
+      "retained": [],
+      "actionable": true
+    },
+    {
+      "scenario": "f10-time-split-refused",
+      "expected_code": "E_SPLIT_UNSUPPORTED",
+      "code": "E_SPLIT_UNSUPPORTED",
+      "message": "a chronological (time) split is required but not implemented in tabular-binary@0.1",
+      "next_action": "RustPy will not fall back to a random split for time-dependent data; split the file by time yourself into train/test files, or remove data.time_column if rows are truly independent",
+      "retained": [],
+      "actionable": true
+    },
+    {
+      "scenario": "f11-resume-completed-run",
+      "expected_code": "E_RUN_STATE_INVALID",
+      "code": "E_RUN_STATE_INVALID",
+      "message": "run run-001 already completed; there is nothing to resume",
+      "next_action": "start a new run with `rustpy run`, or continue training from its weights with `rustpy resume run-001 --warm-start`",
+      "retained": [],
+      "actionable": true
+    },
+    {
+      "scenario": "f12-missing-data-file",
+      "expected_code": "E_DATA_SOURCE_NOT_FOUND",
+      "code": "E_DATA_SOURCE_NOT_FOUND",
+      "message": "data file `<work>/defect-model/data/nope.csv` does not exist",
+      "next_action": "check data.source in rustpy.toml or bind a file with `rustpy data bind <file>`",
+      "retained": [],
+      "actionable": true
+    }
+  ]
+}

@@ -2,7 +2,7 @@
 
 [中文](#中文)
 
-Thank you for helping. RustPy is an early CPU prototype; bug reports with a
+Thank you for helping. RustPy is an early, CPU-only release; bug reports with a
 reproduction, tests, and careful fixes are the most valuable contributions.
 
 ## Ground rules
@@ -63,9 +63,18 @@ cargo tree --manifest-path examples/predict-app/Cargo.toml -e normal --prefix no
 `examples/predict-app` is deliberately outside the workspace: its own
 `Cargo.lock` shows exactly what an application that loads bundles depends on.
 
-The code base has not been formatted with `rustfmt` yet, so there is no
-formatting or Clippy gate. Please do not reformat code you are not otherwise
-changing; a single formatting commit will come separately.
+Formatting and lints are checked by the `lint` CI job (Linux):
+
+```sh
+cargo fmt --all                                   # rustfmt.toml: max_width = 140
+cargo fmt --manifest-path examples/predict-app/Cargo.toml
+cargo clippy --workspace --all-targets -- -D warnings
+cargo clippy --manifest-path examples/predict-app/Cargo.toml --all-targets -- -D warnings
+```
+
+The workspace allows two Clippy lints on purpose (see `[workspace.lints]` in the
+root `Cargo.toml`); prefer fixing a warning over adding an `#[allow]`, and say
+why next to any `#[allow]` you add.
 
 ## Adding tests
 
@@ -127,7 +136,7 @@ without any additional terms or conditions.
 
 ## 中文
 
-感谢参与。RustPy 目前是早期的 CPU 原型；附带复现步骤的问题报告、测试和谨慎的修复最有价值。
+感谢参与。RustPy 目前是早期的、仅支持 CPU 的版本；附带复现步骤的问题报告、测试和谨慎的修复最有价值。
 
 ### 基本规则
 
@@ -165,8 +174,17 @@ cargo tree --manifest-path examples/predict-app/Cargo.toml -e normal --prefix no
 `examples/predict-app` 有意放在 workspace 之外：它自己的 `Cargo.lock` 精确展示了一个只加载
 bundle 的应用依赖了什么。
 
-代码尚未用 `rustfmt` 格式化，因此暂时没有格式或 Clippy 检查。请不要重新格式化你没有修改的代码；
-之后会单独提交一次统一格式化。
+格式和 lint 由 CI 的 `lint` 任务（Linux）检查：
+
+```sh
+cargo fmt --all                                   # rustfmt.toml：max_width = 140
+cargo fmt --manifest-path examples/predict-app/Cargo.toml
+cargo clippy --workspace --all-targets -- -D warnings
+cargo clippy --manifest-path examples/predict-app/Cargo.toml --all-targets -- -D warnings
+```
+
+workspace 有意放宽了两条 Clippy lint（见根目录 `Cargo.toml` 的 `[workspace.lints]`）；能修复警告就不要添加
+`#[allow]`，确需添加时请在旁边写明原因。
 
 ### 添加测试
 

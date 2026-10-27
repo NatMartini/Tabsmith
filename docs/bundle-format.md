@@ -43,8 +43,11 @@ Loading (`Predictor::load`) is all-or-nothing:
 `examples/input.json` and compare with `examples/expected.json`.
 
 Status in `evaluation.json` / manifest `evaluation_status`:
-`evaluated` (built after `rustpy evaluate --run <id> --split test`) or
-`unevaluated-candidate` (built with `--allow-unevaluated`).
+`evaluated` (built after `rustpy evaluate --run <id> --split test`, or from a
+run whose weights are identical to an evaluated run's on the same data version)
+or `unevaluated-candidate` (built with `--allow-unevaluated`). `rustpy predict`
+and `rustpy serve` without `--bundle` use the newest `evaluated` bundle of the
+project, and a candidate only when no bundle was evaluated.
 
 Updates: `PredictorHandle::try_update(dir, opts)` loads and self-checks the new
 bundle in a separate instance; only then is it swapped in. Updates are
@@ -79,7 +82,7 @@ ignored.
 
 `rustpy bundle check` / `Predictor::self_check` 还会运行 `examples/input.json`，并与 `examples/expected.json` 比对。
 
-`evaluation.json` 和 manifest 中的 `evaluation_status`：`evaluated`（在 `rustpy evaluate --run <id> --split test` 之后构建）或 `unevaluated-candidate`（使用 `--allow-unevaluated` 构建）。
+`evaluation.json` 和 manifest 中的 `evaluation_status`：`evaluated`（在 `rustpy evaluate --run <id> --split test` 之后构建，或者来自一个与同一数据版本上已评估 Run 权重完全相同的 Run）或 `unevaluated-candidate`（使用 `--allow-unevaluated` 构建）。不带 `--bundle` 时，`rustpy predict` 和 `rustpy serve` 使用项目中最新的 `evaluated` 模型包；只有在没有任何已评估模型包时才使用候选包。
 
 更新：`PredictorHandle::try_update(dir, opts)` 先在独立实例中加载并自检新包，通过后才切换。更新是串行的，因此每次都与它要替换的预测器比较。破坏性的契约变化默认被拒绝，除非设置 `LoadOptions::allow_contract_change(true)`：新增必需输入字段、字段种类或类型改变、更严格的缺失值/未知类别策略，或目标列、标签映射、阈值改变。任何失败都会让旧预测器继续生效，错误信息会说明这一点。返回的 `UpdateReport` 列出 `schema_changes` 和 `output_changes`，即使被允许的变化也清晰可见。回退使用 `rollback_to(old_dir, opts)`——旧包在磁盘上保持不变。
 

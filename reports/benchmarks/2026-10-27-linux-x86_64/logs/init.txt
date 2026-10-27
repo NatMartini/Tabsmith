@@ -1,0 +1,10 @@
+$ <repo>/target/release/rustpy init bench
+created project bench
+  config: bench/rustpy.toml
+
+next:
+  cd bench
+  rustpy data bind <file.csv|file.parquet> --target <column>
+  rustpy plan
+
+--- stderr ---

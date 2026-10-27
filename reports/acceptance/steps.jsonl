@@ -1,0 +1,68 @@
+{"step": "01-init", "exit": 0, "expected_exit": 0, "seconds": 0.133, "ok": true, "command": "rustpy init defect-model --sample-data"}
+{"step": "02-plan", "exit": 0, "expected_exit": 0, "seconds": 0.052, "ok": true, "command": "rustpy plan"}
+{"step": "03-plan-json", "exit": 0, "expected_exit": 0, "seconds": 0.041, "ok": true, "command": "rustpy plan --json"}
+{"step": "04-run", "exit": 0, "expected_exit": 0, "seconds": 0.36, "ok": true, "command": "rustpy run"}
+{"step": "05-run-json-cached", "exit": 0, "expected_exit": 0, "seconds": 0.217, "ok": true, "command": "rustpy --json run --candidates linear"}
+{"step": "06-compare", "exit": 0, "expected_exit": 0, "seconds": 0.004, "ok": true, "command": "rustpy compare --runs run-001 run-002"}
+{"step": "07-evaluate-test", "exit": 0, "expected_exit": 0, "seconds": 0.077, "ok": true, "command": "rustpy evaluate --run run-002 --split test"}
+{"step": "08-bundle-build", "exit": 0, "expected_exit": 0, "seconds": 0.022, "ok": true, "command": "rustpy bundle build --run run-002"}
+{"step": "09-bundle-check", "exit": 0, "expected_exit": 0, "seconds": 0.003, "ok": true, "command": "rustpy bundle check bundles/run-002"}
+{"step": "10-predict-csv", "exit": 0, "expected_exit": 0, "seconds": 0.104, "ok": true, "command": "rustpy predict --bundle bundles/run-002 --input data/defects.csv --output preds.csv"}
+{"step": "11-report", "exit": 0, "expected_exit": 0, "seconds": 0.008, "ok": true, "command": "rustpy report"}
+{"step": "12-app-build", "exit": 0, "expected_exit": 0, "seconds": 0.03, "ok": true, "command": "cargo build --release --quiet"}
+{"step": "13-app-predict", "exit": 0, "expected_exit": 0, "seconds": 0.004, "ok": true, "command": "sh -c ./target/release/predict-app '<work>/defect-model/bundles/run-002' < '<work>/records.jsonl'"}
+{"step": "14-app-typed", "exit": 0, "expected_exit": 0, "seconds": 0.003, "ok": true, "command": "./target/release/typed <work>/defect-model/bundles/run-002"}
+{"step": "15a-sample-data", "exit": 0, "expected_exit": 0, "seconds": 0.032, "ok": true, "command": "rustpy sample-data machines.csv --rows 10000"}
+{"step": "15b-train", "exit": 0, "expected_exit": 0, "seconds": 0.571, "ok": true, "command": "rustpy train machines.csv --target defect --group device_id"}
+{"step": "15c-sample-new", "exit": 0, "expected_exit": 0, "seconds": 0.005, "ok": true, "command": "rustpy sample-data new.csv --rows 200 --seed 7"}
+{"step": "15d-predict-default-bundle", "exit": 0, "expected_exit": 0, "seconds": 0.012, "ok": true, "command": "rustpy predict --input new.csv --keep unit_id --output preds.csv"}
+{"step": "15e-more-data", "exit": 0, "expected_exit": 0, "seconds": 0.015, "ok": true, "command": "sh -c rustpy sample-data more.csv --rows 3000 --seed 5 --shifted && tail -n +2 more.csv >> machines.csv"}
+{"step": "15f-retrain-new-data", "exit": 0, "expected_exit": 0, "seconds": 0.657, "ok": true, "command": "rustpy train"}
+{"step": "16a-serve-health", "exit": 0, "expected_exit": 0, "seconds": 0.01, "ok": true, "command": "curl -fsS http://127.0.0.1:41261/health"}
+{"step": "16b-serve-predict", "exit": 0, "expected_exit": 0, "seconds": 0.006, "ok": true, "command": "curl -fsS -X POST http://127.0.0.1:41261/predict --data-binary @<work>/one/bundles/run-006/examples/input.json"}
+{"step": "16c-serve-bad-input", "exit": 22, "expected_exit": 22, "seconds": 0.005, "ok": true, "command": "curl -fsS -X POST http://127.0.0.1:41261/predict -d {\"line\": \"A\"}"}
+{"step": "16d-serve-sigint", "exit": 0, "expected_exit": 0}
+{"step": "20-new-data", "exit": 0, "expected_exit": 0, "seconds": 0.041, "ok": true, "command": "rustpy sample-data data/defects.csv --rows 12000 --seed 43 --shifted"}
+{"step": "21-run-v2", "exit": 0, "expected_exit": 0, "seconds": 0.461, "ok": true, "command": "rustpy run"}
+{"step": "22-compare-v2", "exit": 0, "expected_exit": 0, "seconds": 0.004, "ok": true, "command": "rustpy compare --runs run-004 run-005"}
+{"step": "23-old-bundle-on-new-valid", "exit": 0, "expected_exit": 0, "seconds": 0.087, "ok": true, "command": "rustpy evaluate --bundle bundles/run-002 --split valid"}
+{"step": "24-new-run-on-new-valid", "exit": 0, "expected_exit": 0, "seconds": 0.085, "ok": true, "command": "rustpy evaluate --run run-004 --split valid"}
+{"step": "25-cross-snapshot-compare", "exit": 0, "expected_exit": 0, "seconds": 0.005, "ok": true, "command": "rustpy compare --runs run-002 run-004"}
+{"step": "26-evaluate-test-v2", "exit": 0, "expected_exit": 0, "seconds": 0.087, "ok": true, "command": "rustpy evaluate --run run-004 --split test"}
+{"step": "27-bundle-build-v2", "exit": 0, "expected_exit": 0, "seconds": 0.023, "ok": true, "command": "rustpy bundle build --run run-004"}
+{"step": "28-hot-swap-and-rollback", "exit": 0, "expected_exit": 0, "seconds": 0.003, "ok": true, "command": "./target/release/hot_swap <work>/defect-model/bundles/run-002 <work>/defect-model/bundles/run-004 <work>/broken"}
+{"step": "29-old-bundle-still-valid", "exit": 0, "expected_exit": 0, "seconds": 0.004, "ok": true, "command": "rustpy bundle check bundles/run-002"}
+{"step": "30-report-v2", "exit": 0, "expected_exit": 0, "seconds": 0.021, "ok": true, "command": "rustpy report"}
+{"step": "40-init-a", "exit": 0, "expected_exit": 0, "seconds": 0.125, "ok": true, "command": "rustpy init resume-a --sample-data"}
+{"step": "41-init-b", "exit": 0, "expected_exit": 0, "seconds": 0.125, "ok": true, "command": "rustpy init resume-b --sample-data"}
+{"step": "42-uninterrupted", "exit": 0, "expected_exit": 0, "seconds": 0.313, "ok": true, "command": "rustpy run --candidates small-mlp"}
+{"step": "43-crash-after-130-steps", "exit": 137, "expected_exit": 137, "seconds": 0.091, "ok": true, "command": "rustpy run --candidates small-mlp --simulate-crash-after-steps 130"}
+{"step": "44-runs-shows-interrupted", "exit": 0, "expected_exit": 0, "seconds": 0.006, "ok": true, "command": "rustpy runs"}
+{"step": "45-resume", "exit": 0, "expected_exit": 0, "seconds": 0.191, "ok": true, "command": "rustpy resume run-001"}
+{"step": "50-init-c", "exit": 0, "expected_exit": 0, "seconds": 0.148, "ok": true, "command": "rustpy init cancel-c --sample-data"}
+{"step": "51-sigint", "exit": 130, "expected_exit": 130, "note": "SIGINT after 3 s"}
+{"step": "52-runs-after-sigint", "exit": 0, "expected_exit": 0, "seconds": 0.004, "ok": true, "command": "rustpy runs"}
+{"step": "53-resume-after-sigint", "exit": 0, "expected_exit": 0, "seconds": 1.468, "ok": true, "command": "rustpy resume run-001 --set train.small-mlp.epochs=400 --set train.small-mlp.early_stopping_patience=0"}
+{"step": "60-init-d1", "exit": 0, "expected_exit": 0, "seconds": 0.139, "ok": true, "command": "rustpy init det-1 --sample-data"}
+{"step": "61-init-d2", "exit": 0, "expected_exit": 0, "seconds": 0.161, "ok": true, "command": "rustpy init det-2 --sample-data"}
+{"step": "62-run-d1", "exit": 0, "expected_exit": 0, "seconds": 0.411, "ok": true, "command": "rustpy run"}
+{"step": "63-run-d2", "exit": 0, "expected_exit": 0, "seconds": 0.425, "ok": true, "command": "rustpy run"}
+{"step": "f01-config-typo", "exit": 2, "expected_exit": 2, "seconds": 0.004, "ok": true, "command": "rustpy --json plan --set train.small-mlp.epoch=3"}
+{"step": "f02a-strict-run", "exit": 0, "expected_exit": 0, "seconds": 0.171, "ok": true, "command": "rustpy --json run --candidates linear --set preprocess.unknown_category=\"error\""}
+{"step": "f02b-strict-bundle", "exit": 0, "expected_exit": 0, "seconds": 0.023, "ok": true, "command": "rustpy bundle build --run run-006 --allow-unevaluated --out bundles/strict"}
+{"step": "f02-unknown-category", "exit": 3, "expected_exit": 3, "seconds": 0.004, "ok": true, "command": "rustpy --json predict --bundle bundles/strict --input unknown.jsonl"}
+{"step": "f03-missing-column", "exit": 3, "expected_exit": 3, "seconds": 0.004, "ok": true, "command": "sh -c echo '{\"line\": \"A\"}' > missing.jsonl && rustpy --json predict --bundle bundles/run-002 --input missing.jsonl"}
+{"step": "f04-cardinality-budget", "exit": 3, "expected_exit": 3, "seconds": 0.042, "ok": true, "command": "rustpy --json plan --set preprocess.max_categories=3"}
+{"step": "f05-device-unavailable", "exit": 5, "expected_exit": 5, "seconds": 0.046, "ok": true, "command": "rustpy --json run --set execution.candidate_device=\"cuda\""}
+{"step": "f06-memory-budget", "exit": 5, "expected_exit": 5, "seconds": 0.046, "ok": true, "command": "rustpy --json run --set execution.max_memory_mb=1"}
+{"step": "f07-test-reuse", "exit": 7, "expected_exit": 7, "seconds": 0.039, "ok": true, "command": "rustpy --json evaluate --run run-001 --split test"}
+{"step": "f08-corrupt-bundle", "exit": 4, "expected_exit": 4, "seconds": 0.004, "ok": true, "command": "rustpy --json bundle check <work>/broken"}
+{"step": "f09-incomplete-bundle", "exit": 4, "expected_exit": 4, "seconds": 0.004, "ok": true, "command": "rustpy --json bundle check <work>/broken"}
+{"step": "f10-time-split-refused", "exit": 3, "expected_exit": 3, "seconds": 0.044, "ok": true, "command": "rustpy --json plan --set data.time_column=\"hours_in_service\""}
+{"step": "f11-resume-completed-run", "exit": 6, "expected_exit": 6, "seconds": 0.004, "ok": true, "command": "rustpy --json resume run-001"}
+{"step": "f12-missing-data-file", "exit": 3, "expected_exit": 3, "seconds": 0.004, "ok": true, "command": "rustpy --json plan --set data.source=\"data/nope.csv\""}
+{"step": "70-export-run-001", "exit": 0, "expected_exit": 0, "seconds": 57.52, "ok": true, "command": "cargo run --quiet -p rustpy-workflow --example export_reference -- <work>/defect-model run-001 <work>/ref-run-001"}
+{"step": "71-sklearn-run-001", "exit": 0, "expected_exit": 0, "seconds": 0.701, "ok": true, "command": "~/.cache/rustpy-public-check/venv/bin/python -I tools/reference/sklearn_reference.py <work>/ref-run-001 ~/.cache/rustpy-public-check/accept-evidence/sklearn_run-001.json"}
+{"step": "70-export-run-002", "exit": 0, "expected_exit": 0, "seconds": 0.504, "ok": true, "command": "cargo run --quiet -p rustpy-workflow --example export_reference -- <work>/defect-model run-002 <work>/ref-run-002"}
+{"step": "71-sklearn-run-002", "exit": 0, "expected_exit": 0, "seconds": 0.649, "ok": true, "command": "~/.cache/rustpy-public-check/venv/bin/python -I tools/reference/sklearn_reference.py <work>/ref-run-002 ~/.cache/rustpy-public-check/accept-evidence/sklearn_run-002.json"}
+{"step": "80-overhead-build", "exit": 0, "expected_exit": 0, "seconds": 171.588, "ok": true, "command": "cargo build --release --quiet -p rustpy-workflow --example overhead"}

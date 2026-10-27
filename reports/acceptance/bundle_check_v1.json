@@ -1,0 +1,12 @@
+{
+  "error": {
+    "code": "E_BUNDLE_NOT_FOUND",
+    "diagnostic_id": "d-34c0689bdd",
+    "expected": "a directory created by `rustpy bundle build`",
+    "field": "bundles/run-002",
+    "message": "no bundle manifest at `bundles/run-002/manifest.json`",
+    "next_action": "check the path; list bundles with `rustpy bundle list`",
+    "phase": "load"
+  },
+  "ok": false
+}
