@@ -9,13 +9,13 @@ use rustpy_contracts::evaluation::{EvaluationRecord, EvaluationSubject};
 use rustpy_contracts::manifest::BundleManifest;
 use rustpy_contracts::run::{RunRecord, RunStatus};
 use rustpy_contracts::time::now_rfc3339;
-use rustpy_contracts::{Phase, Result, RUSTPY_VERSION};
+use rustpy_contracts::{Phase, RUSTPY_VERSION, Result};
 use rustpy_runtime::{LoadOptions, Predictor};
 use serde::Serialize;
 
 use crate::device::ENGINE;
 use crate::pipeline::{Comparison, RunGroup, Workspace};
-use crate::project::{read_json, write_atomic, write_json, ConfigRequest};
+use crate::project::{ConfigRequest, read_json, write_atomic, write_json};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct BundleStatus {
@@ -53,7 +53,10 @@ pub struct ConfigDiff {
 }
 
 fn esc(s: &str) -> String {
-    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 fn f4(x: Option<f64>) -> String {
@@ -103,9 +106,7 @@ impl Workspace {
                     .collect()
             })
             .unwrap_or_default();
-        group_files.sort_by_key(|p| {
-            crate::pipeline::id_number(p.file_stem().and_then(|s| s.to_str()).unwrap_or_default())
-        });
+        group_files.sort_by_key(|p| crate::pipeline::id_number(p.file_stem().and_then(|s| s.to_str()).unwrap_or_default()));
         let mut groups = Vec::new();
         for gf in group_files {
             let g: RunGroup = read_json(&gf, Phase::Report)?;
@@ -156,7 +157,12 @@ impl Workspace {
                     .effective_values()
                     .into_iter()
                     .filter(|(k, v, _)| base.get(k) != Some(v))
-                    .map(|(k, v, src)| format!("{k} = {v} ({src}; {ref_id}: {})", base.get(&k).map(String::as_str).unwrap_or("unset")))
+                    .map(|(k, v, src)| {
+                        format!(
+                            "{k} = {v} ({src}; {ref_id}: {})",
+                            base.get(&k).map(String::as_str).unwrap_or("unset")
+                        )
+                    })
                     .collect();
                 config_diffs.push(ConfigDiff {
                     group_id: g.group_id.clone(),
@@ -297,11 +303,25 @@ th{{font-weight:600;color:var(--muted);font-size:12px;text-transform:uppercase;l
         let lineage = run
             .lineage
             .as_ref()
-            .map(|l| format!("{} of {}", serde_json::to_value(l.level).ok().and_then(|x| x.as_str().map(String::from)).unwrap_or_default(), l.parent_run_id))
+            .map(|l| {
+                format!(
+                    "{} of {}",
+                    serde_json::to_value(l.level)
+                        .ok()
+                        .and_then(|x| x.as_str().map(String::from))
+                        .unwrap_or_default(),
+                    l.parent_run_id
+                )
+            })
             .unwrap_or_else(|| "–".into());
         let curve: Vec<f64> = run.history.iter().map(|e| e.valid_loss).collect();
         let notes = match &run.error {
-            Some(e) => format!("{}: {}{}", e.code, e.message, e.next_action.as_ref().map(|n| format!(" — next: {n}")).unwrap_or_default()),
+            Some(e) => format!(
+                "{}: {}{}",
+                e.code,
+                e.message,
+                e.next_action.as_ref().map(|n| format!(" — next: {n}")).unwrap_or_default()
+            ),
             None => run.stop_reason.clone().map(|s| format!("stopped: {s}")).unwrap_or_default(),
         };
         let _ = write!(
@@ -322,8 +342,13 @@ th{{font-weight:600;color:var(--muted);font-size:12px;text-transform:uppercase;l
             run.steps_done,
             run.steps_planned,
             run.timings.train_ms / 1000.0,
-            run.engine_parity_max_abs_diff.map(|d| format!("{d:.1e}")).unwrap_or_else(|| "–".into()),
-            run.latency.as_ref().map(|l| format!("{:.0} µs", l.single_row_p95_us)).unwrap_or_else(|| "–".into()),
+            run.engine_parity_max_abs_diff
+                .map(|d| format!("{d:.1e}"))
+                .unwrap_or_else(|| "–".into()),
+            run.latency
+                .as_ref()
+                .map(|l| format!("{:.0} µs", l.single_row_p95_us))
+                .unwrap_or_else(|| "–".into()),
             sparkline(&curve),
             esc(&notes)
         );
@@ -431,7 +456,11 @@ th{{font-weight:600;color:var(--muted);font-size:12px;text-transform:uppercase;l
             esc(&d.group_id),
             esc(&d.run_id),
             &d.config_hash[..12.min(d.config_hash.len())],
-            if d.differences.is_empty() { "—".to_string() } else { esc(&d.differences.join("; ")) }
+            if d.differences.is_empty() {
+                "—".to_string()
+            } else {
+                esc(&d.differences.join("; "))
+            }
         );
     }
     h.push_str("</table></div>");
@@ -465,7 +494,9 @@ th{{font-weight:600;color:var(--muted);font-size:12px;text-transform:uppercase;l
             esc(&p.device),
             esc(&p.precision),
             p.threads,
-            rc.and_then(|r| r.peak_rss_mb).map(|m| format!("{m:.0} MB")).unwrap_or_else(|| "–".into()),
+            rc.and_then(|r| r.peak_rss_mb)
+                .map(|m| format!("{m:.0} MB"))
+                .unwrap_or_else(|| "–".into()),
             rc.map(|r| if r.matches_plan { "yes" } else { "NO" }).unwrap_or("–"),
             esc(&detected.join("; "))
         );

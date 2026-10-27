@@ -10,8 +10,8 @@
 
 use std::io::Read as _;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use rustpy_contracts::{ErrorCode, Phase, Result, RustpyError};
 use rustpy_runtime::{LoadOptions, PredictorHandle, Record};
@@ -124,10 +124,13 @@ fn handle_request(mut req: Request, handle: &PredictorHandle, allow_reload: bool
 
 fn read_json(req: &mut Request) -> Result<serde_json::Value> {
     let mut body = Vec::new();
-    req.as_reader()
-        .take(MAX_BODY + 1)
-        .read_to_end(&mut body)
-        .map_err(|e| RustpyError::new(ErrorCode::DataReadFailed, Phase::Predict, format!("cannot read the request body: {e}")))?;
+    req.as_reader().take(MAX_BODY + 1).read_to_end(&mut body).map_err(|e| {
+        RustpyError::new(
+            ErrorCode::DataReadFailed,
+            Phase::Predict,
+            format!("cannot read the request body: {e}"),
+        )
+    })?;
     if body.len() as u64 > MAX_BODY {
         return Err(RustpyError::new(
             ErrorCode::DataReadFailed,
@@ -137,8 +140,12 @@ fn read_json(req: &mut Request) -> Result<serde_json::Value> {
         .next("send fewer records per request"));
     }
     serde_json::from_slice(&body).map_err(|e| {
-        RustpyError::new(ErrorCode::DataReadFailed, Phase::Predict, format!("the body is not valid JSON: {e}"))
-            .expected("a record object, an array of records, or {\"records\": [...]}")
+        RustpyError::new(
+            ErrorCode::DataReadFailed,
+            Phase::Predict,
+            format!("the body is not valid JSON: {e}"),
+        )
+        .expected("a record object, an array of records, or {\"records\": [...]}")
     })
 }
 
@@ -148,8 +155,7 @@ fn predict(handle: &PredictorHandle, v: &serde_json::Value) -> Result<serde_json
         serde_json::Value::Object(o) if o.contains_key("records") => match &o["records"] {
             serde_json::Value::Array(a) => a.iter().collect(),
             _ => {
-                return Err(RustpyError::new(ErrorCode::SchemaTypeMismatch, Phase::Predict, "`records` must be an array")
-                    .field("records"));
+                return Err(RustpyError::new(ErrorCode::SchemaTypeMismatch, Phase::Predict, "`records` must be an array").field("records"));
             }
         },
         other => vec![other],
@@ -163,8 +169,7 @@ fn predict(handle: &PredictorHandle, v: &serde_json::Value) -> Result<serde_json
 
 fn reload(handle: &PredictorHandle, v: &serde_json::Value) -> Result<serde_json::Value> {
     let dir = v.get("bundle").and_then(|b| b.as_str()).ok_or_else(|| {
-        RustpyError::new(ErrorCode::ConfigInvalid, Phase::Load, "missing \"bundle\"")
-            .expected("{\"bundle\": \"<bundle dir>\"}")
+        RustpyError::new(ErrorCode::ConfigInvalid, Phase::Load, "missing \"bundle\"").expected("{\"bundle\": \"<bundle dir>\"}")
     })?;
     let report = handle.try_update(Path::new(dir), LoadOptions::cpu().with_self_check(true))?;
     Ok(serde_json::to_value(report).unwrap_or_default())

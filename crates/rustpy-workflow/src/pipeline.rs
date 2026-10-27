@@ -9,27 +9,25 @@ use std::time::Instant;
 use rustpy_contracts::config::{Candidate, ProjectConfig, ResolvedConfig, ValueSource};
 use rustpy_contracts::data::{DataSnapshot, SplitManifest, SplitName};
 use rustpy_contracts::device::DevicePlan;
-use rustpy_contracts::evaluation::{
-    BinaryMetrics, ComparisonProtocol, EvaluationRecord, EvaluationSubject, LatencyStats,
-};
+use rustpy_contracts::evaluation::{BinaryMetrics, ComparisonProtocol, EvaluationRecord, EvaluationSubject, LatencyStats};
 use rustpy_contracts::hash::sha256_file;
 use rustpy_contracts::run::{ArtifactRef, Lineage, ResumeLevel, RunMetrics, RunRecord, RunStatus, Timings};
 use rustpy_contracts::time::now_rfc3339;
-use rustpy_contracts::{ErrorCode, Phase, Result, RustpyError, METRICS_VERSION, RUN_FORMAT_VERSION, RUSTPY_VERSION};
-use rustpy_runtime::model::{sigmoid, DenseModel};
-use rustpy_runtime::{apply_transform, Matrix, Predictor, LoadOptions, Table};
+use rustpy_contracts::{ErrorCode, METRICS_VERSION, Phase, RUN_FORMAT_VERSION, RUSTPY_VERSION, Result, RustpyError};
+use rustpy_runtime::model::{DenseModel, sigmoid};
+use rustpy_runtime::{LoadOptions, Matrix, Predictor, Table, apply_transform};
 use serde::{Deserialize, Serialize};
 
-use crate::data::{plan_columns, snapshot_source, load_snapshot, FeaturePlan};
-use crate::device::{environment, estimate_peak_mb, plan_device, receipt, ENGINE};
-use crate::fit::{fit_transform, transform_id, FittedArtifacts};
+use crate::data::{FeaturePlan, load_snapshot, plan_columns, snapshot_source};
+use crate::device::{ENGINE, environment, estimate_peak_mb, plan_device, receipt};
+use crate::exposure::{ExposureCheck, RowKeys, schema_content_columns};
+use crate::fit::{FittedArtifacts, fit_transform, transform_id};
 use crate::metrics::binary_metrics;
-use crate::exposure::{schema_content_columns, ExposureCheck, RowKeys};
-use crate::project::{append_jsonl, read_json, write_json, ConfigRequest, Project};
+use crate::project::{ConfigRequest, Project, append_jsonl, read_json, write_json};
 use crate::split::{labels, make_split};
 use crate::train::{
-    latest_checkpoint, list_checkpoints, model_config, platform_fingerprint, train, verify_checkpoint, ResumeKey,
-    RunControl, StartFrom, TrainInputs, TrainOutcome, TrainState,
+    ResumeKey, RunControl, StartFrom, TrainInputs, TrainOutcome, TrainState, latest_checkpoint, list_checkpoints, model_config,
+    platform_fingerprint, train, verify_checkpoint,
 };
 
 /// Ledger entry for one use of a test split (see `check_test_reuse`).
@@ -68,8 +66,19 @@ pub struct SplitData {
 #[derive(Debug, Clone)]
 pub enum Progress {
     Stage(String),
-    RunStarted { run_id: String, candidate: Candidate, steps_planned: u64 },
-    Epoch { run_id: String, epoch: usize, epochs: usize, train_loss: f64, valid_loss: f64, valid_metric: f64 },
+    RunStarted {
+        run_id: String,
+        candidate: Candidate,
+        steps_planned: u64,
+    },
+    Epoch {
+        run_id: String,
+        epoch: usize,
+        epochs: usize,
+        train_loss: f64,
+        valid_loss: f64,
+        valid_metric: f64,
+    },
     RunFinished {
         run_id: String,
         status: RunStatus,
@@ -224,7 +233,13 @@ impl Workspace {
             write_json(&split_path, &split)?;
         }
         let t1 = Instant::now();
-        let tid = transform_id(&split.split_id, &cfg.preprocess, &features, cfg.selection.threshold, &cfg.data.null_values);
+        let tid = transform_id(
+            &split.split_id,
+            &cfg.preprocess,
+            &features,
+            cfg.selection.threshold,
+            &cfg.data.null_values,
+        );
         let tdir = self.project.dir("transforms").join(&tid);
         let fitted = if tdir.join("fitted.json").is_file() && !no_cache {
             reused.push("transform".to_string());
@@ -265,10 +280,7 @@ impl Workspace {
         let t0 = Instant::now();
         let (snapshot, table) = load_snapshot(&self.project, &run.snapshot_id).map_err(|e| e.run(run.run_id.clone()))?;
         let data_ms = ms(t0);
-        let split: SplitManifest = read_json(
-            &self.project.dir("splits").join(format!("{}.json", run.split_id)),
-            Phase::Split,
-        )?;
+        let split: SplitManifest = read_json(&self.project.dir("splits").join(format!("{}.json", run.split_id)), Phase::Split)?;
         let fitted: FittedArtifacts = read_json(
             &self.project.dir("transforms").join(&run.transform_id).join("fitted.json"),
             Phase::Fit,
@@ -340,10 +352,16 @@ impl Workspace {
         let path = self.run_path(run_id);
         if !path.is_file() {
             let known = self.run_ids();
-            return Err(RustpyError::new(ErrorCode::RunNotFound, Phase::Run, format!("run `{run_id}` does not exist"))
-                .field(run_id)
-                .actual(if known.is_empty() { "no runs yet".into() } else { format!("runs: {}", known.join(", ")) })
-                .next("list runs with `rustpy runs`"));
+            return Err(
+                RustpyError::new(ErrorCode::RunNotFound, Phase::Run, format!("run `{run_id}` does not exist"))
+                    .field(run_id)
+                    .actual(if known.is_empty() {
+                        "no runs yet".into()
+                    } else {
+                        format!("runs: {}", known.join(", "))
+                    })
+                    .next("list runs with `rustpy runs`"),
+            );
         }
         let mut run: RunRecord = read_json(&path, Phase::Run)?;
         self.refresh_status(&mut run)?;
@@ -418,8 +436,11 @@ impl Workspace {
         {
             return None;
         }
-        let on_previous: Vec<&str> =
-            runs.iter().filter(|r| r.snapshot_id == latest.snapshot_id).map(|r| r.run_id.as_str()).collect();
+        let on_previous: Vec<&str> = runs
+            .iter()
+            .filter(|r| r.snapshot_id == latest.snapshot_id)
+            .map(|r| r.run_id.as_str())
+            .collect();
         let mut note = format!(
             "new data version: {} is now snapshot {}, while {} used snapshot {}. Earlier runs and bundles keep their own data version and stay usable; to compare an old model with a new one on the same new rows use `rustpy evaluate --bundle <old bundle> --split test`",
             snapshot.source.path,
@@ -429,8 +450,11 @@ impl Workspace {
         );
         // Without an id column the split is keyed by every column: a changed column
         // set re-splits the old rows.
-        let previous: Option<DataSnapshot> =
-            read_json(&self.project.dir("snapshots").join(&latest.snapshot_id).join("snapshot.json"), Phase::Data).ok();
+        let previous: Option<DataSnapshot> = read_json(
+            &self.project.dir("snapshots").join(&latest.snapshot_id).join("snapshot.json"),
+            Phase::Data,
+        )
+        .ok();
         if let (Some(prev), rustpy_contracts::data::RowIdentity::RowIndex) = (previous, &snapshot.row_identity) {
             let names = |s: &DataSnapshot| s.columns.iter().map(|c| c.name.clone()).collect::<BTreeSet<_>>();
             let (old, new) = (names(&prev), names(snapshot));
@@ -608,7 +632,11 @@ impl Workspace {
         run.started_at = Some(now_rfc3339());
         run.pid = Some(std::process::id());
         self.save_run(&run)?;
-        self.event(&run_id, "started", serde_json::json!({"candidate": candidate, "device": plan.device}));
+        self.event(
+            &run_id,
+            "started",
+            serde_json::json!({"candidate": candidate, "device": plan.device}),
+        );
         progress(Progress::RunStarted {
             run_id: run_id.clone(),
             candidate,
@@ -727,7 +755,11 @@ impl Workspace {
                         run.latency = Some(measure_latency(&p.fitted, &best, &p.table, &valid_data.rows));
                         run.timings.eval_ms = ms(t1);
                         run.status = RunStatus::Completed;
-                        self.event(&run_id, "completed", serde_json::json!({"steps": state.step, "best_epoch": state.best_epoch}));
+                        self.event(
+                            &run_id,
+                            "completed",
+                            serde_json::json!({"steps": state.step, "best_epoch": state.best_epoch}),
+                        );
                     }
                     Err(e) => {
                         let mut e = e.run(run_id.clone());
@@ -807,11 +839,9 @@ impl Workspace {
         // An exact resume continues with the run's recorded configuration. Flags that
         // would change it are refused instead of being silently ignored.
         if req.profile.is_some() || !req.overrides.is_empty() || !req.override_tables.is_empty() {
-            let recorded: ResolvedConfig =
-                read_json(&self.project.run_dir(run_id).join("resolved.json"), Phase::Resume)?;
+            let recorded: ResolvedConfig = read_json(&self.project.run_dir(run_id).join("resolved.json"), Phase::Resume)?;
             let requested = self.project.resolve_config(req)?;
-            let old: std::collections::BTreeMap<String, String> =
-                recorded.effective_values().into_iter().map(|(k, v, _)| (k, v)).collect();
+            let old: std::collections::BTreeMap<String, String> = recorded.effective_values().into_iter().map(|(k, v, _)| (k, v)).collect();
             let changed: Vec<String> = requested
                 .effective_values()
                 .into_iter()
@@ -1019,8 +1049,11 @@ impl Workspace {
             )));
         }
         let cfg = &p.resolved.config;
-        if model_config(parent.candidate, p.fitted.transform.output_dim, cfg.train.for_candidate(parent.candidate))
-            != weights.config
+        if model_config(
+            parent.candidate,
+            p.fitted.transform.output_dim,
+            cfg.train.for_candidate(parent.candidate),
+        ) != weights.config
         {
             return Err(RustpyError::new(
                 ErrorCode::ResumeIncompatible,
@@ -1120,7 +1153,11 @@ impl Workspace {
     }
 
     fn evaluation_rows(&self, evaluation_id: &str) -> Option<RowKeys> {
-        read_json(&self.project.dir("evaluations").join(format!("{evaluation_id}.rows.json")), Phase::Evaluate).ok()
+        read_json(
+            &self.project.dir("evaluations").join(format!("{evaluation_id}.rows.json")),
+            Phase::Evaluate,
+        )
+        .ok()
     }
 
     /// Rows a run's weights were trained or selected on: training rows (and
@@ -1138,8 +1175,7 @@ impl Workspace {
             }
             let keys = (|| -> Result<RowKeys> {
                 let (snapshot, table) = load_snapshot(&self.project, &r.snapshot_id)?;
-                let split: SplitManifest =
-                    read_json(&self.project.dir("splits").join(format!("{}.json", r.split_id)), Phase::Evaluate)?;
+                let split: SplitManifest = read_json(&self.project.dir("splits").join(format!("{}.json", r.split_id)), Phase::Evaluate)?;
                 let mut rows = split.rows(SplitName::Train);
                 if include_valid || r.run_id != run.run_id {
                     // Ancestors' validation rows selected their weights, too.
@@ -1257,12 +1293,18 @@ impl Workspace {
                         EvaluationSubject::Bundle { bundle_id, .. } => bundle_id.clone(),
                     };
                     let label = format!("{subject} ({})", prev.evaluation_id);
-                    let same_version = prev.model_snapshot_id.as_deref().is_none_or(|s| self.same_data_version(s, model_snapshot));
+                    let same_version = prev
+                        .model_snapshot_id
+                        .as_deref()
+                        .is_none_or(|s| self.same_data_version(s, model_snapshot));
                     if !same_version {
                         if !other_versions.contains(&label) {
                             other_versions.push(label);
                         }
-                    } else if !other_models.iter().any(|(m, _, _)| Some(m.as_str()) == prev.model_sha256.as_deref()) {
+                    } else if !other_models
+                        .iter()
+                        .any(|(m, _, _)| Some(m.as_str()) == prev.model_sha256.as_deref())
+                    {
                         other_models.push((prev.model_sha256.clone().unwrap_or_default(), label, n));
                     }
                 }
@@ -1352,7 +1394,8 @@ impl Workspace {
         if split == SplitName::Test {
             ledger = self.check_test_reuse(&model_sha, &run.snapshot_id, &rows, allow_test_reuse)?;
             if let Some(mut rec) = ledger.existing.take() {
-                rec.notes.push("existing evaluation returned; the test set was not used again".into());
+                rec.notes
+                    .push("existing evaluation returned; the test set was not used again".into());
                 return Ok(rec);
             }
             notes.append(&mut ledger.notes);
@@ -1375,7 +1418,9 @@ impl Workspace {
         let rec = EvaluationRecord {
             evaluation_id: String::new(),
             created_at: now_rfc3339(),
-            subject: EvaluationSubject::Run { run_id: run_id.to_string() },
+            subject: EvaluationSubject::Run {
+                run_id: run_id.to_string(),
+            },
             protocol: self.protocol(&p, split),
             metrics: binary_metrics(&pr, &data.y, run.threshold),
             test_use_index: (split == SplitName::Test).then_some(ledger.index),
@@ -1383,7 +1428,11 @@ impl Workspace {
             latency: Some(measure_latency(&p.fitted, &model, &p.table, &data.rows)),
             model_sha256: Some(model_sha),
             model_snapshot_id: Some(run.snapshot_id.clone()),
-            unseen_rows_verified: if split == SplitName::Valid { None } else { verified.then_some(true) },
+            unseen_rows_verified: if split == SplitName::Valid {
+                None
+            } else {
+                verified.then_some(true)
+            },
             notes,
         };
         self.save_evaluation(rec, &rows)
@@ -1448,7 +1497,10 @@ impl Workspace {
                 Phase::Evaluate,
                 "the bundle predicts a different target definition than the current data",
             )
-            .expected(format!("{} with labels {:?}/{:?}", out.target, out.negative_label, out.positive_label))
+            .expected(format!(
+                "{} with labels {:?}/{:?}",
+                out.target, out.negative_label, out.positive_label
+            ))
             .actual(format!("{} with labels {:?}/{:?}", t.name, t.negative_label, t.positive_label)));
         }
         let model_sha = predictor
@@ -1586,8 +1638,10 @@ impl Workspace {
                     g.run_ids
                 }
                 None => {
-                    return Err(RustpyError::new(ErrorCode::RunNotFound, Phase::Compare, "there are no runs to compare yet")
-                        .next("train candidates with `rustpy run`"));
+                    return Err(
+                        RustpyError::new(ErrorCode::RunNotFound, Phase::Compare, "there are no runs to compare yet")
+                            .next("train candidates with `rustpy run`"),
+                    );
                 }
             }
         } else {
@@ -1677,12 +1731,18 @@ impl Workspace {
             }
             if cfg.selection.max_model_kib > 0.0 && model_kib > cfg.selection.max_model_kib {
                 ok = false;
-                notes.push(format!("model {model_kib:.1} KiB above max_model_kib {}", cfg.selection.max_model_kib));
+                notes.push(format!(
+                    "model {model_kib:.1} KiB above max_model_kib {}",
+                    cfg.selection.max_model_kib
+                ));
             }
             if let Some(l) = p95 {
                 if cfg.selection.max_p95_latency_us > 0.0 && l > cfg.selection.max_p95_latency_us {
                     ok = false;
-                    notes.push(format!("p95 latency {l:.1} µs above max_p95_latency_us {}", cfg.selection.max_p95_latency_us));
+                    notes.push(format!(
+                        "p95 latency {l:.1} µs above max_p95_latency_us {}",
+                        cfg.selection.max_p95_latency_us
+                    ));
                 }
             }
             if r.status != RunStatus::Completed {
@@ -1784,7 +1844,6 @@ pub fn id_number(id: &str) -> u64 {
 fn probs(model: &DenseModel, x: &Matrix) -> Vec<f64> {
     model.logits(x).into_iter().map(|z| sigmoid(f64::from(z))).collect()
 }
-
 
 /// Single-row latency through the runtime path (transform + forward), on up to 200 rows.
 fn measure_latency(fitted: &FittedArtifacts, model: &DenseModel, table: &Table, rows: &[usize]) -> LatencyStats {

@@ -1,7 +1,7 @@
 //! Binary classification metrics (definitions match scikit-learn's).
 
-use rustpy_contracts::evaluation::{BinaryMetrics, ConfusionMatrix};
 use rustpy_contracts::METRICS_VERSION;
+use rustpy_contracts::evaluation::{BinaryMetrics, ConfusionMatrix};
 
 /// Probability clipping used by log loss: machine epsilon of f64, as in
 /// scikit-learn >= 1.5 (`eps="auto"` for float64 inputs).
@@ -32,7 +32,11 @@ pub fn binary_metrics(p: &[f64], y: &[bool], threshold: f64) -> BinaryMetrics {
     let recall = ratio(tp, tp + fn_);
     let specificity = ratio(tn, tn + fp);
     let precision = ratio(tp, tp + fp);
-    let f1 = if precision + recall == 0.0 { 0.0 } else { 2.0 * precision * recall / (precision + recall) };
+    let f1 = if precision + recall == 0.0 {
+        0.0
+    } else {
+        2.0 * precision * recall / (precision + recall)
+    };
     BinaryMetrics {
         metrics_version: METRICS_VERSION.to_string(),
         n,

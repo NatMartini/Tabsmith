@@ -3,10 +3,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use rustpy_contracts::config::{DataConfig, NanPolicy, SplitStrategy};
-use rustpy_contracts::data::{SplitCounts, SplitManifest, SplitName, SPLIT_TEST, SPLIT_TRAIN, SPLIT_VALID};
+use rustpy_contracts::data::{SPLIT_TEST, SPLIT_TRAIN, SPLIT_VALID, SplitCounts, SplitManifest, SplitName};
 use rustpy_contracts::hash::{canonical_hash, short};
 use rustpy_contracts::{ErrorCode, Phase, Result, RustpyError};
-use rustpy_runtime::{coerce_category, Table};
+use rustpy_runtime::{Table, coerce_category};
 
 use crate::data::TargetInfo;
 use crate::exposure::{content_columns, entity_key, row_fingerprint};
@@ -26,7 +26,6 @@ pub const SPLIT_ALGORITHM_CONTENT: &str = "rustpy.split.v3-content-hash";
 /// hashed the key text as written).
 pub const SPLIT_ALGORITHM_STABLE: &str = "rustpy.split.v4-stable-key";
 // Stratified with an id: per-class ordering by the stable hash, then exact cuts.
-
 
 /// Deterministic value in [0, 1) from (seed, domain, key): FNV-1a + SplitMix64 finaliser.
 pub fn stable_unit(seed: u64, domain: &str, key: &str) -> f64 {
@@ -201,8 +200,12 @@ pub fn make_split(snapshot_id: &str, table: &Table, target: &TargetInfo, cfg: &D
                     .next("set data.group_column to the entity column (e.g. device_id)")
             })?;
             let col = table.column(gname).ok_or_else(|| {
-                RustpyError::new(ErrorCode::SchemaMissingColumn, Phase::Split, format!("group column `{gname}` not found"))
-                    .field("data.group_column")
+                RustpyError::new(
+                    ErrorCode::SchemaMissingColumn,
+                    Phase::Split,
+                    format!("group column `{gname}` not found"),
+                )
+                .field("data.group_column")
             })?;
             let mut rows_by_group: BTreeMap<String, Vec<usize>> = BTreeMap::new();
             for i in 0..n {
@@ -384,8 +387,14 @@ mod tests {
         let y: Vec<Option<i64>> = (0..n).map(|i| Some(i64::from(i % 5 == 0))).collect();
         let g: Vec<Option<String>> = (0..n).map(|i| Some(format!("dev{}", i / 4))).collect();
         let t = Table::new(vec![
-            Column { name: "y".into(), data: ColumnData::Int(y) },
-            Column { name: "g".into(), data: ColumnData::Text(g) },
+            Column {
+                name: "y".into(),
+                data: ColumnData::Int(y),
+            },
+            Column {
+                name: "g".into(),
+                data: ColumnData::Text(g),
+            },
         ])
         .unwrap();
         let info = TargetInfo {
@@ -418,8 +427,14 @@ mod tests {
         let build = |xs: &[i64]| {
             let y: Vec<Option<i64>> = xs.iter().map(|x| Some(i64::from(x % 5 == 0))).collect();
             Table::new(vec![
-                Column { name: "x".into(), data: ColumnData::Int(xs.iter().map(|&x| Some(x)).collect()) },
-                Column { name: "y".into(), data: ColumnData::Int(y) },
+                Column {
+                    name: "x".into(),
+                    data: ColumnData::Int(xs.iter().map(|&x| Some(x)).collect()),
+                },
+                Column {
+                    name: "y".into(),
+                    data: ColumnData::Int(y),
+                },
             ])
             .unwrap()
         };
@@ -446,8 +461,14 @@ mod tests {
         let a: Vec<Option<String>> = (0..n).map(|i| Some(if i % 2 == 0 { "x" } else { "y" }.to_string())).collect();
         let y: Vec<Option<i64>> = (0..n).map(|i| Some(i64::from(i % 4 < 2))).collect();
         let t = Table::new(vec![
-            Column { name: "a".into(), data: ColumnData::Text(a) },
-            Column { name: "y".into(), data: ColumnData::Int(y) },
+            Column {
+                name: "a".into(),
+                data: ColumnData::Text(a),
+            },
+            Column {
+                name: "y".into(),
+                data: ColumnData::Int(y),
+            },
         ])
         .unwrap();
         let (_, info) = table(10);

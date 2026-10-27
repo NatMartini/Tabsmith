@@ -217,8 +217,7 @@ impl RustpyError {
     }
 
     pub fn internal(phase: Phase, message: impl Into<String>) -> Self {
-        Self::new(ErrorCode::Internal, phase, message)
-            .next("this is a bug in RustPy; please report it with the diagnostic id")
+        Self::new(ErrorCode::Internal, phase, message).next("this is a bug in RustPy; please report it with the diagnostic id")
     }
 
     /// Multi-line, human-oriented rendering used by the CLI.

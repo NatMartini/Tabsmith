@@ -18,7 +18,7 @@ use burn::tensor::activation::log_sigmoid;
 use burn::tensor::{Device, Tensor, TensorData};
 use rustpy_contracts::config::{Candidate, SelectionMetric};
 use rustpy_contracts::data::SplitName;
-use rustpy_workflow::train::{model_config, train, ResumeKey, RunControl, StartFrom, TrainInputs};
+use rustpy_workflow::train::{ResumeKey, RunControl, StartFrom, TrainInputs, model_config, train};
 use rustpy_workflow::{ConfigRequest, Workspace};
 
 #[derive(Module, Debug)]

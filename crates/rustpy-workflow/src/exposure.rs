@@ -12,7 +12,7 @@ use std::collections::BTreeSet;
 use rustpy_contracts::config::NanPolicy;
 use rustpy_contracts::data::{DataSnapshot, RowIdentity};
 use rustpy_contracts::hash::sha256_hex;
-use rustpy_runtime::{coerce_category, ColumnData, Table, ValueRef};
+use rustpy_runtime::{ColumnData, Table, ValueRef, coerce_category};
 use serde::{Deserialize, Serialize};
 
 /// Content fingerprints of rows over a fixed list of columns.
@@ -168,17 +168,22 @@ impl RowKeys {
     /// snapshots without comparable content fingerprints).
     pub fn overlap(&self, other: &RowKeys) -> Option<usize> {
         match (self, other) {
-            (RowKeys::Ids { ids: a, column: ca }, RowKeys::Ids { ids: b, column: cb }) if ca == cb => {
-                Some(a.intersection(b).count())
-            }
+            (RowKeys::Ids { ids: a, column: ca }, RowKeys::Ids { ids: b, column: cb }) if ca == cb => Some(a.intersection(b).count()),
             (
-                RowKeys::Positions { snapshot_sha256: sa, rows: a, .. },
-                RowKeys::Positions { snapshot_sha256: sb, rows: b, .. },
+                RowKeys::Positions {
+                    snapshot_sha256: sa,
+                    rows: a,
+                    ..
+                },
+                RowKeys::Positions {
+                    snapshot_sha256: sb,
+                    rows: b,
+                    ..
+                },
             ) if sa == sb => Some(a.intersection(b).count()),
-            (
-                RowKeys::Positions { contents: Some(a), .. },
-                RowKeys::Positions { contents: Some(b), .. },
-            ) if a.columns == b.columns => Some(a.hashes.intersection(&b.hashes).count()),
+            (RowKeys::Positions { contents: Some(a), .. }, RowKeys::Positions { contents: Some(b), .. }) if a.columns == b.columns => {
+                Some(a.hashes.intersection(&b.hashes).count())
+            }
             _ => None,
         }
     }

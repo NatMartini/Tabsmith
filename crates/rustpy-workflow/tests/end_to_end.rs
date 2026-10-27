@@ -3,14 +3,14 @@
 
 use std::path::Path;
 
+use rustpy_contracts::ErrorCode;
 use rustpy_contracts::data::SplitName;
 use rustpy_contracts::run::{ResumeLevel, RunStatus};
-use rustpy_contracts::ErrorCode;
 use rustpy_runtime::{LoadOptions, Predictor, Record, Value};
 use rustpy_workflow::bundle::BundleOptions;
 use rustpy_workflow::pipeline::RunOptions;
-use rustpy_workflow::sample::{write_defects_csv, SampleVariant};
-use rustpy_workflow::setup::{init_project, BindRequest};
+use rustpy_workflow::sample::{SampleVariant, write_defects_csv};
+use rustpy_workflow::setup::{BindRequest, init_project};
 use rustpy_workflow::{ConfigRequest, Workspace};
 
 fn quick() -> ConfigRequest {
@@ -52,7 +52,11 @@ fn full_cpu_loop_with_consistent_preprocessing() {
     let plan = ws.plan(&req).unwrap();
     let excluded: Vec<&str> = plan.excluded().iter().map(|(n, _)| *n).collect();
     assert!(excluded.contains(&"inspector_note"), "{excluded:?}");
-    assert!(plan.warnings.iter().any(|w| w.contains("calibration_offset")), "{:?}", plan.warnings);
+    assert!(
+        plan.warnings.iter().any(|w| w.contains("calibration_offset")),
+        "{:?}",
+        plan.warnings
+    );
 
     // Run both candidates.
     let result = ws.run(&req, &RunOptions::default(), &mut |_| {}).unwrap();
@@ -68,7 +72,14 @@ fn full_cpu_loop_with_consistent_preprocessing() {
 
     // R1: a second run reuses snapshot, split and transform.
     let again = ws
-        .run(&req, &RunOptions { candidates: Some(vec![rustpy_contracts::config::Candidate::Linear]), ..Default::default() }, &mut |_| {})
+        .run(
+            &req,
+            &RunOptions {
+                candidates: Some(vec![rustpy_contracts::config::Candidate::Linear]),
+                ..Default::default()
+            },
+            &mut |_| {},
+        )
         .unwrap();
     assert_eq!(again.reused, vec!["snapshot", "split", "transform"]);
 
@@ -86,11 +97,24 @@ fn full_cpu_loop_with_consistent_preprocessing() {
     let reused = ws.evaluate_run(&other.run_id, SplitName::Test, true, false).unwrap();
     assert_eq!(reused.test_use_index, Some(2));
     // A deterministic re-run has the same weights: it shares their evaluation.
-    let linear_eval = if other.candidate == rustpy_contracts::config::Candidate::Linear { &reused } else { &eval };
+    let linear_eval = if other.candidate == rustpy_contracts::config::Candidate::Linear {
+        &reused
+    } else {
+        &eval
+    };
     let twin = ws
-        .build_bundle(&again.runs[0].run_id, &BundleOptions { out: Some(tmp.path().join("twin")), ..Default::default() })
+        .build_bundle(
+            &again.runs[0].run_id,
+            &BundleOptions {
+                out: Some(tmp.path().join("twin")),
+                ..Default::default()
+            },
+        )
         .unwrap();
-    assert_eq!(twin.manifest.provenance.evaluation_id.as_deref(), Some(linear_eval.evaluation_id.as_str()));
+    assert_eq!(
+        twin.manifest.provenance.evaluation_id.as_deref(),
+        Some(linear_eval.evaluation_id.as_str())
+    );
 
     let built = ws.build_bundle(&best, &BundleOptions::default()).unwrap();
     assert!(built.check.passed);
@@ -166,7 +190,7 @@ fn full_cpu_loop_with_consistent_preprocessing() {
 
 #[test]
 fn exact_resume_matches_uninterrupted_training_bitwise() {
-    use rustpy_workflow::train::{train, weights_hash, RunControl, StartFrom, TrainOutcome};
+    use rustpy_workflow::train::{RunControl, StartFrom, TrainOutcome, train, weights_hash};
     use std::sync::atomic::Ordering;
 
     let tmp = tempfile::tempdir().unwrap();

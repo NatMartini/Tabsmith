@@ -14,8 +14,8 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use burn::module::{Module, Param};
@@ -29,13 +29,13 @@ use rustpy_contracts::hash::{canonical_hash, sha256_file};
 use rustpy_contracts::model::ModelConfig;
 use rustpy_contracts::run::EpochRecord;
 use rustpy_contracts::{ErrorCode, Phase, Result, RustpyError};
-use rustpy_runtime::model::{DenseLayer, DenseModel};
 use rustpy_runtime::Matrix;
+use rustpy_runtime::model::{DenseLayer, DenseModel};
 use serde::{Deserialize, Serialize};
 
 use crate::metrics::binary_metrics;
 use crate::project::{write_atomic, write_json};
-use crate::rng::{epoch_permutation, SplitMix64};
+use crate::rng::{SplitMix64, epoch_permutation};
 
 /// Fixed training choices of tabular-binary@0.1 that are not configurable; recorded
 /// in every Run and in the exact-resume key so changes are visible and refused.
@@ -130,7 +130,11 @@ impl DenseNet {
                 .to_vec::<f32>()
                 .map_err(|e| train_err(format!("weight export: {e:?}")))?;
             let b: Vec<f32> = match &l.bias {
-                Some(b) => b.val().into_data().to_vec::<f32>().map_err(|e| train_err(format!("bias export: {e:?}")))?,
+                Some(b) => b
+                    .val()
+                    .into_data()
+                    .to_vec::<f32>()
+                    .map_err(|e| train_err(format!("bias export: {e:?}")))?,
                 None => vec![0.0; spec.out_dim],
             };
             let mut wt = vec![0f32; w.len()];
@@ -152,9 +156,7 @@ impl DenseNet {
 }
 
 fn make_linear(in_dim: usize, out_dim: usize, w: Vec<f32>, b: Vec<f32>, device: &Device) -> Linear {
-    let mut lin = LinearConfig::new(in_dim, out_dim)
-        .with_initializer(Initializer::Zeros)
-        .init(device);
+    let mut lin = LinearConfig::new(in_dim, out_dim).with_initializer(Initializer::Zeros).init(device);
     lin.weight = Param::from_tensor(Tensor::<2>::from_data(TensorData::new(w, [in_dim, out_dim]), device));
     lin.bias = Some(Param::from_tensor(Tensor::<1>::from_data(TensorData::new(b, [out_dim]), device)));
     lin
@@ -307,8 +309,15 @@ pub struct TrainInputs<'a> {
 }
 
 pub enum TrainOutcome {
-    Completed { best: DenseModel, state: TrainState, parity_max_abs_diff: f64 },
-    Cancelled { state: TrainState, checkpoint: PathBuf },
+    Completed {
+        best: DenseModel,
+        state: TrainState,
+        parity_max_abs_diff: f64,
+    },
+    Cancelled {
+        state: TrainState,
+        checkpoint: PathBuf,
+    },
 }
 
 /// Where training starts from.
@@ -391,15 +400,19 @@ pub fn train(
     let batches_per_epoch = n.div_ceil(cfg.batch_size);
     let (w_neg, w_pos) = class_weights(inputs.y_train, cfg.class_weight);
 
-    let (mut model, mut optim, mut state, mut best): (DenseNet, ModuleOptimizer, TrainState, Option<DenseModel>) =
-        match start {
-            StartFrom::Scratch => (DenseNet::init(config, inputs.seed, &device), adam().init(), TrainState::fresh(), None),
-            StartFrom::WarmStart(m) => (DenseNet::from_dense(&m, &device), adam().init(), TrainState::fresh(), None),
-            StartFrom::Checkpoint(dir) => {
-                let ck = load_checkpoint(&dir, &inputs.key, &device)?;
-                (ck.model, ck.optim, ck.state, ck.best)
-            }
-        };
+    let (mut model, mut optim, mut state, mut best): (DenseNet, ModuleOptimizer, TrainState, Option<DenseModel>) = match start {
+        StartFrom::Scratch => (
+            DenseNet::init(config, inputs.seed, &device),
+            adam().init(),
+            TrainState::fresh(),
+            None,
+        ),
+        StartFrom::WarmStart(m) => (DenseNet::from_dense(&m, &device), adam().init(), TrainState::fresh(), None),
+        StartFrom::Checkpoint(dir) => {
+            let ck = load_checkpoint(&dir, &inputs.key, &device)?;
+            (ck.model, ck.optim, ck.state, ck.best)
+        }
+    };
 
     let started = Instant::now();
     let mut last_checkpoint: Option<Instant> = None;
@@ -612,12 +625,7 @@ pub fn list_checkpoints(root: &Path) -> Vec<PathBuf> {
         .map(|it| {
             it.flatten()
                 .map(|e| e.path())
-                .filter(|p| {
-                    p.is_dir()
-                        && p.file_name()
-                            .and_then(|n| n.to_str())
-                            .is_some_and(|n| n.starts_with("step-"))
-                })
+                .filter(|p| p.is_dir() && p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with("step-")))
                 .collect()
         })
         .unwrap_or_default();
@@ -631,8 +639,12 @@ pub fn latest_checkpoint(root: &Path) -> Option<PathBuf> {
 
 /// Verifies every file of a checkpoint against its recorded hash.
 pub fn verify_checkpoint(dir: &Path) -> Result<()> {
-    let files: CheckpointFiles = crate::project::read_json(&dir.join("files.json"), Phase::Resume)
-        .map_err(|_| ck_err(ErrorCode::CheckpointCorrupt, format!("checkpoint `{}` has no file list", dir.display())))?;
+    let files: CheckpointFiles = crate::project::read_json(&dir.join("files.json"), Phase::Resume).map_err(|_| {
+        ck_err(
+            ErrorCode::CheckpointCorrupt,
+            format!("checkpoint `{}` has no file list", dir.display()),
+        )
+    })?;
     for (f, sha, bytes) in &files.files {
         let p = dir.join(f);
         let ok = sha256_file(&p).map(|(s, b)| s == *sha && b == *bytes).unwrap_or(false);
@@ -683,7 +695,12 @@ pub fn weights_hash(model: &DenseModel) -> String {
     let bits: Vec<Vec<u32>> = model
         .layers
         .iter()
-        .flat_map(|l| [l.weight.iter().map(|v| v.to_bits()).collect(), l.bias.iter().map(|v| v.to_bits()).collect()])
+        .flat_map(|l| {
+            [
+                l.weight.iter().map(|v| v.to_bits()).collect(),
+                l.bias.iter().map(|v| v.to_bits()).collect(),
+            ]
+        })
         .collect();
     canonical_hash(&bits)
 }
@@ -696,7 +713,9 @@ mod tests {
     fn data(n: usize, d: usize) -> (Vec<f32>, Vec<f32>, Vec<f32>) {
         let mut rng = SplitMix64::new(11);
         let x: Vec<f32> = (0..n * d).map(|_| rng.normal() as f32).collect();
-        let y: Vec<f32> = (0..n).map(|i| if x[i * d] + 0.5 * x[i * d + 1] > 0.2 { 1.0 } else { 0.0 }).collect();
+        let y: Vec<f32> = (0..n)
+            .map(|i| if x[i * d] + 0.5 * x[i * d + 1] > 0.2 { 1.0 } else { 0.0 })
+            .collect();
         let w: Vec<f32> = y.iter().map(|&t| if t > 0.5 { 1.7 } else { 0.6 }).collect();
         (x, y, w)
     }
@@ -714,7 +733,11 @@ mod tests {
                     for k in 0..l.in_dim {
                         acc += f64::from(l.weight[o * l.in_dim + k]) * h[k];
                     }
-                    out[o] = if l.activation == rustpy_contracts::model::Activation::Relu { acc.max(0.0) } else { acc };
+                    out[o] = if l.activation == rustpy_contracts::model::Activation::Relu {
+                        acc.max(0.0)
+                    } else {
+                        acc
+                    };
                 }
                 h = out;
             }
@@ -722,7 +745,12 @@ mod tests {
             let t = f64::from(y[i]);
             total += f64::from(w[i]) * (z.max(0.0) - t * z + (-z.abs()).exp().ln_1p());
         }
-        let reg: f64 = m.layers.iter().flat_map(|l| l.weight.iter()).map(|&v| f64::from(v) * f64::from(v)).sum();
+        let reg: f64 = m
+            .layers
+            .iter()
+            .flat_map(|l| l.weight.iter())
+            .map(|&v| f64::from(v) * f64::from(v))
+            .sum();
         total / n as f64 + 0.5 * l2 * reg
     }
 
@@ -735,7 +763,17 @@ mod tests {
         let mut out = Vec::new();
         for l in &model.layers {
             out.push(l.weight.val().grad(&grads).unwrap().into_data().to_vec::<f32>().unwrap());
-            out.push(l.bias.as_ref().unwrap().val().grad(&grads).unwrap().into_data().to_vec::<f32>().unwrap());
+            out.push(
+                l.bias
+                    .as_ref()
+                    .unwrap()
+                    .val()
+                    .grad(&grads)
+                    .unwrap()
+                    .into_data()
+                    .to_vec::<f32>()
+                    .unwrap(),
+            );
         }
         (value, out)
     }
@@ -768,7 +806,10 @@ mod tests {
             let exported = model.export(&config).unwrap();
             let (burn_loss, burn_grads) = grads_of(&model, &x, &y, &w, d, l2);
             let ref_loss = objective_f64(&exported, &x, &y, &w, d, f64::from(l2));
-            assert!((burn_loss - ref_loss).abs() < 1e-5 * ref_loss.max(1.0), "{family}: loss {burn_loss} vs {ref_loss}");
+            assert!(
+                (burn_loss - ref_loss).abs() < 1e-5 * ref_loss.max(1.0),
+                "{family}: loss {burn_loss} vs {ref_loss}"
+            );
             // Central finite differences of the f64 objective, per parameter.
             let h = 1e-4f32;
             for (li, layer) in exported.layers.iter().enumerate() {
@@ -795,8 +836,7 @@ mod tests {
                             f64::from(plus.layers[li].weight[idx_rt]) - f64::from(minus.layers[li].weight[idx_rt])
                         };
                         // Divide by the exact (f32-rounded) step.
-                        let fd = (objective_f64(&plus, &x, &y, &w, d, f64::from(l2))
-                            - objective_f64(&minus, &x, &y, &w, d, f64::from(l2)))
+                        let fd = (objective_f64(&plus, &x, &y, &w, d, f64::from(l2)) - objective_f64(&minus, &x, &y, &w, d, f64::from(l2)))
                             / step;
                         let g = f64::from(burn_g[idx_burn]);
                         assert!(

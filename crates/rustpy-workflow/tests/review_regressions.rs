@@ -3,16 +3,16 @@
 use std::fs;
 use std::path::Path;
 
+use rustpy_contracts::ErrorCode;
 use rustpy_contracts::config::Candidate;
 use rustpy_contracts::data::SplitName;
 use rustpy_contracts::run::{ResumeLevel, RunStatus};
-use rustpy_contracts::ErrorCode;
 use rustpy_runtime::{LoadOptions, Predictor, Record, Value};
 use rustpy_workflow::bundle::BundleOptions;
-use rustpy_workflow::data::{read_table, ReadOptions};
+use rustpy_workflow::data::{ReadOptions, read_table};
 use rustpy_workflow::pipeline::RunOptions;
-use rustpy_workflow::sample::{write_defects_csv, SampleVariant};
-use rustpy_workflow::setup::{init_project, BindRequest};
+use rustpy_workflow::sample::{SampleVariant, write_defects_csv};
+use rustpy_workflow::setup::{BindRequest, init_project};
 use rustpy_workflow::{ConfigRequest, RunControl, Workspace};
 
 fn quick(extra: &[&str]) -> ConfigRequest {
@@ -121,7 +121,11 @@ fn identifier_and_stray_token_heuristics() {
     assert!(e.actual.unwrap_or_default().contains('?'));
     // With "?" declared as missing, order_id (unique integral floats) is excluded.
     let cfg = fs::read_to_string(dir.join("rustpy.toml")).unwrap();
-    fs::write(dir.join("rustpy.toml"), cfg.replace("[data]", "[data]\nnull_values = [\"\", \"?\"]")).unwrap();
+    fs::write(
+        dir.join("rustpy.toml"),
+        cfg.replace("[data]", "[data]\nnull_values = [\"\", \"?\"]"),
+    )
+    .unwrap();
     let r = ws
         .bind_data(&BindRequest {
             file: dir.join("data/ids.csv"),
@@ -140,8 +144,7 @@ fn test_discipline_survives_resplits_and_warm_starts() {
     let ws = project(tmp.path(), 1500, false);
     // Numeric features only, so the feature layout does not depend on the split and a
     // warm start across splits is possible (the case the leakage check must catch).
-    const NUMERIC_ONLY: &str =
-        "data.exclude=[\"line\", \"shift\", \"supplier\", \"device_type\", \"firmware\", \"maintenance_flag\"]";
+    const NUMERIC_ONLY: &str = "data.exclude=[\"line\", \"shift\", \"supplier\", \"device_type\", \"firmware\", \"maintenance_flag\"]";
     let req = quick(&[NUMERIC_ONLY]);
     let a = ws.run(&req, &linear(), &mut |_| {}).unwrap().runs.remove(0);
     let ev = ws.evaluate_run(&a.run_id, SplitName::Test, false, false).unwrap();
@@ -156,15 +159,10 @@ fn test_discipline_survives_resplits_and_warm_starts() {
     let reseeded = quick(&[NUMERIC_ONLY, "data.seed=99"]);
     let c = ws.run(&reseeded, &linear(), &mut |_| {}).unwrap().runs.remove(0);
     let e = ws.evaluate_run(&c.run_id, SplitName::Test, false, false).unwrap_err();
-    assert!(
-        matches!(e.code, ErrorCode::TestSetReuse | ErrorCode::LeakageDetected),
-        "{e}"
-    );
+    assert!(matches!(e.code, ErrorCode::TestSetReuse | ErrorCode::LeakageDetected), "{e}");
     // Warm start from `a` on the re-seeded split: a's training rows are now partly in
     // the new test split, so evaluating the child there is leakage.
-    let w = ws
-        .resume(&a.run_id, true, &reseeded, &RunControl::default(), &mut |_| {})
-        .unwrap();
+    let w = ws.resume(&a.run_id, true, &reseeded, &RunControl::default(), &mut |_| {}).unwrap();
     assert_eq!(w.lineage.as_ref().unwrap().level, ResumeLevel::WarmStart);
     let e = ws.evaluate_run(&w.run_id, SplitName::Test, true, false).unwrap_err();
     assert_eq!(e.code, ErrorCode::LeakageDetected, "{e}");
@@ -183,7 +181,11 @@ fn id_based_splits_are_stable_across_data_versions() {
     // Append rows: same first 1200 rows (same seed), then 600 new ones.
     let old = fs::read_to_string(tmp.path().join("data/defects.csv")).unwrap();
     let more = rustpy_workflow::sample::defects_csv(600, 12, SampleVariant::Shifted);
-    fs::write(tmp.path().join("data/defects.csv"), format!("{old}{}", more.split_once('\n').unwrap().1)).unwrap();
+    fs::write(
+        tmp.path().join("data/defects.csv"),
+        format!("{old}{}", more.split_once('\n').unwrap().1),
+    )
+    .unwrap();
     // Test split: with stable id/group splits the old test rows are still test rows,
     // never rows the old bundle trained on.
     let r = ws
@@ -210,11 +212,7 @@ fn mid_epoch_cancel_resume_is_exact_and_children_are_resumable() {
         cancel_after_steps: Some(13),
         ..Default::default()
     };
-    let part = ws
-        .run(&req, &RunOptions { control, ..mlp() }, &mut |_| {})
-        .unwrap()
-        .runs
-        .remove(0);
+    let part = ws.run(&req, &RunOptions { control, ..mlp() }, &mut |_| {}).unwrap().runs.remove(0);
     assert_eq!(part.status, RunStatus::Cancelled);
     assert_eq!(part.steps_done, 13);
     // Resume with a cancel again (child stops before writing a checkpoint of its own
@@ -223,7 +221,9 @@ fn mid_epoch_cancel_resume_is_exact_and_children_are_resumable() {
         cancel_after_steps: Some(14),
         ..Default::default()
     };
-    let child = ws.resume(&part.run_id, false, &ConfigRequest::default(), &control, &mut |_| {}).unwrap();
+    let child = ws
+        .resume(&part.run_id, false, &ConfigRequest::default(), &control, &mut |_| {})
+        .unwrap();
     assert_eq!(child.status, RunStatus::Cancelled);
     let done = ws
         .resume(&child.run_id, false, &ConfigRequest::default(), &RunControl::default(), &mut |_| {})
@@ -249,12 +249,21 @@ fn exact_resume_refuses_changed_settings() {
         .runs
         .remove(0);
     let e = ws
-        .resume(&part.run_id, false, &quick(&["train.small-mlp.learning_rate=0.5"]), &RunControl::default(), &mut |_| {})
+        .resume(
+            &part.run_id,
+            false,
+            &quick(&["train.small-mlp.learning_rate=0.5"]),
+            &RunControl::default(),
+            &mut |_| {},
+        )
         .unwrap_err();
     assert_eq!(e.code, ErrorCode::ResumeIncompatible);
     assert!(e.message.contains("learning_rate"), "{}", e.message);
     // The same settings are fine.
-    assert!(ws.resume(&part.run_id, false, &quick(&[]), &RunControl::default(), &mut |_| {}).is_ok());
+    assert!(
+        ws.resume(&part.run_id, false, &quick(&[]), &RunControl::default(), &mut |_| {})
+            .is_ok()
+    );
 }
 
 /// train-09: a damaged newest checkpoint falls back to an older valid one.
@@ -277,7 +286,9 @@ fn damaged_newest_checkpoint_falls_back_to_older() {
     let mut bytes = fs::read(newest.join("optim.bpk")).unwrap();
     bytes.push(0);
     fs::write(newest.join("optim.bpk"), bytes).unwrap();
-    let r = ws.resume(&part.run_id, false, &ConfigRequest::default(), &RunControl::default(), &mut |_| {}).unwrap();
+    let r = ws
+        .resume(&part.run_id, false, &ConfigRequest::default(), &RunControl::default(), &mut |_| {})
+        .unwrap();
     assert_eq!(r.status, RunStatus::Completed);
     assert!(r.lineage.unwrap().from_step.unwrap() < 20);
 }
@@ -289,10 +300,20 @@ fn missing_tokens_are_part_of_the_bundle() {
     let tmp = tempfile::tempdir().unwrap();
     let ws = project(tmp.path(), 1200, true);
     let cfg = fs::read_to_string(tmp.path().join("rustpy.toml")).unwrap();
-    fs::write(tmp.path().join("rustpy.toml"), cfg.replace("[data]", "[data]\nnull_values = [\"\", \"NA\", \"-999\"]")).unwrap();
+    fs::write(
+        tmp.path().join("rustpy.toml"),
+        cfg.replace("[data]", "[data]\nnull_values = [\"\", \"NA\", \"-999\"]"),
+    )
+    .unwrap();
     let a = ws.run(&quick(&[]), &linear(), &mut |_| {}).unwrap().runs.remove(0);
     let b = ws
-        .build_bundle(&a.run_id, &BundleOptions { allow_unevaluated: true, ..Default::default() })
+        .build_bundle(
+            &a.run_id,
+            &BundleOptions {
+                allow_unevaluated: true,
+                ..Default::default()
+            },
+        )
         .unwrap();
     let p = Predictor::load(tmp.path().join(&b.path), LoadOptions::cpu()).unwrap();
     assert!(p.bundle().transform.missing_tokens.contains(&"-999".to_string()));
@@ -311,7 +332,9 @@ fn missing_tokens_are_part_of_the_bundle() {
 fn compare_uses_recorded_selection_settings() {
     let tmp = tempfile::tempdir().unwrap();
     let ws = project(tmp.path(), 1200, true);
-    let res = ws.run(&quick(&["selection.max_model_kib=0.5"]), &RunOptions::default(), &mut |_| {}).unwrap();
+    let res = ws
+        .run(&quick(&["selection.max_model_kib=0.5"]), &RunOptions::default(), &mut |_| {})
+        .unwrap();
     let later = ws.compare(&[]).unwrap();
     assert_eq!(later.recommended, res.comparison.recommended);
     let mlp_row = later.rows.iter().find(|r| r.candidate == Candidate::SmallMlp).unwrap();
@@ -355,7 +378,13 @@ fn bundle_builds_with_strict_unknown_categories() {
         .runs
         .remove(0);
     let b = ws
-        .build_bundle(&a.run_id, &BundleOptions { allow_unevaluated: true, ..Default::default() })
+        .build_bundle(
+            &a.run_id,
+            &BundleOptions {
+                allow_unevaluated: true,
+                ..Default::default()
+            },
+        )
         .unwrap();
     assert!(b.check.passed);
 }
@@ -363,7 +392,14 @@ fn bundle_builds_with_strict_unknown_categories() {
 fn bundle(ws: &Workspace, dir: &Path, extra: &[&str]) -> std::path::PathBuf {
     let a = ws.run(&quick(extra), &linear(), &mut |_| {}).unwrap().runs.remove(0);
     let out = dir.join(format!("bundles/{}", a.run_id));
-    ws.build_bundle(&a.run_id, &BundleOptions { allow_unevaluated: true, out: Some(out.clone()) }).unwrap();
+    ws.build_bundle(
+        &a.run_id,
+        &BundleOptions {
+            allow_unevaluated: true,
+            out: Some(out.clone()),
+        },
+    )
+    .unwrap();
     out
 }
 
@@ -404,9 +440,18 @@ fn bundle_tampering_is_rejected() {
             fs::write(t.join("manifest.json"), serde_json::to_vec(&m).unwrap()).unwrap();
         }
     };
-    assert_eq!(tamper("t1", &edit_manifest("evaluation_status", "evaluated".into())), ErrorCode::BundleCorrupt);
-    assert_eq!(tamper("t2", &edit_manifest("runtime.min_runtime_version", "banana".into())), ErrorCode::BundleCorrupt);
-    assert_eq!(tamper("t3", &|t: &Path| fs::write(t.join("train.csv"), "x\n1\n").unwrap()), ErrorCode::BundleCorrupt);
+    assert_eq!(
+        tamper("t1", &edit_manifest("evaluation_status", "evaluated".into())),
+        ErrorCode::BundleCorrupt
+    );
+    assert_eq!(
+        tamper("t2", &edit_manifest("runtime.min_runtime_version", "banana".into())),
+        ErrorCode::BundleCorrupt
+    );
+    assert_eq!(
+        tamper("t3", &|t: &Path| fs::write(t.join("train.csv"), "x\n1\n").unwrap()),
+        ErrorCode::BundleCorrupt
+    );
     assert_eq!(
         tamper("t4", &|t: &Path| {
             let mut tr: serde_json::Value = serde_json::from_slice(&fs::read(t.join("transform.json")).unwrap()).unwrap();
@@ -425,7 +470,11 @@ fn contract_breaking_updates_are_refused() {
     let ws = project(tmp.path(), 1200, true);
     let base = bundle(&ws, tmp.path(), &[]);
     let flipped = bundle(&ws, tmp.path(), &["data.positive_label=\"0\""]);
-    let stricter = bundle(&ws, tmp.path(), &["preprocess.extra_columns=\"error\"", "data.exclude=[\"supplier\"]"]);
+    let stricter = bundle(
+        &ws,
+        tmp.path(),
+        &["preprocess.extra_columns=\"error\"", "data.exclude=[\"supplier\"]"],
+    );
     let h = PredictorHandle::load(&base, LoadOptions::cpu()).unwrap();
     let before = h.current().bundle_id().to_string();
     let e = h.try_update(&flipped, LoadOptions::cpu()).unwrap_err();
@@ -451,7 +500,12 @@ fn positive_label_semantics_hold_for_any_label_order() {
     let recs: Vec<Record> = p1.bundle().examples.records.iter().map(|r| Record::from_json(r).unwrap()).collect();
     for (a, b) in p1.predict(&recs).unwrap().iter().zip(p0.predict(&recs).unwrap()) {
         // Same data, opposite positive class: probabilities are (close to) complementary.
-        assert!((a.probability + b.probability - 1.0).abs() < 0.2, "{} vs {}", a.probability, b.probability);
+        assert!(
+            (a.probability + b.probability - 1.0).abs() < 0.2,
+            "{} vs {}",
+            a.probability,
+            b.probability
+        );
         // ...so, away from the threshold, both name the same class.
         if (a.probability - 0.5).abs() > 0.2 {
             assert_eq!(a.label, b.label);
@@ -502,7 +556,11 @@ fn bundle_evaluation_without_id_matches_rows_by_content() {
     let more = rustpy_workflow::sample::defects_csv(600, 12, SampleVariant::Shifted);
     let mut lines: Vec<&str> = old.lines().skip(1).chain(more.lines().skip(1)).collect();
     lines.reverse();
-    fs::write(dir.join("data/defects.csv"), format!("{}\n{}\n", old.lines().next().unwrap(), lines.join("\n"))).unwrap();
+    fs::write(
+        dir.join("data/defects.csv"),
+        format!("{}\n{}\n", old.lines().next().unwrap(), lines.join("\n")),
+    )
+    .unwrap();
     let bundle_dir = dir.join(&b.path);
     // Validation rows of the old run are recognised by content and excluded.
     let v = ws.evaluate_bundle(&bundle_dir, SplitName::Valid, &req, false, false).unwrap();
@@ -518,7 +576,10 @@ fn bundle_evaluation_without_id_matches_rows_by_content() {
     let new_test = new_p.split.rows(SplitName::Test);
     let leaked = new_test.iter().filter(|&&r| seen(r)).count();
     assert_eq!(t.metrics.n as usize + leaked, new_test.len(), "excluded rows = seen rows");
-    assert!(leaked < old_rows / 20, "content-keyed split kept almost every old row in its split ({leaked} moved)");
+    assert!(
+        leaked < old_rows / 20,
+        "content-keyed split kept almost every old row in its split ({leaked} moved)"
+    );
 
     // A bundle whose source run is unknown here cannot be checked: refused unless allowed.
     let other = tempfile::tempdir().unwrap();
@@ -549,18 +610,36 @@ fn shared_hold_out_and_newest_reference() {
     let ws = project(tmp.path(), 1200, true);
     let req = quick(&[]);
     let a = ws.run(&req, &linear(), &mut |_| {}).unwrap().runs.remove(0);
-    let b = ws.build_bundle(&a.run_id, &BundleOptions { allow_unevaluated: true, ..Default::default() }).unwrap();
+    let b = ws
+        .build_bundle(
+            &a.run_id,
+            &BundleOptions {
+                allow_unevaluated: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
     let old = fs::read_to_string(tmp.path().join("data/defects.csv")).unwrap();
     let more = rustpy_workflow::sample::defects_csv(600, 12, SampleVariant::Shifted);
-    fs::write(tmp.path().join("data/defects.csv"), format!("{old}{}", more.split_once('\n').unwrap().1)).unwrap();
+    fs::write(
+        tmp.path().join("data/defects.csv"),
+        format!("{old}{}", more.split_once('\n').unwrap().1),
+    )
+    .unwrap();
     let n = ws.run(&req, &linear(), &mut |_| {}).unwrap().runs.remove(0);
     let new_eval = ws.evaluate_run(&n.run_id, SplitName::Test, false, false).unwrap();
     assert_eq!(new_eval.test_use_index, Some(1));
-    let old_eval = ws.evaluate_bundle(&tmp.path().join(&b.path), SplitName::Test, &req, false, false).unwrap();
+    let old_eval = ws
+        .evaluate_bundle(&tmp.path().join(&b.path), SplitName::Test, &req, false, false)
+        .unwrap();
     assert_eq!(old_eval.test_use_index, Some(1));
     assert_eq!(old_eval.test_shared_with.len(), 1, "{:?}", old_eval.notes);
     assert!(old_eval.test_shared_with[0].contains(&n.run_id));
-    assert!(old_eval.notes.iter().any(|x| x.contains("another data version")), "{:?}", old_eval.notes);
+    assert!(
+        old_eval.notes.iter().any(|x| x.contains("another data version")),
+        "{:?}",
+        old_eval.notes
+    );
     // Listing the old run first must not make it the reference.
     let cmp = ws.compare(&[a.run_id.clone(), n.run_id.clone()]).unwrap();
     assert_eq!(cmp.recommended.as_deref(), Some(n.run_id.as_str()));
@@ -580,8 +659,18 @@ fn foreign_bundle_with_a_colliding_run_id_is_unverifiable() {
     let reseeded = quick(&["data.seed=7"]);
     let rb = wb.run(&reseeded, &linear(), &mut |_| {}).unwrap().runs.remove(0);
     assert_eq!(ra.run_id, rb.run_id, "both projects have run-001");
-    let bb = wb.build_bundle(&rb.run_id, &BundleOptions { allow_unevaluated: true, ..Default::default() }).unwrap();
-    let e = wa.evaluate_bundle(&b.path().join(&bb.path), SplitName::Test, &req, true, false).unwrap_err();
+    let bb = wb
+        .build_bundle(
+            &rb.run_id,
+            &BundleOptions {
+                allow_unevaluated: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let e = wa
+        .evaluate_bundle(&b.path().join(&bb.path), SplitName::Test, &req, true, false)
+        .unwrap_err();
     assert_eq!(e.code, ErrorCode::LeakageDetected, "{e}");
 }
 
@@ -637,7 +726,13 @@ fn bind_labels_exclude_note_and_symlinks() {
     let ws = project(tmp.path(), 300, false);
     let mut text = String::from("a,b,c,Churn\n");
     for i in 0..300 {
-        text.push_str(&format!("{},{},{},{}\n", i % 7, i % 5, i % 3, if i % 4 == 0 { "Yes" } else { "No" }));
+        text.push_str(&format!(
+            "{},{},{},{}\n",
+            i % 7,
+            i % 5,
+            i % 3,
+            if i % 4 == 0 { "Yes" } else { "No" }
+        ));
     }
     fs::write(tmp.path().join("data/telco.csv"), &text).unwrap();
     let bind = |exclude: Vec<String>| {
@@ -651,7 +746,13 @@ fn bind_labels_exclude_note_and_symlinks() {
     let r = bind(vec!["a".into()]).unwrap();
     assert_eq!(r.target.positive_label, "Yes");
     let r = bind(vec!["b".into()]).unwrap();
-    assert!(r.warnings.iter().any(|w| w.contains("kept from the previous binding") && w.contains("\"a\"")), "{:?}", r.warnings);
+    assert!(
+        r.warnings
+            .iter()
+            .any(|w| w.contains("kept from the previous binding") && w.contains("\"a\"")),
+        "{:?}",
+        r.warnings
+    );
     #[cfg(unix)]
     {
         std::os::unix::fs::symlink("telco.csv", tmp.path().join("data/current.csv")).unwrap();
@@ -687,10 +788,19 @@ fn parquet_with_temporal_columns() {
     let path = tmp.path().join("data/events.parquet");
     ParquetWriter::new(fs::File::create(&path).unwrap()).finish(&mut df).unwrap();
     let r = ws
-        .bind_data(&BindRequest { file: path, target: "y".into(), positive: Some("true".into()), ..Default::default() })
+        .bind_data(&BindRequest {
+            file: path,
+            target: "y".into(),
+            positive: Some("true".into()),
+            ..Default::default()
+        })
         .unwrap();
     let day = r.columns.iter().find(|c| c.name == "day").unwrap();
-    assert!(matches!(day.role, rustpy_workflow::data::ColumnRole::Excluded { .. }), "{:?}", day.role);
+    assert!(
+        matches!(day.role, rustpy_workflow::data::ColumnRole::Excluded { .. }),
+        "{:?}",
+        day.role
+    );
     assert!(r.warnings.iter().any(|w| w.contains("holds dates")), "{:?}", r.warnings);
 }
 
@@ -727,7 +837,12 @@ fn unpadded_ids_still_match_the_old_models_rows() {
     fs::write(&path, file(1200, false)).unwrap();
     let bundle = tmp.path().join(&b.path);
     let train = ws.evaluate_bundle(&bundle, SplitName::Train, &req, false, false).unwrap();
-    assert!(train.metrics.n < 400, "the old training rows are excluded: {} rows evaluated, {:?}", train.metrics.n, train.notes);
+    assert!(
+        train.metrics.n < 400,
+        "the old training rows are excluded: {} rows evaluated, {:?}",
+        train.metrics.n,
+        train.notes
+    );
     // Old rows kept their split, so almost all of the new test rows are unseen.
     let test = ws.evaluate_bundle(&bundle, SplitName::Test, &req, false, false).unwrap();
     assert_eq!(test.unseen_rows_verified, Some(true));
@@ -749,9 +864,12 @@ fn parquet_durations_and_zoned_timestamps() {
                 .cast(&DataType::Duration(TimeUnit::Microseconds))
                 .unwrap(),
             // As pandas, Spark and BigQuery export timestamps (cast would drop the zone).
-            Series::new("ts".into(), (0..n).map(|i| 1_793_000_000_000 + i64::from(i) * 3_600_000).collect::<Vec<_>>())
-                .into_datetime(TimeUnit::Milliseconds, Some(TimeZone::UTC))
-                .into(),
+            Series::new(
+                "ts".into(),
+                (0..n).map(|i| 1_793_000_000_000 + i64::from(i) * 3_600_000).collect::<Vec<_>>(),
+            )
+            .into_datetime(TimeUnit::Milliseconds, Some(TimeZone::UTC))
+            .into(),
             Column::new("y".into(), (0..n).map(|i| i % 3 == 0).collect::<Vec<_>>()),
         ],
     )
@@ -759,16 +877,36 @@ fn parquet_durations_and_zoned_timestamps() {
     let path = tmp.path().join("data/orders.parquet");
     ParquetWriter::new(fs::File::create(&path).unwrap()).finish(&mut df).unwrap();
     let back = ParquetReader::new(fs::File::open(&path).unwrap()).finish().unwrap();
-    assert!(matches!(back.schema().get("ts"), Some(DataType::Datetime(_, Some(_)))), "{:?}", back.schema());
+    assert!(
+        matches!(back.schema().get("ts"), Some(DataType::Datetime(_, Some(_)))),
+        "{:?}",
+        back.schema()
+    );
     let loaded = read_table(&path, &ReadOptions::from_config(&path, &Default::default()).unwrap(), None).unwrap();
     assert_eq!(loaded.table.column("lead").unwrap().get(3), rustpy_runtime::ValueRef::Float(4.5));
-    assert_eq!(loaded.table.column("ts").unwrap().get(1), rustpy_runtime::ValueRef::Text("2026-10-26T08:33:20Z"));
+    assert_eq!(
+        loaded.table.column("ts").unwrap().get(1),
+        rustpy_runtime::ValueRef::Text("2026-10-26T08:33:20Z")
+    );
     let r = ws
-        .bind_data(&BindRequest { file: path, target: "y".into(), positive: Some("true".into()), ..Default::default() })
+        .bind_data(&BindRequest {
+            file: path,
+            target: "y".into(),
+            positive: Some("true".into()),
+            ..Default::default()
+        })
         .unwrap();
     let role = |name: &str| r.columns.iter().find(|c| c.name == name).unwrap().role.clone();
-    assert!(matches!(role("lead"), rustpy_workflow::data::ColumnRole::Feature { .. }), "{:?}", role("lead"));
-    assert!(matches!(role("ts"), rustpy_workflow::data::ColumnRole::Excluded { .. }), "{:?}", role("ts"));
+    assert!(
+        matches!(role("lead"), rustpy_workflow::data::ColumnRole::Feature { .. }),
+        "{:?}",
+        role("lead")
+    );
+    assert!(
+        matches!(role("ts"), rustpy_workflow::data::ColumnRole::Excluded { .. }),
+        "{:?}",
+        role("ts")
+    );
 }
 
 /// review-5: `rustpy train` again on unchanged data keeps the existing bundle
@@ -790,7 +928,15 @@ fn retraining_unchanged_data_and_bundle_defaults() {
     // The step-by-step path accepts the identical model's evaluation, too.
     let run = again.chosen.unwrap();
     let out = tmp.path().join("bundles/copy");
-    let b = ws.build_bundle(&run, &BundleOptions { out: Some(out), ..Default::default() }).unwrap();
+    let b = ws
+        .build_bundle(
+            &run,
+            &BundleOptions {
+                out: Some(out),
+                ..Default::default()
+            },
+        )
+        .unwrap();
     assert_eq!(b.manifest.evaluation_status, "evaluated");
     // A new seed re-splits the same data: no fresh test split, and `predict` keeps
     // the evaluated bundle by default.

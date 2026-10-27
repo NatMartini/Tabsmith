@@ -12,10 +12,10 @@ pub mod exposure;
 pub mod fit;
 pub mod metrics;
 pub mod project;
+pub mod report;
 pub mod rng;
 pub mod sample;
 pub mod setup;
-pub mod report;
 pub mod split;
 pub mod train;
 

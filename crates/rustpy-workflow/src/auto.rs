@@ -17,7 +17,7 @@ use rustpy_contracts::run::RunStatus;
 use rustpy_contracts::{ErrorCode, Result};
 use rustpy_runtime::{LoadOptions, Predictor};
 
-use crate::bundle::{weights_sha, BundleBuildReport, BundleOptions};
+use crate::bundle::{BundleBuildReport, BundleOptions, weights_sha};
 use crate::pipeline::{Progress, RunGroupResult, RunOptions, Workspace};
 use crate::project::ConfigRequest;
 
@@ -61,12 +61,7 @@ pub struct AutoReport {
 
 impl Workspace {
     /// Runs the full workflow on the project's bound data (see the module docs).
-    pub fn train_auto(
-        &self,
-        req: &ConfigRequest,
-        opts: &RunOptions,
-        progress: &mut dyn FnMut(Progress),
-    ) -> Result<AutoReport> {
+    pub fn train_auto(&self, req: &ConfigRequest, opts: &RunOptions, progress: &mut dyn FnMut(Progress)) -> Result<AutoReport> {
         // The bundle `predict` used before this call adds one.
         let previous = self.latest_bundle();
         let group = self.run(req, opts, progress)?;
@@ -81,13 +76,15 @@ impl Workspace {
             group,
         };
         if report.group.cancelled || report.group.runs.iter().any(|r| r.status != RunStatus::Completed) {
-            report.notes.push("not every run completed; no model was selected (see the runs above)".into());
+            report
+                .notes
+                .push("not every run completed; no model was selected (see the runs above)".into());
             return Ok(report);
         }
         let Some(chosen) = report.group.comparison.recommended.clone() else {
-            report.notes.push(
-                "no candidate met the selection constraints on the validation split; nothing was tested or bundled".into(),
-            );
+            report
+                .notes
+                .push("no candidate met the selection constraints on the validation split; nothing was tested or bundled".into());
             return Ok(report);
         };
         report.chosen = Some(chosen.clone());
@@ -153,7 +150,10 @@ impl Workspace {
         // Old vs new on the same unseen test rows (only meaningful when the new model was tested).
         if let (Some((dir, m)), Some(_), Some(new_bundle)) = (previous, &report.test, &report.bundle) {
             if weights_sha(&m) != Some(chosen_sha.as_str()) {
-                progress(Progress::Stage(format!("scoring the previous bundle {} on the same test rows", m.bundle_id)));
+                progress(Progress::Stage(format!(
+                    "scoring the previous bundle {} on the same test rows",
+                    m.bundle_id
+                )));
                 let new_dir = self.project.root.join(&new_bundle.path);
                 let evaluation = self.evaluate_bundle_against(&dir, Some(&new_dir), SplitName::Test, req, false, false);
                 let (evaluation, new_model_on_same_rows, note) = match evaluation {

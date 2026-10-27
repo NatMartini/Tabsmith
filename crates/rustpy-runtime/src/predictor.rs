@@ -7,14 +7,14 @@ use std::time::Instant;
 use rustpy_contracts::config::ExtraColumnPolicy;
 use rustpy_contracts::manifest::BundleManifest;
 use rustpy_contracts::schema::{InputSchema, OutputSchema};
-use rustpy_contracts::{ErrorCode, Phase, Result, RustpyError, RUSTPY_VERSION};
+use rustpy_contracts::{ErrorCode, Phase, RUSTPY_VERSION, Result, RustpyError};
 use serde::Serialize;
 
 use crate::bundle::{Bundle, LoadOptions};
 use crate::model::sigmoid;
 use crate::transform::{
-    apply_transform, check_table_columns, extra_column_error, missing_column_error, unseen_categories, unseen_fields_by_row,
-    Matrix, UnseenCategories,
+    Matrix, UnseenCategories, apply_transform, check_table_columns, extra_column_error, missing_column_error, unseen_categories,
+    unseen_fields_by_row,
 };
 use crate::value::{Record, Table};
 
@@ -136,9 +136,8 @@ impl Predictor {
         let records = rows
             .iter()
             .map(|r| {
-                let v = serde_json::to_value(r).map_err(|e| {
-                    RustpyError::new(ErrorCode::SchemaTypeMismatch, Phase::Predict, format!("cannot serialize row: {e}"))
-                })?;
+                let v = serde_json::to_value(r)
+                    .map_err(|e| RustpyError::new(ErrorCode::SchemaTypeMismatch, Phase::Predict, format!("cannot serialize row: {e}")))?;
                 Record::from_json(&v)
             })
             .collect::<Result<Vec<_>>>()?;
@@ -156,7 +155,11 @@ impl Predictor {
             .map(|(p, unseen_categories)| {
                 let is_positive = p >= out.threshold;
                 Prediction {
-                    label: if is_positive { out.positive_label.clone() } else { out.negative_label.clone() },
+                    label: if is_positive {
+                        out.positive_label.clone()
+                    } else {
+                        out.negative_label.clone()
+                    },
                     probability: p,
                     is_positive,
                     unseen_categories,
@@ -180,12 +183,7 @@ impl Predictor {
 
     /// P(positive) per row of an already-transformed matrix.
     pub fn probabilities_matrix(&self, x: &Matrix) -> Vec<f64> {
-        self.bundle
-            .model
-            .logits(x)
-            .into_iter()
-            .map(|z| sigmoid(z as f64))
-            .collect()
+        self.bundle.model.logits(x).into_iter().map(|z| sigmoid(z as f64)).collect()
     }
 
     /// Checks records against the input contract and turns them into a table with
@@ -197,14 +195,20 @@ impl Predictor {
             for field in schema.fields.iter().filter(|f| f.required) {
                 if !r.contains(&field.name) {
                     let present: Vec<&str> = r.names().collect();
-                    return Err(missing_column_error(&field.name, field.kind, field.nullable, &present, Some(i), Phase::Predict));
+                    return Err(missing_column_error(
+                        &field.name,
+                        field.kind,
+                        field.nullable,
+                        &present,
+                        Some(i),
+                        Phase::Predict,
+                    ));
                 }
             }
             if schema.extra_columns == ExtraColumnPolicy::Error {
                 for name in r.names() {
-                    let known = schema.field(name).is_some()
-                        || schema.passthrough_id.as_deref() == Some(name)
-                        || keep.iter().any(|k| k == name);
+                    let known =
+                        schema.field(name).is_some() || schema.passthrough_id.as_deref() == Some(name) || keep.iter().any(|k| k == name);
                     if !known {
                         return Err(extra_column_error(name, Phase::Predict));
                     }

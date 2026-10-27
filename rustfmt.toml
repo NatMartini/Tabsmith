@@ -1,0 +1,2 @@
+# Formatting for `cargo fmt` (checked in CI).
+max_width = 140

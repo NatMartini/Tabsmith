@@ -57,8 +57,8 @@ maintenance_flag,inspector_note,defect\n",
     );
     // Unit ids differ between variants and seeds, so a "new delivery" generated
     // with another seed never reuses the ids of the default sample (seed 42).
-    let offset = if variant == SampleVariant::Base { 0 } else { 500_000 }
-        + if seed == 42 { 0 } else { (seed as usize % 1000 + 1) * 1_000_000 };
+    let offset =
+        if variant == SampleVariant::Base { 0 } else { 500_000 } + if seed == 42 { 0 } else { (seed as usize % 1000 + 1) * 1_000_000 };
     for i in 0..rows {
         let dev = rng.below(n_devices as u64) as usize;
         let line = device_line[dev];
@@ -79,8 +79,16 @@ maintenance_flag,inspector_note,defect\n",
         let current_mean = 11.0 + 1.5 * rng.normal() + if dtype == "motor" { 2.0 } else { 0.0 };
         let current_std = (0.8 + 0.3 * rng.normal()).abs();
         let humidity_gap = if variant == SampleVariant::Shifted { 0.12 } else { 0.05 };
-        let humidity = if rng.next_f64() < humidity_gap { None } else { Some(45.0 + 12.0 * rng.normal()) };
-        let voltage_drop = if rng.next_f64() < 0.03 { f64::NAN } else { 0.8 + 0.2 * rng.normal() };
+        let humidity = if rng.next_f64() < humidity_gap {
+            None
+        } else {
+            Some(45.0 + 12.0 * rng.normal())
+        };
+        let voltage_drop = if rng.next_f64() < 0.03 {
+            f64::NAN
+        } else {
+            0.8 + 0.2 * rng.normal()
+        };
         let noise = 50.0 + 5.0 * rng.normal();
         let maintenance = rng.next_f64() < 0.3;
         let z_vib = (vib_rms - 1.0) / 0.35;
@@ -119,7 +127,11 @@ maintenance_flag,inspector_note,defect\n",
             fmt_f(current_mean),
             fmt_f(current_std),
             humidity.map(fmt_f).unwrap_or_default(),
-            if voltage_drop.is_nan() { "NaN".to_string() } else { fmt_f(voltage_drop) },
+            if voltage_drop.is_nan() {
+                "NaN".to_string()
+            } else {
+                fmt_f(voltage_drop)
+            },
             fmt_f(noise),
         );
     }

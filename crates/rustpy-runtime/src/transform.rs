@@ -44,15 +44,11 @@ impl CoerceError {
             .expected("a finite number or null")
             .actual("NaN")
             .next("send null for missing values, or set preprocess.nan = \"missing\" and retrain"),
-            CoerceError::Infinite => RustpyError::new(
-                ErrorCode::InvalidValue,
-                phase,
-                format!("{at}: infinite values are not accepted"),
-            )
-            .field(field)
-            .expected("a finite number or null")
-            .actual(value.preview())
-            .next("clean or clip the value before prediction/training"),
+            CoerceError::Infinite => RustpyError::new(ErrorCode::InvalidValue, phase, format!("{at}: infinite values are not accepted"))
+                .field(field)
+                .expected("a finite number or null")
+                .actual(value.preview())
+                .next("clean or clip the value before prediction/training"),
             CoerceError::NonIntegralCategory(f) if f.is_finite() && f.abs() >= 9.0e15 => RustpyError::new(
                 ErrorCode::SchemaTypeMismatch,
                 phase,
@@ -105,9 +101,7 @@ pub fn coerce_category<'a>(v: ValueRef<'a>, nan: NanPolicy) -> Result<Option<Cow
             NanPolicy::Missing => Ok(None),
             NanPolicy::Error => Err(CoerceError::NaN),
         },
-        ValueRef::Float(f) if f.is_finite() && f.fract() == 0.0 && f.abs() < 9.0e15 => {
-            Ok(Some(Cow::Owned((f as i64).to_string())))
-        }
+        ValueRef::Float(f) if f.is_finite() && f.fract() == 0.0 && f.abs() < 9.0e15 => Ok(Some(Cow::Owned((f as i64).to_string()))),
         ValueRef::Float(f) => Err(CoerceError::NonIntegralCategory(f)),
     }
 }
@@ -164,9 +158,15 @@ pub(crate) fn missing_column_error(
     )
     .field(name)
     .expected(if nullable {
-        format!("field `{name}` ({}; a missing value is allowed: null in records, an empty cell in CSV)", kind.as_str())
+        format!(
+            "field `{name}` ({}; a missing value is allowed: null in records, an empty cell in CSV)",
+            kind.as_str()
+        )
     } else {
-        format!("field `{name}` ({}; a value is required: this bundle does not accept missing values here)", kind.as_str())
+        format!(
+            "field `{name}` ({}; a value is required: this bundle does not accept missing values here)",
+            kind.as_str()
+        )
     })
     .actual(format!("fields present: [{}]", shown.join(", ")))
     .next(if nullable {
@@ -207,19 +207,13 @@ fn transform_impl(t: &FittedTransform, table: &Table, phase: Phase, source_row: 
         let column = table.column(name).ok_or_else(|| {
             let nullable = match feature {
                 FeatureTransform::Numeric { .. } => true,
-                FeatureTransform::Categorical { missing_slot, .. } => {
-                    *missing_slot || t.unknown_category == UnknownCategoryPolicy::Ignore
-                }
+                FeatureTransform::Categorical { missing_slot, .. } => *missing_slot || t.unknown_category == UnknownCategoryPolicy::Ignore,
             };
             missing_column_error(name, feature_kind(feature), nullable, &table.names(), None, phase)
         })?;
         match feature {
             FeatureTransform::Numeric {
-                impute,
-                mean,
-                std,
-                offset,
-                ..
+                impute, mean, std, offset, ..
             } => {
                 for row in 0..rows {
                     let v = column.get(row);
@@ -232,10 +226,15 @@ fn transform_impl(t: &FittedTransform, table: &Table, phase: Phase, source_row: 
                         return Err(RustpyError::new(
                             ErrorCode::InvalidValue,
                             phase,
-                            format!("field `{name}`, record {}: value {x} is too large to encode (out of the f32 range after scaling)", source_row(row) + 1),
+                            format!(
+                                "field `{name}`, record {}: value {x} is too large to encode (out of the f32 range after scaling)",
+                                source_row(row) + 1
+                            ),
                         )
                         .field(name)
-                        .expected(format!("a value within the f32 range after standardization (training mean {mean:.4}, std {std:.4})"))
+                        .expected(format!(
+                            "a value within the f32 range after standardization (training mean {mean:.4}, std {std:.4})"
+                        ))
                         .actual(x.to_string())
                         .next("check the units / clean the value before prediction"));
                     }
@@ -249,8 +248,7 @@ fn transform_impl(t: &FittedTransform, table: &Table, phase: Phase, source_row: 
                 raw_dtype,
                 ..
             } => {
-                let index: HashMap<&str, usize> =
-                    categories.iter().enumerate().map(|(i, c)| (c.as_str(), i)).collect();
+                let index: HashMap<&str, usize> = categories.iter().enumerate().map(|(i, c)| (c.as_str(), i)).collect();
                 for row in 0..rows {
                     let v = column.get(row);
                     let v = tokens.categorical(v);
@@ -284,7 +282,11 @@ impl MissingTokens {
     pub fn new(tokens: &[String]) -> Self {
         Self {
             text: tokens.to_vec(),
-            numeric: tokens.iter().filter_map(|s| s.trim().parse::<f64>().ok()).filter(|f| !f.is_nan()).collect(),
+            numeric: tokens
+                .iter()
+                .filter_map(|s| s.trim().parse::<f64>().ok())
+                .filter(|f| !f.is_nan())
+                .collect(),
         }
     }
 
@@ -419,19 +421,17 @@ fn feature_kind(f: &FeatureTransform) -> FieldKind {
     }
 }
 
-fn unknown_category_error(
-    name: &str,
-    row: usize,
-    v: ValueRef<'_>,
-    categories: &[String],
-    phase: Phase,
-) -> RustpyError {
+fn unknown_category_error(name: &str, row: usize, v: ValueRef<'_>, categories: &[String], phase: Phase) -> RustpyError {
     let known: Vec<&str> = categories.iter().take(12).map(String::as_str).collect();
     let more = if categories.len() > 12 { ", …" } else { "" };
     RustpyError::new(
         ErrorCode::UnknownCategory,
         phase,
-        format!("field `{name}`, record {}: category {} was not seen in training", row + 1, v.preview()),
+        format!(
+            "field `{name}`, record {}: category {} was not seen in training",
+            row + 1,
+            v.preview()
+        ),
     )
     .field(name)
     .expected(format!("one of [{}{more}]", known.join(", ")))
@@ -478,8 +478,14 @@ mod tests {
 
     fn table(x: Vec<Value>, c: Vec<Value>) -> Table {
         Table::new(vec![
-            Column { name: "c".into(), data: ColumnData::Mixed(c) },
-            Column { name: "x".into(), data: ColumnData::Mixed(x) },
+            Column {
+                name: "c".into(),
+                data: ColumnData::Mixed(c),
+            },
+            Column {
+                name: "x".into(),
+                data: ColumnData::Mixed(x),
+            },
         ])
         .unwrap()
     }
@@ -511,13 +517,19 @@ mod tests {
     fn missing_tokens_types_and_overflow() {
         let t = transform(UnknownCategoryPolicy::Error);
         // "NA" text and the numeric sentinel -999 are missing values, like in the CSV reader.
-        let tab = table(vec![Value::Int(-999), Value::Float(-999.0)], vec![Value::from("NA"), Value::from("")]);
+        let tab = table(
+            vec![Value::Int(-999), Value::Float(-999.0)],
+            vec![Value::from("NA"), Value::from("")],
+        );
         let m = apply_transform(&t, &tab, Phase::Predict).unwrap();
         assert_eq!(m.row(0), &[0.0, 0.0, 0.0, 1.0]);
         assert_eq!(m.row(1), &[0.0, 0.0, 0.0, 1.0]);
         // A field trained as text does not accept numbers (no silent "012" vs 12 mapping).
         let tab = table(vec![Value::Float(1.0)], vec![Value::Int(12)]);
-        assert_eq!(apply_transform(&t, &tab, Phase::Predict).unwrap_err().code, ErrorCode::SchemaTypeMismatch);
+        assert_eq!(
+            apply_transform(&t, &tab, Phase::Predict).unwrap_err().code,
+            ErrorCode::SchemaTypeMismatch
+        );
         // Finite but huge inputs that overflow f32 after scaling are rejected.
         let tab = table(vec![Value::Float(1e39)], vec![Value::from("a")]);
         assert_eq!(apply_transform(&t, &tab, Phase::Predict).unwrap_err().code, ErrorCode::InvalidValue);
@@ -542,7 +554,10 @@ mod tests {
     #[test]
     fn messages_use_one_based_records_and_name_missing_markers() {
         let t = transform(UnknownCategoryPolicy::Ignore);
-        let tab = table(vec![Value::Float(1.0), Value::from("N/A")], vec![Value::from("a"), Value::from("a")]);
+        let tab = table(
+            vec![Value::Float(1.0), Value::from("N/A")],
+            vec![Value::from("a"), Value::from("a")],
+        );
         let e = apply_transform(&t, &tab, Phase::Predict).unwrap_err();
         assert!(e.message.contains("record 2"), "{}", e.message);
         let next = e.next_action.unwrap();
