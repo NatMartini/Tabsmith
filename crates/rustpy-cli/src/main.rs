@@ -13,7 +13,7 @@ use clap::{Args, Parser, Subcommand};
     version,
     about = "Train, evaluate and ship tabular binary classifiers for Rust applications",
     long_about = "RustPy turns a CSV/Parquet file into a verified model bundle that a Rust application loads with \
-rustpy-runtime. Typical flow:\n\n  rustpy init defect-model --sample-data\n  cd defect-model\n  rustpy plan\n  rustpy run\n  \
+rustpy-runtime. One command:\n\n  rustpy train customers.csv --target churned\n  rustpy predict --input new.csv\n\nStep by step:\n\n  rustpy init defect-model --sample-data\n  cd defect-model\n  rustpy plan\n  rustpy run\n  \
 rustpy compare\n  rustpy evaluate --run run-002 --split test\n  rustpy bundle build --run run-002\n  rustpy bundle check bundles/run-002"
 )]
 pub struct Cli {
@@ -91,6 +91,37 @@ pub enum Command {
         #[arg(long, hide = true)]
         simulate_cancel_after_steps: Option<u64>,
     },
+    /// The whole workflow in one command: bind FILE (if given), train every
+    /// candidate, pick one on validation, test it once, build its bundle — and
+    /// score the previously shipped bundle on the same new test rows.
+    /// Creates rustpy.toml in the current directory if there is no project yet.
+    Train {
+        /// CSV/Parquet file. Omit to retrain on the bound file (e.g. after new data arrived).
+        file: Option<std::path::PathBuf>,
+        /// Target column (required the first time).
+        #[arg(long)]
+        target: Option<String>,
+        /// Target value that means "positive" (inferred for 0/1, false/true and no/yes labels).
+        #[arg(long)]
+        positive: Option<String>,
+        /// stratified (default) or group.
+        #[arg(long)]
+        split: Option<String>,
+        /// Entity column (customer, device, patient): its rows never cross splits.
+        #[arg(long)]
+        group: Option<String>,
+        /// Unique row id column (kept out of the features, copied to predictions).
+        #[arg(long)]
+        id: Option<String>,
+        /// Columns to exclude from the features (comma-separated).
+        #[arg(long, value_delimiter = ',')]
+        exclude: Vec<String>,
+        /// Comma-separated subset of candidates (default: selection.candidates).
+        #[arg(long, value_delimiter = ',')]
+        candidates: Option<Vec<String>>,
+        #[command(flatten)]
+        config: ConfigArgs,
+    },
     /// List runs and their status.
     Runs,
     /// Show one run in detail.
@@ -138,8 +169,9 @@ pub enum Command {
     Bundle(BundleCommand),
     /// Predict a CSV/Parquet/JSON/JSONL file with a bundle.
     Predict {
+        /// Bundle directory (default: the project's most recently built bundle).
         #[arg(long)]
-        bundle: std::path::PathBuf,
+        bundle: Option<std::path::PathBuf>,
         #[arg(long)]
         input: std::path::PathBuf,
         /// Output file (.csv or .jsonl); default: CSV on stdout.

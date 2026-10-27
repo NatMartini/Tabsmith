@@ -57,6 +57,7 @@ fn install_cancel_handler() -> Arc<AtomicBool> {
 }
 
 fn progress_printer(json: bool) -> impl FnMut(Progress) {
+    let mut explained = false;
     move |p| {
         if json {
             return;
@@ -65,9 +66,12 @@ fn progress_printer(json: bool) -> impl FnMut(Progress) {
             Progress::Stage(s) => eprintln!("· {s}"),
             Progress::RunStarted { run_id, candidate, steps_planned } => {
                 eprintln!("· {run_id}: training {candidate} (up to {steps_planned} steps)");
-                eprintln!(
-                    "  (loss = class-weighted log loss, the training objective; early stopping keeps the epoch with the lowest validation loss. The comparison's log_loss is unweighted.)"
-                );
+                if !explained {
+                    explained = true;
+                    eprintln!(
+                        "  (loss = class-weighted log loss, the training objective; early stopping keeps the epoch with the lowest validation loss. The comparison's log_loss is unweighted.)"
+                    );
+                }
             }
             Progress::Epoch { run_id, epoch, epochs, train_loss, valid_loss, valid_metric } => {
                 if epoch == 1 || epoch % 5 == 0 || epoch == epochs {
@@ -178,20 +182,7 @@ pub fn dispatch(cli: Cli) -> Result<u8> {
         }
         Command::Run { config, candidates, no_cache, simulate_crash_after_steps, simulate_cancel_after_steps } => {
             let ws = workspace(&cli.project)?;
-            let candidates = match candidates {
-                Some(list) => Some(
-                    list.iter()
-                        .map(|c| {
-                            Candidate::parse(c).ok_or_else(|| {
-                                RustpyError::new(ErrorCode::ConfigInvalid, Phase::Config, format!("unknown candidate `{c}`"))
-                                    .field("--candidates")
-                                    .expected("linear, small-mlp")
-                            })
-                        })
-                        .collect::<Result<Vec<_>>>()?,
-                ),
-                None => None,
-            };
+            let candidates = parse_candidates(candidates)?;
             let cancel = install_cancel_handler();
             let opts = RunOptions {
                 candidates,
@@ -240,6 +231,82 @@ pub fn dispatch(cli: Cli) -> Result<u8> {
                         "\nnext: lock the final candidate and use the test split once:\n  rustpy evaluate --run {best} --split test\n  rustpy bundle build --run {best}"
                     );
                 }
+            }
+            Ok(code)
+        }
+        Command::Train { file, target, positive, split, group, id, exclude, candidates, config } => {
+            let candidates = parse_candidates(candidates)?;
+            let ws = match workspace(&cli.project) {
+                Ok(ws) => ws,
+                Err(e) if e.code == ErrorCode::ConfigNotFound && file.is_some() => {
+                    // No project yet: this directory becomes one (like `git init`).
+                    let dir = cli.project.clone().unwrap_or_else(|| PathBuf::from("."));
+                    init_project(&dir, "tabular-binary", false)?;
+                    if !json {
+                        eprintln!("· created rustpy.toml in {} (project state goes to .rustpy/)", dir.display());
+                    }
+                    Workspace::open(&dir)?
+                }
+                Err(e) => return Err(e),
+            };
+            if let Some(file) = file {
+                let target = match target {
+                    Some(t) => t,
+                    None => ws.resolve(&ConfigRequest::default())?.config.data.target.ok_or_else(|| {
+                        RustpyError::new(ErrorCode::ConfigInvalid, Phase::Config, "which column should the model predict?")
+                            .field("--target")
+                            .next(format!("rustpy train {} --target <column>", file.display()))
+                    })?,
+                };
+                let b = ws.bind_data(&BindRequest { file, target, positive, split, group, id, exclude })?;
+                if !json {
+                    eprintln!(
+                        "· data {}: {} rows × {} columns, target `{}` (positive {:?}: {} rows, negative {:?}: {} rows)",
+                        b.source,
+                        b.snapshot.n_rows,
+                        b.snapshot.columns.len(),
+                        b.target.name,
+                        b.target.positive_label,
+                        b.target.positives,
+                        b.target.negative_label,
+                        b.target.negatives
+                    );
+                    for w in &b.warnings {
+                        eprintln!("  note: {w}");
+                    }
+                }
+            } else if target.is_some() || positive.is_some() || split.is_some() || group.is_some() || id.is_some() || !exclude.is_empty() {
+                return Err(RustpyError::new(
+                    ErrorCode::ConfigInvalid,
+                    Phase::Config,
+                    "--target/--positive/--split/--group/--id/--exclude describe a data file; pass the file too",
+                )
+                .next("rustpy train <file> --target <column> ..."));
+            }
+            let opts = RunOptions {
+                candidates,
+                no_cache: false,
+                control: RunControl {
+                    cancel: install_cancel_handler(),
+                    ..Default::default()
+                },
+            };
+            let mut progress = progress_printer(json);
+            let r = ws.train_auto(&config_request(&config), &opts, &mut progress)?;
+            let code: u8 = if r.group.cancelled {
+                130
+            } else {
+                r.group
+                    .runs
+                    .iter()
+                    .find(|x| x.status != RunStatus::Completed)
+                    .map(|x| x.error.as_ref().map_or(1, |e| e.code.exit_code().clamp(1, 255) as u8))
+                    .unwrap_or(0)
+            };
+            if json {
+                print_json_status(&r, code == 0);
+            } else {
+                print_auto(&ws, &r);
             }
             Ok(code)
         }
@@ -462,7 +529,24 @@ pub fn dispatch(cli: Cli) -> Result<u8> {
             print!("{}", t.render());
             Ok(0)
         }
-        Command::Predict { bundle, input, output, keep } => predict_file(&bundle, &input, output.as_deref(), &keep, json),
+        Command::Predict { bundle, input, output, keep } => {
+            let bundle = match bundle {
+                Some(b) => b,
+                None => {
+                    let ws = workspace(&cli.project).map_err(|e| e.next("pass --bundle <dir>, or run inside a project that has built one"))?;
+                    let (dir, m) = ws.latest_bundle().ok_or_else(|| {
+                        RustpyError::new(ErrorCode::BundleNotFound, Phase::Predict, "this project has no bundle yet")
+                            .field("--bundle")
+                            .next("rustpy train <file> --target <column> (or rustpy bundle build --run <run>)")
+                    })?;
+                    if !json {
+                        eprintln!("· using the latest bundle {} ({}, from {})", ws.project.rel(&dir), m.bundle_id, m.provenance.run_id);
+                    }
+                    dir
+                }
+            };
+            predict_file(&bundle, &input, output.as_deref(), &keep, json)
+        }
         Command::Report => {
             let ws = workspace(&cli.project)?;
             let path = ws.write_report()?;
@@ -578,6 +662,103 @@ fn print_plan(plan: &rustpy_workflow::setup::PlanReport) {
         println!("note: {w}");
     }
     println!("\nnext: rustpy run");
+}
+
+fn parse_candidates(list: Option<Vec<String>>) -> Result<Option<Vec<Candidate>>> {
+    list.map(|list| {
+        list.iter()
+            .map(|c| {
+                Candidate::parse(c).ok_or_else(|| {
+                    RustpyError::new(ErrorCode::ConfigInvalid, Phase::Config, format!("unknown candidate `{c}`"))
+                        .field("--candidates")
+                        .expected("linear, small-mlp")
+                })
+            })
+            .collect::<Result<Vec<_>>>()
+    })
+    .transpose()
+}
+
+/// Summary of `rustpy train`.
+fn print_auto(ws: &Workspace, r: &rustpy_workflow::auto::AutoReport) {
+    print_comparison(&r.group.comparison);
+    for run in &r.group.runs {
+        if let Some(e) = &run.error {
+            eprint!("{}", e.render());
+        }
+    }
+    for n in &r.notes {
+        println!("note: {n}");
+    }
+    let Some(chosen) = &r.chosen else { return };
+    let candidate = r.group.runs.iter().find(|x| &x.run_id == chosen).map(|x| x.candidate.to_string()).unwrap_or_default();
+    println!("
+chosen on validation: {chosen} ({candidate})");
+    let line = |m: &rustpy_contracts::evaluation::BinaryMetrics| {
+        format!(
+            "balanced accuracy {}  AUC {}  F1 {}  precision {}  recall {}",
+            f4(m.balanced_accuracy),
+            opt4(m.roc_auc),
+            f4(m.f1),
+            f4(m.precision),
+            f4(m.recall)
+        )
+    };
+    match (&r.test, &r.test_skipped) {
+        (Some(t), _) => println!("test split ({} rows, used once): {}", t.metrics.n, line(&t.metrics)),
+        (None, Some(why)) => println!("test split not used: {why}"),
+        _ => {}
+    }
+    if let Some(p) = &r.previous {
+        match (&p.evaluation, &r.test) {
+            (Some(old), Some(new)) => {
+                let d = new.metrics.balanced_accuracy - old.metrics.balanced_accuracy;
+                println!(
+                    "previous bundle {} ({}) on the same test rows ({} rows it never saw): {}",
+                    p.path,
+                    p.run_id,
+                    old.metrics.n,
+                    line(&old.metrics)
+                );
+                // A crude resolution of a balanced-accuracy difference on n test rows.
+                let resolution = 1.0 / (new.metrics.n.max(1) as f64).sqrt();
+                if d.abs() < resolution {
+                    println!(
+                        "  → about the same: the difference ({d:+.4}) is below the ±{resolution:.3} resolution of {} test rows",
+                        new.metrics.n
+                    );
+                } else {
+                    println!("  → the new model is {} by {:.4} balanced accuracy", if d > 0.0 { "better" } else { "worse" }, d.abs());
+                }
+                if d < 0.0 {
+                    println!(
+                        "  `rustpy predict` uses the newest bundle; to keep serving the previous one pass --bundle {}",
+                        p.path
+                    );
+                }
+            }
+            _ => println!(
+                "previous bundle {} could not be scored on the new test rows: {}",
+                p.path,
+                p.note.as_deref().unwrap_or("unknown reason")
+            ),
+        }
+    }
+    if let Some(b) = &r.bundle {
+        println!(
+            "bundle: {} ({}, {}; self-check {})",
+            b.path,
+            b.manifest.bundle_id,
+            b.manifest.evaluation_status,
+            if b.check.passed { "passed" } else { "FAILED" }
+        );
+        let abs = ws.project.root.join(&b.path);
+        println!("
+next:");
+        println!("  rustpy predict --input <new.csv> --output predictions.csv");
+        println!("  in Rust: rustpy_runtime::Predictor::load({:?}, LoadOptions::cpu())", abs.display().to_string());
+        println!("  rustpy report   # HTML report of data, runs, evaluations and bundles");
+    }
 }
 
 fn print_comparison(c: &rustpy_workflow::Comparison) {

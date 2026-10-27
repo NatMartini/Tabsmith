@@ -315,3 +315,39 @@ fn walkthrough_details() {
     assert_eq!(e["error"]["field"], "--input");
     fails(&dir, &["predict", "--bundle", &bundle, "--input", "later.csv", "--keep", "no_such"], "E_SCHEMA_MISSING_COLUMN", 3);
 }
+
+/// `rustpy train`: one command from a CSV to a tested bundle; again after new data,
+/// with the previous bundle scored on the same new test rows; `predict` without
+/// --bundle uses the newest bundle.
+#[test]
+fn one_command_train_and_retrain() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    ok(dir, &["sample-data", "machines.csv", "--rows", "1500"]);
+    let first = json(dir, &args(&["train", "machines.csv", "--target", "defect", "--group", "device_id"], &QUICK));
+    assert_eq!(first["ok"], true, "{first}");
+    assert!(dir.join("rustpy.toml").is_file(), "train creates the project in the current directory");
+    let chosen = first["result"]["chosen"].as_str().unwrap().to_string();
+    assert_eq!(first["result"]["test"]["test_use_index"], 1);
+    assert_eq!(first["result"]["bundle"]["check"]["passed"], true);
+    assert!(first["result"]["previous"].is_null());
+    // New delivery appended to the same file, then retrain without arguments.
+    ok(dir, &["sample-data", "more.csv", "--rows", "900", "--seed", "5", "--shifted"]);
+    let more = std::fs::read_to_string(dir.join("more.csv")).unwrap();
+    let mut all = std::fs::read_to_string(dir.join("machines.csv")).unwrap();
+    all.push_str(more.split_once('\n').unwrap().1);
+    std::fs::write(dir.join("machines.csv"), all).unwrap();
+    let second = json(dir, &args(&["train"], &QUICK));
+    assert_eq!(second["ok"], true, "{second}");
+    let prev = &second["result"]["previous"];
+    assert_eq!(prev["run_id"], chosen.as_str(), "{second}");
+    assert_eq!(prev["evaluation"]["unseen_rows_verified"], true, "{prev}");
+    let new_bundle = second["result"]["bundle"]["path"].as_str().unwrap().to_string();
+    // Predict with the newest bundle by default.
+    ok(dir, &["sample-data", "new.csv", "--rows", "5", "--seed", "77"]);
+    let p = json(dir, &["predict", "--input", "new.csv"]);
+    assert_eq!(p["result"]["predictions"].as_array().unwrap().len(), 5);
+    assert_eq!(p["result"]["bundle_id"], second["result"]["bundle"]["manifest"]["bundle_id"], "{new_bundle}");
+    // Data flags without a file are a usage error, not silently ignored.
+    fails(dir, &["train", "--target", "defect"], "E_CONFIG_INVALID", 2);
+}
