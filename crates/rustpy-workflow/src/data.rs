@@ -252,16 +252,13 @@ fn raw_of(dtype: &DataType) -> Option<RawDtype> {
         | DataType::UInt64 => Some(RawDtype::Int),
         DataType::Boolean => Some(RawDtype::Bool),
         DataType::String => Some(RawDtype::Text),
+        // Durations are numbers of seconds.
+        DataType::Duration(_) => Some(RawDtype::Float),
         other => {
             // Parquet dictionary/categorical and decimal columns map to text / float;
-            // dates, timestamps and durations to their text form (planned as dates).
+            // dates, times and timestamps to their text form (planned as dates).
             let name = format!("{other:?}");
-            if name.starts_with("Categorical")
-                || name.starts_with("Enum")
-                || name.starts_with("Date")
-                || name.starts_with("Time")
-                || name.starts_with("Duration")
-            {
+            if name.starts_with("Categorical") || name.starts_with("Enum") || name.starts_with("Date") || name.starts_with("Time") {
                 Some(RawDtype::Text)
             } else if name.starts_with("Decimal") {
                 Some(RawDtype::Float)
@@ -270,6 +267,18 @@ fn raw_of(dtype: &DataType) -> Option<RawDtype> {
             }
         }
     }
+}
+
+/// A timestamp (`value` units of `1 / per_second` s since the epoch) as RFC 3339 UTC.
+fn format_utc(value: i64, per_second: i64) -> String {
+    let text = rustpy_contracts::time::format_unix(value.div_euclid(per_second));
+    let fraction = value.rem_euclid(per_second);
+    if fraction == 0 {
+        return text;
+    }
+    let width = per_second.ilog10() as usize;
+    let digits = format!("{fraction:0width$}");
+    format!("{}.{}Z", text.trim_end_matches('Z'), digits.trim_end_matches('0'))
 }
 
 fn polars_of(raw: RawDtype) -> DataType {
@@ -384,19 +393,42 @@ pub fn read_table(path: &Path, opts: &ReadOptions, frozen: Option<&[(String, Opt
             // Parquet columns declared categorical: use the canonical text form.
             raw = Some(RawDtype::Text);
         }
-        let data = match raw {
-            Some(RawDtype::Float) => {
+        let data = match (col.dtype(), raw) {
+            // Durations as seconds; timezone-aware timestamps as UTC text (Polars is
+            // built without time zone support, so it cannot format them itself).
+            (DataType::Duration(unit), _) | (DataType::Datetime(unit, Some(_)), _) => {
+                let per_second = match unit {
+                    TimeUnit::Nanoseconds => 1_000_000_000i64,
+                    TimeUnit::Microseconds => 1_000_000,
+                    TimeUnit::Milliseconds => 1_000,
+                };
+                let timestamp = matches!(col.dtype(), DataType::Datetime(..));
+                let c = col.cast(&DataType::Int64).map_err(|e| polars_err(path, e))?;
+                let values = c.i64().map_err(|e| polars_err(path, e))?;
+                match raw {
+                    Some(RawDtype::Float) => ColumnData::Float(values.iter().map(|v| v.map(|x| x as f64 / per_second as f64)).collect()),
+                    _ => ColumnData::Text(
+                        values
+                            .iter()
+                            .map(|v| {
+                                v.map(|x| if timestamp { format_utc(x, per_second) } else { format!("{}", x as f64 / per_second as f64) })
+                            })
+                            .collect(),
+                    ),
+                }
+            }
+            (_, Some(RawDtype::Float)) => {
                 let c = col.cast(&DataType::Float64).map_err(|e| polars_err(path, e))?;
                 ColumnData::Float(c.f64().map_err(|e| polars_err(path, e))?.iter().collect())
             }
-            Some(RawDtype::Int) => {
+            (_, Some(RawDtype::Int)) => {
                 let c = col.strict_cast(&DataType::Int64).map_err(|e| {
                     read_err(path, format!("integer column `{name}` does not fit in i64: {e}"))
                 })?;
                 ColumnData::Int(c.i64().map_err(|e| polars_err(path, e))?.iter().collect())
             }
-            Some(RawDtype::Bool) => ColumnData::Bool(col.bool().map_err(|e| polars_err(path, e))?.iter().collect()),
-            Some(RawDtype::Text) => {
+            (_, Some(RawDtype::Bool)) => ColumnData::Bool(col.bool().map_err(|e| polars_err(path, e))?.iter().collect()),
+            (_, Some(RawDtype::Text)) => {
                 let c = col.cast(&DataType::String).map_err(|e| polars_err(path, e))?;
                 ColumnData::Text(
                     c.str()
@@ -406,7 +438,7 @@ pub fn read_table(path: &Path, opts: &ReadOptions, frozen: Option<&[(String, Opt
                         .collect(),
                 )
             }
-            None => ColumnData::Mixed(vec![rustpy_runtime::Value::Null; df.height()]),
+            (_, None) => ColumnData::Mixed(vec![rustpy_runtime::Value::Null; df.height()]),
         };
         raw_dtypes.push((name.clone(), raw, engine));
         columns.push(RtColumn { name, data });
@@ -786,18 +818,14 @@ pub fn read_for_prediction(
     Ok(Table::new(columns)?)
 }
 
-/// Reads only `columns`, as verbatim text (for copying identifiers to the output).
-pub fn read_columns_as_text(
-    path: &Path,
-    schema: &rustpy_contracts::schema::InputSchema,
-    transform: &rustpy_contracts::transform::FittedTransform,
-    columns: &[String],
-) -> Result<Table> {
+/// Reads only `columns`, as verbatim text (for copying identifiers to the output):
+/// no value is a missing-value token, so `NA` (Namibia) stays `NA`.
+pub fn read_columns_as_text(path: &Path, schema: &rustpy_contracts::schema::InputSchema, columns: &[String]) -> Result<Table> {
     let mut cfg = DataConfig::default();
     if let Some(d) = &schema.csv_delimiter {
         cfg.csv_delimiter = d.clone();
     }
-    cfg.null_values = transform.missing_tokens.clone();
+    cfg.null_values = Vec::new();
     let mut opts = ReadOptions::from_config(path, &cfg)?;
     opts.text_columns = columns.to_vec();
     let table = read_table(path, &opts, None)?.table;
@@ -870,12 +898,19 @@ fn looks_like_id_name(name: &str) -> bool {
 
 /// Dates and months as exported by databases and spreadsheets: `2026-01`,
 /// `2026/1`, `2026-01-31`, `2026/1/5 08:00`, `2026-01-31T08:00`, `31.01.2026`,
-/// `1/31/2026`, `1/31/26`, `2026年1月`. Version strings (`6.1.7601`) and codes
-/// (`12-34-5678`) are not dates: parts must be valid months, days and years.
+/// `1/31/2026`, `1/31/26`, `16-JAN-25`, `31-Jan-2026`, `2026年1月`. Version
+/// strings (`6.1.7601`, `16.7.10`) and codes (`12-34-5678`) are not dates: parts
+/// must be valid months, days and years, and a two-digit year needs `/` or `-`.
 fn looks_like_date(s: &str) -> bool {
     let s = s.trim();
-    // Drop a time part: "2026-01-31T08:00", "2026/1/5 08:00".
-    let date = s.split(['T', ' ']).next().unwrap_or(s);
+    // Drop a time part: "2026-01-31T08:00", "2026/1/5 08:00" ('T' between digits only,
+    // so month names such as OCT survive).
+    let b = s.as_bytes();
+    let t = (1..b.len().saturating_sub(1)).find(|&i| b[i] == b'T' && b[i - 1].is_ascii_digit() && b[i + 1].is_ascii_digit());
+    let date = match (s.find(' '), t) {
+        (Some(i), _) | (None, Some(i)) => &s[..i],
+        (None, None) => s,
+    };
     if let Some(rest) = date.strip_suffix('月').or_else(|| date.strip_suffix('日')) {
         // 2026年1月 / 2026年1月5日
         let parts: Vec<&str> = rest.split(['年', '月']).collect();
@@ -892,25 +927,44 @@ fn looks_like_date(s: &str) -> bool {
         };
     }
     let parts: Vec<&str> = date.split(['-', '/', '.']).collect();
-    if parts.iter().any(|p| p.is_empty() || p.len() > 4 || !p.bytes().all(|b| b.is_ascii_digit())) {
+    let month = |x: u32| (1..=12).contains(&x);
+    let day = |x: u32| (1..=31).contains(&x);
+    let digits = |p: &str| !p.is_empty() && p.len() <= 4 && p.bytes().all(|b| b.is_ascii_digit());
+    // D-MON-YY(YY) and MON-YYYY with an English month abbreviation (Oracle, Excel).
+    if let Some(m) = parts.iter().position(|p| month_name(p)) {
+        let year = |p: &str| digits(p) && (p.len() == 2 || (p.len() == 4 && p.parse().is_ok_and(year_ok)));
+        return date.contains('-')
+            && !date.contains(['/', '.'])
+            && match (m, parts.as_slice()) {
+                (1, [d, _, y]) => digits(d) && d.len() <= 2 && d.parse().is_ok_and(day) && year(y),
+                (0, [_, y]) => y.len() == 4 && year(y),
+                _ => false,
+            };
+    }
+    if !parts.iter().all(|p| digits(p)) {
         return false;
     }
     let n: Vec<u32> = parts.iter().map(|p| p.parse().unwrap_or(0)).collect();
-    let month = |x: u32| (1..=12).contains(&x);
-    let day = |x: u32| (1..=31).contains(&x);
     let short = |i: usize| parts[i].len() <= 2;
     match n.as_slice() {
         // YYYY-MM (a two-part value needs a separator other than '.', which is a decimal number).
         [y, m] => parts[0].len() == 4 && year_ok(*y) && short(1) && month(*m) && !date.contains('.'),
         // YYYY-M-D
         [y, m, d] if parts[0].len() == 4 => year_ok(*y) && short(1) && short(2) && month(*m) && day(*d),
-        // D.M.YYYY, M/D/YYYY, D-M-YY ...: one of the first two parts is a month, the other a day.
+        // D.M.YYYY, M/D/YYYY, D-M-YY ...: one of the first two parts is a month, the
+        // other a day. A two-digit year only with '/' or '-' (16.7.10 is a version).
         [a, b, y] if short(0) && short(1) && (parts[2].len() == 4 || parts[2].len() == 2) => {
-            let year = if parts[2].len() == 4 { year_ok(*y) } else { true };
+            let year = if parts[2].len() == 4 { year_ok(*y) } else { !date.contains('.') };
             year && ((month(*a) && day(*b)) || (day(*a) && month(*b)))
         }
         _ => false,
     }
+}
+
+/// `JAN` … `DEC` in any case.
+fn month_name(p: &str) -> bool {
+    const MONTHS: [&str; 12] = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+    p.len() == 3 && MONTHS.contains(&p.to_ascii_lowercase().as_str())
 }
 
 fn year_ok(y: u32) -> bool {
@@ -1255,11 +1309,15 @@ mod tests {
     fn date_like_text() {
         for d in [
             "2026-01", "2026/12", "2026/1", "2026-1", "2026/1/5", "2026-01-31", "2026-01-31T08:00:00", "2026/1/5 08:00",
-            "31.01.2026", "1/31/2026", "1/31/26", "12-5-2026 10:00", "2026年1月", "2026年1月5日",
+            "31.01.2026", "1/31/2026", "1/31/26", "12-5-2026 10:00", "2026年1月", "2026年1月5日", "16-JAN-25", "31-Jan-2026",
+            "1-oct-25", "Oct-2026", "2026-10-01T00:00:00Z",
         ] {
             assert!(looks_like_date(d), "{d}");
         }
-        for t in ["2026-13", "A-17", "S01", "12-34", "1.2.3", "2026", "line-B", "6.1.7601", "12-34-5678", "2026.5", "3.14", "v2.0"] {
+        for t in [
+            "2026-13", "A-17", "S01", "12-34", "1.2.3", "2026", "line-B", "6.1.7601", "12-34-5678", "2026.5", "3.14", "v2.0",
+            "16.7.10", "17.4.18", "10.2.15", "MAR-12", "Oct-2", "JAN", "32-JAN-25", "1/JAN/25", "TEMP-1",
+        ] {
             assert!(!looks_like_date(t), "{t}");
         }
     }

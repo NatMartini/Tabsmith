@@ -80,12 +80,18 @@ fn full_cpu_loop_with_consistent_preprocessing() {
     let other = result.runs.iter().find(|r| r.run_id != best).unwrap();
     let refused = ws.evaluate_run(&other.run_id, SplitName::Test, false, false).unwrap_err();
     assert_eq!(refused.code, ErrorCode::TestSetReuse);
+    // Bundle requires a test evaluation of its weights (`other` has none yet).
+    let unevaluated = ws.build_bundle(&other.run_id, &BundleOptions::default()).unwrap_err();
+    assert_eq!(unevaluated.code, ErrorCode::EvaluationMissing);
     let reused = ws.evaluate_run(&other.run_id, SplitName::Test, true, false).unwrap();
     assert_eq!(reused.test_use_index, Some(2));
+    // A deterministic re-run has the same weights: it shares their evaluation.
+    let linear_eval = if other.candidate == rustpy_contracts::config::Candidate::Linear { &reused } else { &eval };
+    let twin = ws
+        .build_bundle(&again.runs[0].run_id, &BundleOptions { out: Some(tmp.path().join("twin")), ..Default::default() })
+        .unwrap();
+    assert_eq!(twin.manifest.provenance.evaluation_id.as_deref(), Some(linear_eval.evaluation_id.as_str()));
 
-    // Bundle requires the test evaluation (best has one).
-    let unevaluated = ws.build_bundle(&again.runs[0].run_id, &BundleOptions::default()).unwrap_err();
-    assert_eq!(unevaluated.code, ErrorCode::EvaluationMissing);
     let built = ws.build_bundle(&best, &BundleOptions::default()).unwrap();
     assert!(built.check.passed);
     let bundle_dir = tmp.path().join(&built.path);

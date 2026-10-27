@@ -1167,7 +1167,7 @@ impl Workspace {
 
     /// Two snapshots are the same data version when their files have the same
     /// content, even if they were read with different options.
-    fn same_data_version(&self, a: &str, b: &str) -> bool {
+    pub(crate) fn same_data_version(&self, a: &str, b: &str) -> bool {
         a == b
             || match (self.snapshot_sha(a), self.snapshot_sha(b)) {
                 (Some(x), Some(y)) => x == y,
@@ -1321,7 +1321,7 @@ impl Workspace {
         Ok(rec)
     }
 
-    fn run_model_sha(run: &RunRecord) -> String {
+    pub(crate) fn run_model_sha(run: &RunRecord) -> String {
         run.artifacts
             .iter()
             .find(|a| a.name == "model.safetensors")
@@ -1420,6 +1420,23 @@ impl Workspace {
         allow_test_reuse: bool,
         allow_unverified_rows: bool,
     ) -> Result<EvaluationRecord> {
+        self.evaluate_bundle_against(bundle_dir, None, split, req, allow_test_reuse, allow_unverified_rows)
+            .map(|(rec, _)| rec)
+    }
+
+    /// [`Self::evaluate_bundle`], plus the metrics of the bundle `also` on exactly
+    /// the rows used for that evaluation: old vs new model on identical rows. `also`
+    /// is scored without a ledger entry, so it must be a model whose own test
+    /// evaluation already covers these rows (the new model of `rustpy train`).
+    pub(crate) fn evaluate_bundle_against(
+        &self,
+        bundle_dir: &Path,
+        also: Option<&Path>,
+        split: SplitName,
+        req: &ConfigRequest,
+        allow_test_reuse: bool,
+        allow_unverified_rows: bool,
+    ) -> Result<(EvaluationRecord, Option<BinaryMetrics>)> {
         let predictor = Predictor::load(bundle_dir, LoadOptions::cpu())?;
         let resolved = self.resolve(req)?;
         let p = self.prepare(resolved, false)?;
@@ -1492,22 +1509,38 @@ impl Workspace {
         }
         let content = schema_content_columns(predictor.input_schema(), &out.target);
         let rows = RowKeys::of(&p.snapshot, &p.table, &split_rows, &content);
+        let sub = p.table.take(&split_rows);
+        let y = labels(&sub, t);
+        // Probabilities of a bundle on the evaluated rows. Errors name the row of the
+        // data file, not the position among the evaluated rows.
+        let score = |pred: &Predictor| -> Result<Vec<f64>> {
+            let names: Vec<&str> = pred.input_schema().fields.iter().map(|f| f.name.as_str()).collect();
+            let inputs = sub.select(&names);
+            rustpy_runtime::transform::check_table_columns(pred.input_schema(), &inputs, Phase::Evaluate)?;
+            let x = rustpy_runtime::apply_transform_rows(&pred.bundle().transform, &inputs, Phase::Evaluate, &split_rows)?;
+            Ok(pred.probabilities_matrix(&x))
+        };
+        let also_metrics = || -> Result<Option<BinaryMetrics>> {
+            match also {
+                Some(dir) => {
+                    let other = Predictor::load(dir, LoadOptions::cpu())?;
+                    let threshold = other.output_schema().threshold;
+                    Ok(Some(binary_metrics(&score(&other)?, &y, threshold)))
+                }
+                None => Ok(None),
+            }
+        };
         let mut ledger = TestLedger::default();
         if split == SplitName::Test {
             ledger = self.check_test_reuse(&model_sha, &model_snapshot, &rows, allow_test_reuse)?;
             if let Some(rec) = ledger.existing.take() {
-                return Ok(rec);
+                return Ok((rec, also_metrics()?));
             }
             notes.append(&mut ledger.notes);
         }
         let names: Vec<&str> = predictor.input_schema().fields.iter().map(|f| f.name.as_str()).collect();
-        let sub = p.table.take(&split_rows);
-        let y = labels(&sub, t);
         let inputs = sub.select(&names);
-        rustpy_runtime::transform::check_table_columns(predictor.input_schema(), &inputs, Phase::Evaluate)?;
-        // Errors name the row of the data file, not the position among the evaluated rows.
-        let x = rustpy_runtime::apply_transform_rows(&predictor.bundle().transform, &inputs, Phase::Evaluate, &split_rows)?;
-        let pr = predictor.probabilities_matrix(&x);
+        let pr = score(&predictor)?;
         for u in predictor.unseen_categories(&inputs) {
             notes.push(format!(
                 "{} of {} rows have a `{}` value the bundle never saw (e.g. {}): encoded as all zeros",
@@ -1536,7 +1569,8 @@ impl Workspace {
             unseen_rows_verified: verified.then_some(true),
             notes,
         };
-        self.save_evaluation(rec, &rows)
+        let also = also_metrics()?;
+        Ok((self.save_evaluation(rec, &rows)?, also))
     }
 
     // -----------------------------------------------------------------------

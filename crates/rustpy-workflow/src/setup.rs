@@ -228,7 +228,7 @@ impl Workspace {
         };
         // Resolve the directory, not the file: a symlinked file (data/current.csv ->
         // exports/2026-10.csv) stays bound by its own path, so re-pointing it works.
-        let abs = match (abs.parent().and_then(|p| p.canonicalize().ok()), abs.file_name()) {
+        let abs = match (abs.parent().and_then(|p| crate::project::canonical(p).ok()), abs.file_name()) {
             (Some(dir), Some(name)) => dir.join(name),
             _ => abs,
         };
@@ -241,7 +241,7 @@ impl Workspace {
             .field(req.file.display().to_string())
             .next("check the path (relative paths are resolved from the current directory)"));
         }
-        let root = project.root.canonicalize().unwrap_or(project.root.clone());
+        let root = crate::project::canonical(&project.root).unwrap_or(project.root.clone());
         let source = project_relative(&root, &abs);
         if let Some(sp) = &req.split {
             if !matches!(sp.as_str(), "stratified" | "group" | "time") {

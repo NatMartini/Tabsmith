@@ -675,7 +675,22 @@ fn resolve_bundle(project: &Option<PathBuf>, bundle: Option<PathBuf>, json: bool
             .next("rustpy train <file> --target <column> (or rustpy bundle build --run <run>)")
     })?;
     if !json {
-        eprintln!("· using the latest bundle {} ({}, from {})", ws.project.rel(&dir), m.bundle_id, m.provenance.run_id);
+        if m.evaluation_status == rustpy_workflow::auto::EVALUATED {
+            eprintln!("· using the latest evaluated bundle {} ({}, from {})", ws.project.rel(&dir), m.bundle_id, m.provenance.run_id);
+        } else {
+            eprintln!(
+                "· using the latest bundle {} ({}, from {}) — an unevaluated candidate: it has no held-out test evaluation",
+                ws.project.rel(&dir),
+                m.bundle_id,
+                m.provenance.run_id
+            );
+        }
+        for newer in ws.newer_candidates(&m) {
+            eprintln!(
+                "  note: the newer bundle {} is an unevaluated candidate and is not used by default (pass --bundle to use it)",
+                ws.project.rel(&newer)
+            );
+        }
     }
     Ok(dir)
 }
@@ -703,10 +718,12 @@ fn print_auto(ws: &Workspace, r: &rustpy_workflow::auto::AutoReport) {
             eprint!("{}", e.render());
         }
     }
-    for n in &r.notes {
-        println!("note: {n}");
-    }
-    let Some(chosen) = &r.chosen else { return };
+    let Some(chosen) = &r.chosen else {
+        for n in &r.notes {
+            println!("note: {n}");
+        }
+        return;
+    };
     let candidate = r.group.runs.iter().find(|x| &x.run_id == chosen).map(|x| x.candidate.to_string()).unwrap_or_default();
     println!("
 chosen on validation: {chosen} ({candidate})");
@@ -720,35 +737,37 @@ chosen on validation: {chosen} ({candidate})");
             f4(m.recall)
         )
     };
-    match (&r.test, &r.test_skipped) {
-        (Some(t), _) => println!("test split ({} rows, used once): {}", t.metrics.n, line(&t.metrics)),
-        (None, Some(why)) => println!("test split not used: {why}"),
+    match (&r.test, &r.test_skipped, &r.identical_to) {
+        (Some(t), _, Some(same)) => println!(
+            "test split ({} rows): {} — the evaluation of {same}, which has the same weights (the test split was not used again)",
+            t.metrics.n,
+            line(&t.metrics)
+        ),
+        (Some(t), _, None) => println!("test split ({} rows, used once): {}", t.metrics.n, line(&t.metrics)),
+        (None, Some(why), _) => println!("test split not used: {why}"),
         _ => {}
     }
     if let Some(p) = &r.previous {
-        match (&p.evaluation, &r.test) {
+        match (&p.evaluation, &p.new_model_on_same_rows) {
             (Some(old), Some(new)) => {
-                let d = new.metrics.balanced_accuracy - old.metrics.balanced_accuracy;
-                println!(
-                    "previous bundle {} ({}) on the same test rows ({} rows it never saw): {}",
-                    p.path,
-                    p.run_id,
-                    old.metrics.n,
-                    line(&old.metrics)
-                );
+                let n = old.metrics.n;
+                let d = new.balanced_accuracy - old.metrics.balanced_accuracy;
+                println!("previous bundle {} ({}) on the {n} test rows it never saw: {}", p.path, p.run_id, line(&old.metrics));
+                println!("new model {chosen} on the same {n} rows: {}", line(new));
                 // A crude resolution of a balanced-accuracy difference on n test rows.
-                let resolution = 1.0 / (new.metrics.n.max(1) as f64).sqrt();
+                let resolution = 1.0 / (n.max(1) as f64).sqrt();
                 if d.abs() < resolution {
-                    println!(
-                        "  → about the same: the difference ({d:+.4}) is below the ±{resolution:.3} resolution of {} test rows",
-                        new.metrics.n
-                    );
+                    println!("  → about the same: the difference ({d:+.4}) is below the ±{resolution:.3} resolution of {n} rows");
                 } else {
-                    println!("  → the new model is {} by {:.4} balanced accuracy", if d > 0.0 { "better" } else { "worse" }, d.abs());
+                    println!(
+                        "  → the new model is {} by {:.4} balanced accuracy on the same {n} rows",
+                        if d > 0.0 { "better" } else { "worse" },
+                        d.abs()
+                    );
                 }
                 if d < 0.0 {
                     println!(
-                        "  `rustpy predict` uses the newest bundle; to keep serving the previous one pass --bundle {}",
+                        "  `rustpy predict` uses the newest evaluated bundle; to keep serving the previous one pass --bundle {}",
                         p.path
                     );
                 }
@@ -768,7 +787,12 @@ chosen on validation: {chosen} ({candidate})");
             b.manifest.evaluation_status,
             if b.check.passed { "passed" } else { "FAILED" }
         );
-        let abs = ws.project.root.join(&b.path);
+    }
+    for n in &r.notes {
+        println!("note: {n}");
+    }
+    if let Some(b) = &r.bundle {
+        let abs = b.path.split('/').fold(ws.project.root.clone(), |p, c| p.join(c));
         println!("
 next:");
         println!("  rustpy predict --input <new.csv> --output predictions.csv");
@@ -959,14 +983,14 @@ fn predict_file(bundle: &Path, input: &Path, output: Option<&Path>, keep: &[Stri
     let model_table = table.select(&model_cols);
     let preds = predictor.predict_table(&model_table)?;
     let unseen = predictor.unseen_categories(&model_table);
-    // Kept columns that are also model inputs were parsed (59.3320 -> 59.332);
-    // re-read them as text so the output carries the file's own spelling.
+    // Key columns are copied verbatim: model inputs were parsed (59.3320 -> 59.332)
+    // and every column was read with the missing-value tokens (NA -> empty), so
+    // re-read them as plain text.
     let verbatim = match ext.as_str() {
         "json" | "jsonl" | "ndjson" => None,
-        _ if key_cols.iter().any(|k| schema.field(k).is_some()) => Some(
-            rustpy_workflow::data::read_columns_as_text(input, schema, &predictor.bundle().transform, &key_cols)
-                .map_err(|e| input_error(e, input))?,
-        ),
+        _ if !key_cols.is_empty() && n_records > 0 => {
+            Some(rustpy_workflow::data::read_columns_as_text(input, schema, &key_cols).map_err(|e| input_error(e, input))?)
+        }
         _ => None,
     };
     let key_source = verbatim.as_ref().unwrap_or(&table);

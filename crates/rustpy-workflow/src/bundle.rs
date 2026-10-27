@@ -108,6 +108,11 @@ pub fn synthetic_examples(fitted: &FittedArtifacts) -> Vec<Record> {
     out
 }
 
+/// SHA-256 of a bundle's weight file, as listed in its manifest.
+pub fn weights_sha(m: &BundleManifest) -> Option<&str> {
+    m.files.iter().find(|f| f.path == MODEL_WEIGHTS_FILE).map(|f| f.sha256.as_str())
+}
+
 fn round6(x: f64) -> f64 {
     (x * 1e6).round() / 1e6
 }
@@ -140,14 +145,24 @@ impl Workspace {
             &self.project.dir("transforms").join(&run.transform_id).join("fitted.json"),
             Phase::Bundle,
         )?;
-        let test_eval = self
-            .evaluations()
-            .into_iter()
-            .rev()
-            .find(|e| {
-                matches!(&e.subject, EvaluationSubject::Run { run_id: r } if r == run_id)
-                    && e.protocol.split == SplitName::Test
-            });
+        // The run's own test evaluation or, failing that, one of an identical model:
+        // the same weights trained on the same data version with the same threshold
+        // (a deterministic re-run). The evidence is about these exact weights.
+        let model_sha = Self::run_model_sha(&run);
+        let tests: Vec<_> = self.evaluations().into_iter().rev().filter(|e| e.protocol.split == SplitName::Test).collect();
+        let test_eval = tests
+            .iter()
+            .find(|e| matches!(&e.subject, EvaluationSubject::Run { run_id: r } if r == run_id))
+            .or_else(|| {
+                tests.iter().find(|e| {
+                    matches!(&e.subject, EvaluationSubject::Run { .. })
+                        && !model_sha.is_empty()
+                        && e.model_sha256.as_deref() == Some(model_sha.as_str())
+                        && e.metrics.threshold == run.threshold
+                        && e.model_snapshot_id.as_deref().is_some_and(|s| self.same_data_version(s, &run.snapshot_id))
+                })
+            })
+            .cloned();
         if test_eval.is_none() && !opts.allow_unevaluated {
             return Err(RustpyError::new(
                 ErrorCode::EvaluationMissing,
@@ -189,13 +204,18 @@ impl Workspace {
             let bytes = fs::read(&weights).map_err(|e| RustpyError::io(Phase::Bundle, &weights, e))?;
             write_atomic(&tmp.join(MODEL_WEIGHTS_FILE), &bytes)?;
             let evaluation = BundleEvaluation {
-                status: if test_eval.is_some() { "evaluated".into() } else { "unevaluated-candidate".into() },
+                status: if test_eval.is_some() { crate::auto::EVALUATED.into() } else { "unevaluated-candidate".into() },
                 test: test_eval.clone(),
                 valid: metrics.valid.clone(),
-                notes: if test_eval.is_some() {
-                    vec![]
-                } else {
-                    vec!["no held-out test evaluation: treat as a candidate only".into()]
+                notes: match &test_eval {
+                    Some(e) => match &e.subject {
+                        EvaluationSubject::Run { run_id: other } if other != run_id => vec![format!(
+                            "test evaluation {} of run {other}, which produced identical weights on the same data version",
+                            e.evaluation_id
+                        )],
+                        _ => vec![],
+                    },
+                    None => vec!["no held-out test evaluation: treat as a candidate only".into()],
                 },
             };
             write_json(&tmp.join(EVALUATION_FILE), &evaluation)?;
@@ -337,6 +357,16 @@ impl Workspace {
             check,
             already_existed: false,
         })
+    }
+
+    /// The newest bundle under `<project>/bundles` that holds exactly these weights
+    /// (SHA-256 of the weight file), e.g. the bundle of an identical earlier run.
+    pub fn bundle_with_weights(&self, sha: &str) -> Option<(PathBuf, BundleManifest)> {
+        self.list_bundles()
+            .into_iter()
+            .filter_map(|(p, m)| m.map(|m| (p, m)))
+            .filter(|(_, m)| weights_sha(m) == Some(sha))
+            .max_by(|a, b| a.1.created_at.cmp(&b.1.created_at).then(a.0.cmp(&b.0)))
     }
 
     /// Bundles under `<project>/bundles`.

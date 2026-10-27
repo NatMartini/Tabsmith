@@ -9,7 +9,7 @@ use rustpy_contracts::{ErrorCode, Phase, Result, RustpyError};
 use rustpy_runtime::{coerce_category, Table};
 
 use crate::data::TargetInfo;
-use crate::exposure::{content_columns, row_fingerprint};
+use crate::exposure::{content_columns, entity_key, row_fingerprint};
 use crate::rng::SplitMix64;
 
 /// Version of the positional stratified split algorithm (no longer produced; kept
@@ -22,12 +22,11 @@ pub const SPLIT_ALGORITHM: &str = "rustpy.split.v1";
 pub const SPLIT_ALGORITHM_CONTENT: &str = "rustpy.split.v3-content-hash";
 /// Version of the stable, key-hashed assignment (grouped splits, or any split with
 /// an id column): a row/group keeps its split when the data grows or is re-ordered.
-pub const SPLIT_ALGORITHM_STABLE: &str = "rustpy.split.v2-stable-hash";
-// v2 stratified-with-id: per-class ordering by the stable hash, then exact cuts.
+/// Keys are [`entity_key`]s, so `00000001` and `1` are the same entity (v4; v2
+/// hashed the key text as written).
+pub const SPLIT_ALGORITHM_STABLE: &str = "rustpy.split.v4-stable-key";
+// Stratified with an id: per-class ordering by the stable hash, then exact cuts.
 
-fn key_text(v: rustpy_runtime::ValueRef<'_>) -> Option<String> {
-    coerce_category(v, NanPolicy::Missing).ok().flatten().map(|c| c.into_owned())
-}
 
 /// Deterministic value in [0, 1) from (seed, domain, key): FNV-1a + SplitMix64 finaliser.
 pub fn stable_unit(seed: u64, domain: &str, key: &str) -> f64 {
@@ -126,7 +125,7 @@ pub fn make_split(snapshot_id: &str, table: &Table, target: &TargetInfo, cfg: &D
     });
     let row_key = |i: usize| -> String {
         match (id_column, &content_keys) {
-            (Some(ids), _) => key_text(ids.get(i)).unwrap_or_default(),
+            (Some(ids), _) => entity_key(ids.get(i)).unwrap_or_default(),
             (None, Some(keys)) => keys[i].clone(),
             (None, None) => i.to_string(),
         }
@@ -207,7 +206,7 @@ pub fn make_split(snapshot_id: &str, table: &Table, target: &TargetInfo, cfg: &D
             })?;
             let mut rows_by_group: BTreeMap<String, Vec<usize>> = BTreeMap::new();
             for i in 0..n {
-                let key = key_text(col.get(i)).ok_or_else(|| {
+                let key = entity_key(col.get(i)).ok_or_else(|| {
                     RustpyError::new(
                         ErrorCode::DataUnsupported,
                         Phase::Split,
@@ -362,8 +361,8 @@ pub fn check_group_leakage(table: &Table, split: &SplitManifest) -> Result<()> {
     let col = table.column(g).expect("group column exists");
     let mut by_group: BTreeMap<String, BTreeSet<u8>> = BTreeMap::new();
     for (i, code) in split.assignment.bytes().enumerate() {
-        if let Ok(Some(k)) = coerce_category(col.get(i), NanPolicy::Missing) {
-            by_group.entry(k.into_owned()).or_default().insert(code);
+        if let Some(k) = entity_key(col.get(i)) {
+            by_group.entry(k).or_default().insert(code);
         }
     }
     if let Some((g, _)) = by_group.iter().find(|(_, s)| s.len() > 1) {
