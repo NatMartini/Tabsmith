@@ -67,6 +67,9 @@ pub struct RunGroup {
     pub group_id: String,
     pub created_at: String,
     pub run_ids: Vec<String>,
+    /// Candidates this group was asked to train (some may not have started).
+    #[serde(default)]
+    pub planned: Vec<Candidate>,
     pub snapshot_id: String,
     pub split_id: String,
     pub transform_id: String,
@@ -84,6 +87,8 @@ pub struct ComparisonRow {
     pub parameters: usize,
     pub model_kib: f64,
     pub p95_latency_us: Option<f64>,
+    /// Peak resident memory while this run trained.
+    pub peak_rss_mb: Option<f64>,
     pub train_ms: f64,
     pub best_epoch: Option<usize>,
     pub comparable: bool,
@@ -292,13 +297,13 @@ impl Workspace {
         candidates
             .iter()
             .map(|&c| {
-                let request = match c {
-                    Candidate::Linear => cfg.execution.baseline_device,
-                    Candidate::SmallMlp => cfg.execution.candidate_device,
+                let (request, key) = match c {
+                    Candidate::Linear => (cfg.execution.baseline_device, "execution.baseline_device"),
+                    Candidate::SmallMlp => (cfg.execution.candidate_device, "execution.candidate_device"),
                 };
                 let hidden = &cfg.train.for_candidate(c).hidden;
                 let est = estimate_peak_mb(p.snapshot.source.bytes, p.snapshot.n_rows, p.fitted.transform.output_dim, hidden);
-                plan_device(request, &cfg.execution, est).map(|plan| (c, plan))
+                plan_device(request, key, &cfg.execution, est).map(|plan| (c, plan))
             })
             .collect()
     }
@@ -417,6 +422,19 @@ impl Workspace {
         let train_data = self.split_data(&prepared, SplitName::Train)?;
         let valid_data = self.split_data(&prepared, SplitName::Valid)?;
         let group_id = self.project.allocate_id("groups", "grp")?;
+        // The group record exists from the start, so a crash never leaves a run
+        // without its comparison group.
+        let mut group = RunGroup {
+            group_id: group_id.clone(),
+            created_at: now_rfc3339(),
+            run_ids: Vec::new(),
+            planned: candidates.clone(),
+            snapshot_id: prepared.snapshot.snapshot_id.clone(),
+            split_id: prepared.split.split_id.clone(),
+            transform_id: prepared.fitted.transform_id.clone(),
+            config_hash: prepared.resolved.config_hash.clone(),
+        };
+        self.save_group(&group)?;
         let mut runs = Vec::new();
         let mut cancelled = false;
         for (candidate, plan) in plans {
@@ -436,20 +454,12 @@ impl Workspace {
                 progress,
             )?;
             cancelled = run.status == RunStatus::Cancelled;
+            group.run_ids.push(run.run_id.clone());
+            self.save_group(&group)?;
             runs.push(run);
         }
-        let group = RunGroup {
-            group_id: group_id.clone(),
-            created_at: now_rfc3339(),
-            run_ids: runs.iter().map(|r| r.run_id.clone()).collect(),
-            snapshot_id: prepared.snapshot.snapshot_id.clone(),
-            split_id: prepared.split.split_id.clone(),
-            transform_id: prepared.fitted.transform_id.clone(),
-            config_hash: prepared.resolved.config_hash.clone(),
-        };
-        write_json(&self.project.dir("groups").join(format!("{group_id}.json")), &group)?;
-        let _ = fs::remove_file(self.project.dir("groups").join(format!("{group_id}.lock")));
-        let comparison = self.compare_records(&runs, &prepared.resolved.config)?;
+        let mut comparison = self.compare_records(&runs, &prepared.resolved.config)?;
+        comparison.notes.extend(Self::unstarted_note(&group, &runs));
         Ok(RunGroupResult {
             group,
             runs,
@@ -478,7 +488,6 @@ impl Workspace {
         let run_id = self.project.allocate_id("runs", "run")?;
         let run_dir = self.project.run_dir(&run_id);
         fs::create_dir_all(&run_dir).map_err(|e| RustpyError::io(Phase::Train, &run_dir, e))?;
-        let _ = fs::remove_file(self.project.dir("runs").join(format!("{run_id}.lock")));
         write_json(&run_dir.join("resolved.json"), &p.resolved)?;
         let mconfig = model_config(candidate, p.fitted.transform.output_dim, &tcfg);
         let batches = train_data.x.rows.div_ceil(tcfg.batch_size) as u64;
@@ -501,6 +510,7 @@ impl Workspace {
             transform_id: p.fitted.transform_id.clone(),
             config_hash: p.resolved.config_hash.clone(),
             train_config: tcfg.clone(),
+            recipe_constants: Some(crate::train::RECIPE_CONSTANTS.to_string()),
             train_seed: cfg.train.seed,
             threshold: cfg.selection.threshold,
             reused_stages: p.reused.clone(),
@@ -555,6 +565,7 @@ impl Workspace {
             rustpy_version: RUSTPY_VERSION.to_string(),
             n_train: train_data.x.rows,
             platform: platform_fingerprint(),
+            recipe_constants: crate::train::RECIPE_CONSTANTS.to_string(),
         };
         // R2: continue from a private copy of the checkpoint, so this run can itself
         // be resumed even if it dies before writing its own first checkpoint.
@@ -580,6 +591,7 @@ impl Workspace {
             checkpoint_dir: run_dir.join("checkpoints"),
             key,
         };
+        crate::device::reset_peak_rss();
         let t0 = Instant::now();
         let epochs = tcfg.epochs;
         let run_path = self.run_path(&run_id);
@@ -781,6 +793,7 @@ impl Workspace {
             rustpy_version: RUSTPY_VERSION.to_string(),
             n_train: train_data.x.rows,
             platform: platform_fingerprint(),
+            recipe_constants: crate::train::RECIPE_CONSTANTS.to_string(),
         };
         // Newest checkpoint that verifies; damaged ones are skipped (and reported).
         let (ck, skipped) = self.resumable_checkpoint(&parent, &key)?;
@@ -807,7 +820,36 @@ impl Workspace {
             Some((lineage, Some(state))),
             progress,
         )?;
+        // The continued run belongs to the parent's comparison group.
+        let gpath = self.project.dir("groups").join(format!("{}.json", parent.group_id));
+        if let Ok(mut g) = read_json::<RunGroup>(&gpath, Phase::Resume) {
+            if !g.run_ids.contains(&run.run_id) {
+                g.run_ids.push(run.run_id.clone());
+                self.save_group(&g)?;
+            }
+        }
         Ok(run)
+    }
+
+    fn save_group(&self, g: &RunGroup) -> Result<()> {
+        write_json(&self.project.dir("groups").join(format!("{}.json", g.group_id)), g)
+    }
+
+    /// Note about planned candidates that were never trained (e.g. after Ctrl-C).
+    fn unstarted_note(g: &RunGroup, runs: &[RunRecord]) -> Option<String> {
+        let missing: Vec<&str> = g
+            .planned
+            .iter()
+            .filter(|c| !runs.iter().any(|r| r.candidate == **c))
+            .map(|c| c.as_str())
+            .collect();
+        (!missing.is_empty()).then(|| {
+            format!(
+                "planned candidates not trained yet: {} (train them with `rustpy run --candidates {}`)",
+                missing.join(", "),
+                missing.join(",")
+            )
+        })
     }
 
     /// Newest verified, compatible checkpoint of `run` or, if it has none (a resumed
@@ -953,13 +995,13 @@ impl Workspace {
             group_id: group_id.clone(),
             created_at: now_rfc3339(),
             run_ids: vec![run.run_id.clone()],
+            planned: vec![parent.candidate],
             snapshot_id: p.snapshot.snapshot_id.clone(),
             split_id: p.split.split_id.clone(),
             transform_id: p.fitted.transform_id.clone(),
             config_hash: p.resolved.config_hash.clone(),
         };
-        write_json(&self.project.dir("groups").join(format!("{group_id}.json")), &group)?;
-        let _ = fs::remove_file(self.project.dir("groups").join(format!("{group_id}.lock")));
+        self.save_group(&group)?;
         Ok(run)
     }
 
@@ -1167,7 +1209,6 @@ impl Workspace {
         // Rows first: a published record always has its row list.
         write_json(&dir.join(format!("{id}.rows.json")), rows)?;
         write_json(&dir.join(format!("{id}.json")), &rec)?;
-        let _ = fs::remove_file(dir.join(format!("{id}.lock")));
         Ok(rec)
     }
 
@@ -1367,9 +1408,13 @@ impl Workspace {
     // -----------------------------------------------------------------------
 
     pub fn compare(&self, run_ids: &[String]) -> Result<Comparison> {
+        let mut group: Option<RunGroup> = None;
         let ids: Vec<String> = if run_ids.is_empty() {
             match self.latest_group()? {
-                Some(g) => g.run_ids,
+                Some(g) => {
+                    group = Some(g.clone());
+                    g.run_ids
+                }
                 None => {
                     return Err(RustpyError::new(ErrorCode::RunNotFound, Phase::Compare, "there are no runs to compare yet")
                         .next("train candidates with `rustpy run`"));
@@ -1405,6 +1450,9 @@ impl Workspace {
                 differing.join(", "),
                 recorded[0].0
             ));
+        }
+        if let Some(g) = &group {
+            cmp.notes.extend(Self::unstarted_note(g, &runs));
         }
         Ok(cmp)
     }
@@ -1470,6 +1518,7 @@ impl Workspace {
                 parameters: params,
                 model_kib,
                 p95_latency_us: p95,
+                peak_rss_mb: r.device_receipt.as_ref().and_then(|d| d.peak_rss_mb),
                 train_ms: r.timings.train_ms,
                 best_epoch: r.metrics.as_ref().map(|m| m.best_epoch),
                 comparable,

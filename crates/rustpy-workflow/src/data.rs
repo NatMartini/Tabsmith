@@ -715,8 +715,33 @@ pub fn read_for_prediction(
         .iter()
         .filter(|f| f.kind == rustpy_contracts::schema::FieldKind::Categorical && f.raw_dtype == RawDtype::Text)
         .map(|f| f.name.clone())
+        .chain(schema.passthrough_id.clone()) // ids are copied verbatim (leading zeros kept)
         .collect();
+    if opts.format == SourceFormat::Csv {
+        // A header-only file is a valid empty batch for prediction.
+        if let Ok(text) = fs::read_to_string(path) {
+            let body: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
+            if body.len() == 1 {
+                let header = check_header_only(path, body[0], opts.delimiter)?;
+                return Ok(Table::new(
+                    header
+                        .into_iter()
+                        .map(|name| RtColumn { name, data: ColumnData::Text(Vec::new()) })
+                        .collect(),
+                )?);
+            }
+        }
+    }
     Ok(read_table(path, &opts, None)?.table)
+}
+
+fn check_header_only(path: &Path, line: &str, delimiter: u8) -> Result<Vec<String>> {
+    let line = line.trim_start_matches('\u{feff}');
+    let names: Vec<String> = line.split(delimiter as char).map(|s| s.trim_matches('"').to_string()).collect();
+    if names.iter().any(|n| n.trim().is_empty()) {
+        return Err(read_err(path, "the CSV header has an empty column name"));
+    }
+    Ok(names)
 }
 
 // ---------------------------------------------------------------------------
@@ -765,6 +790,12 @@ impl FeaturePlan {
             _ => None,
         })
     }
+}
+
+/// `id`, `device_id`, `customerId`, `UserID` …
+fn looks_like_id_name(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    lower == "id" || lower.ends_with("_id") || lower.ends_with("-id") || name.ends_with("Id") || name.ends_with("ID")
 }
 
 fn looks_like_date(s: &str) -> bool {
@@ -981,6 +1012,31 @@ pub fn plan_columns(snapshot: &DataSnapshot, table: &Table, cfg: &DataConfig, ma
                         reason: format!(
                             "every value is a unique integer (looks like an identifier); set data.columns.{name} = \"numeric\" to use it as a feature"
                         ),
+                    }
+                }
+                Some(RawDtype::Int)
+                    if looks_like_id_name(name)
+                        && prof.distinct >= 20
+                        && non_missing as f64 / prof.distinct.max(1) as f64 >= 2.0 =>
+                {
+                    if cfg.group_column.is_some() {
+                        ColumnRole::Excluded {
+                            reason: "repeated integer id (entity id); not used as a numeric feature".into(),
+                        }
+                    } else {
+                        return Err(RustpyError::new(
+                            ErrorCode::LeakageDetected,
+                            Phase::Data,
+                            format!(
+                                "column `{name}` looks like an entity id ({} values, each repeated ~{:.0} times): rows of one entity are related and must not be spread over train and test",
+                                prof.distinct,
+                                non_missing as f64 / prof.distinct.max(1) as f64
+                            ),
+                        )
+                        .field(name)
+                        .next(format!(
+                            "split by it: rustpy data bind <file> --target <col> --group {name}; or exclude it (data.exclude = [\"{name}\"]); or, if it is a real quantity, set data.columns.{name} = \"numeric\""
+                        )));
                     }
                 }
                 Some(RawDtype::Float | RawDtype::Int) => ColumnRole::Feature { kind: FieldKind::Numeric },

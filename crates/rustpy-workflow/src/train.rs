@@ -37,6 +37,10 @@ use crate::metrics::binary_metrics;
 use crate::project::{write_atomic, write_json};
 use crate::rng::{epoch_permutation, SplitMix64};
 
+/// Fixed training choices of tabular-binary@0.1 that are not configurable; recorded
+/// in every Run and in the exact-resume key so changes are visible and refused.
+pub const RECIPE_CONSTANTS: &str = "optimizer=adam(beta1=0.9,beta2=0.999,eps=1e-8); init=rustpy.init.v1(linear:zeros; mlp:uniform(+-1/sqrt(fan_in)) from SplitMix64(seed,\"init\")); loss=class-weighted mean BCE-with-logits + l2/2*sum(W^2) (biases excluded); batches=rustpy.rng.v1 epoch permutation";
+
 /// Engine-side network: dense layers with ReLU between them.
 #[derive(Module, Debug)]
 pub struct DenseNet {
@@ -181,6 +185,8 @@ pub struct ResumeKey {
     /// on the same platform (the matrix kernels are chosen by CPU features).
     #[serde(default)]
     pub platform: String,
+    #[serde(default)]
+    pub recipe_constants: String,
 }
 
 /// Platform identity relevant to floating-point results.
@@ -224,6 +230,7 @@ impl ResumeKey {
         cmp!(rustpy_version, "rustpy version");
         cmp!(n_train, "training rows");
         cmp!(platform, "platform (OS/CPU features)");
+        cmp!(recipe_constants, "recipe constants (optimizer/initialisation/loss)");
         if self.train_config != other.train_config {
             d.push("training configuration".into());
         }

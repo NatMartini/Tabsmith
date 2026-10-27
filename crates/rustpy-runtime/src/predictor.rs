@@ -238,6 +238,8 @@ pub struct UpdateReport {
     pub examples_checked: usize,
     /// Human-readable input contract differences between the two bundles.
     pub schema_changes: Vec<String>,
+    /// Output contract differences (target, labels, threshold).
+    pub output_changes: Vec<String>,
 }
 
 /// A shareable, hot-swappable predictor. Updates load and check the new bundle in a
@@ -245,12 +247,15 @@ pub struct UpdateReport {
 #[derive(Debug)]
 pub struct PredictorHandle {
     current: RwLock<Arc<Predictor>>,
+    /// Serialises updates so each one is checked against the predictor it replaces.
+    updating: std::sync::Mutex<()>,
 }
 
 impl PredictorHandle {
     pub fn new(predictor: Predictor) -> Self {
         Self {
             current: RwLock::new(Arc::new(predictor)),
+            updating: std::sync::Mutex::new(()),
         }
     }
 
@@ -268,8 +273,10 @@ impl PredictorHandle {
     }
 
     /// Loads, verifies and self-checks `dir`, then atomically makes it active.
+    /// Breaking contract changes are refused unless `opts.allow_contract_change`.
     /// On failure the previous predictor remains active and the error says so.
     pub fn try_update(&self, dir: impl AsRef<Path>, opts: LoadOptions) -> Result<UpdateReport> {
+        let _guard = self.updating.lock().unwrap_or_else(|e| e.into_inner());
         let old = self.current();
         let dir = dir.as_ref();
         let fail = |cause: RustpyError| -> RustpyError {
@@ -285,22 +292,17 @@ impl PredictorHandle {
             e
         };
         let new = Predictor::load(dir, opts.clone().with_self_check(true)).map_err(fail)?;
-        let changes = schema_changes(old.input_schema(), new.input_schema());
-        let new_required: Vec<&str> = new
-            .input_schema()
-            .fields
-            .iter()
-            .filter(|f| f.required && old.input_schema().field(&f.name).is_none_or(|o| !o.required))
-            .map(|f| f.name.as_str())
-            .collect();
-        if !new_required.is_empty() && !opts.allow_new_required_fields {
+        let (changes, breaking_in) = input_changes(old.input_schema(), new.input_schema());
+        let (out_changes, breaking_out) = output_changes(old.output_schema(), new.output_schema());
+        let breaking: Vec<String> = breaking_in.into_iter().chain(breaking_out).collect();
+        if !breaking.is_empty() && !opts.allow_contract_change {
             return Err(fail(
                 RustpyError::new(
                     ErrorCode::BundleIncompatible,
                     Phase::Load,
-                    format!("new bundle requires fields the application may not send: {}", new_required.join(", ")),
+                    format!("the new bundle breaks the current contract: {}", breaking.join("; ")),
                 )
-                .next("send the new fields first, then retry with LoadOptions::allow_new_required_fields(true)"),
+                .next("adapt the application first, then retry with LoadOptions::allow_contract_change(true)"),
             ));
         }
         let report = UpdateReport {
@@ -308,37 +310,109 @@ impl PredictorHandle {
             active_bundle_id: new.bundle_id().to_string(),
             examples_checked: new.bundle.examples.records.len(),
             schema_changes: changes,
+            output_changes: out_changes,
         };
         *self.current.write().unwrap_or_else(|e| e.into_inner()) = Arc::new(new);
         Ok(report)
     }
 
-    /// Switches back to a previous (immutable) bundle; same checks as an update.
+    /// Switches back to a previous (immutable) bundle; same checks as an update,
+    /// except that returning to the earlier contract is allowed.
     pub fn rollback_to(&self, dir: impl AsRef<Path>, opts: LoadOptions) -> Result<UpdateReport> {
-        self.try_update(dir, opts.allow_new_required_fields(true))
+        self.try_update(dir, opts.allow_contract_change(true))
     }
 }
 
-fn schema_changes(old: &InputSchema, new: &InputSchema) -> Vec<String> {
-    let mut out = Vec::new();
+/// All input differences, and the subset that can break an application that
+/// works with the old bundle.
+fn input_changes(old: &InputSchema, new: &InputSchema) -> (Vec<String>, Vec<String>) {
+    use rustpy_contracts::config::{ExtraColumnPolicy, NanPolicy, UnknownCategoryPolicy};
+    let mut all = Vec::new();
+    let mut breaking = Vec::new();
     for f in &new.fields {
         match old.field(&f.name) {
-            None => out.push(format!("added field `{}` ({})", f.name, f.kind.as_str())),
-            Some(o) if o.kind != f.kind => {
-                out.push(format!("field `{}` changed {} -> {}", f.name, o.kind.as_str(), f.kind.as_str()))
+            None => {
+                let msg = format!("added field `{}` ({})", f.name, f.kind.as_str());
+                if f.required {
+                    breaking.push(format!("new required field `{}`", f.name));
+                }
+                all.push(msg);
             }
-            Some(o) if o.required != f.required => out.push(format!(
-                "field `{}` is now {}",
-                f.name,
-                if f.required { "required" } else { "optional" }
-            )),
-            _ => {}
+            Some(o) => {
+                if o.kind != f.kind || o.raw_dtype != f.raw_dtype {
+                    let msg = format!(
+                        "field `{}` changed {} ({}) -> {} ({})",
+                        f.name,
+                        o.kind.as_str(),
+                        o.raw_dtype.as_str(),
+                        f.kind.as_str(),
+                        f.raw_dtype.as_str()
+                    );
+                    breaking.push(msg.clone());
+                    all.push(msg);
+                }
+                if o.required != f.required {
+                    let msg = format!("field `{}` is now {}", f.name, if f.required { "required" } else { "optional" });
+                    if f.required {
+                        breaking.push(msg.clone());
+                    }
+                    all.push(msg);
+                }
+            }
         }
     }
     for f in &old.fields {
         if new.field(&f.name).is_none() {
-            out.push(format!("removed field `{}`", f.name));
+            let msg = format!("removed field `{}`", f.name);
+            if new.extra_columns == ExtraColumnPolicy::Error {
+                breaking.push(format!("{msg} (and extra fields are now rejected)"));
+            }
+            all.push(msg);
         }
     }
-    out
+    let mut policy = |name: &str, stricter: bool, from: String, to: String| {
+        if from != to {
+            let msg = format!("{name} policy {from} -> {to}");
+            if stricter {
+                breaking.push(msg.clone());
+            }
+            all.push(msg);
+        }
+    };
+    policy(
+        "NaN",
+        old.nan == NanPolicy::Missing && new.nan == NanPolicy::Error,
+        format!("{:?}", old.nan),
+        format!("{:?}", new.nan),
+    );
+    policy(
+        "unknown-category",
+        old.unknown_category == UnknownCategoryPolicy::Ignore && new.unknown_category == UnknownCategoryPolicy::Error,
+        format!("{:?}", old.unknown_category),
+        format!("{:?}", new.unknown_category),
+    );
+    policy(
+        "extra-field",
+        old.extra_columns == ExtraColumnPolicy::Ignore && new.extra_columns == ExtraColumnPolicy::Error,
+        format!("{:?}", old.extra_columns),
+        format!("{:?}", new.extra_columns),
+    );
+    (all, breaking)
+}
+
+fn output_changes(old: &OutputSchema, new: &OutputSchema) -> (Vec<String>, Vec<String>) {
+    let mut all = Vec::new();
+    let mut breaking = Vec::new();
+    if old.target != new.target || old.positive_label != new.positive_label || old.negative_label != new.negative_label {
+        let msg = format!(
+            "prediction meaning changed: P({} == {:?}) -> P({} == {:?})",
+            old.target, old.positive_label, new.target, new.positive_label
+        );
+        breaking.push(msg.clone());
+        all.push(msg);
+    }
+    if old.threshold != new.threshold {
+        all.push(format!("decision threshold {} -> {}", old.threshold, new.threshold));
+    }
+    (all, breaking)
 }

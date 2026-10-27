@@ -21,8 +21,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let report = handle.try_update(&new, LoadOptions::cpu())?;
     println!("updated {} -> {} ({} examples re-checked)", report.previous_bundle_id, report.active_bundle_id, report.examples_checked);
-    for change in &report.schema_changes {
-        println!("  input change: {change}");
+    for change in report.schema_changes.iter().chain(&report.output_changes) {
+        println!("  contract change: {change}");
     }
     let back = handle.rollback_to(&old, LoadOptions::cpu())?;
     println!("rolled back to {}", back.active_bundle_id);

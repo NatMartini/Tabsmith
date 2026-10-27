@@ -184,6 +184,7 @@ fn exact_resume_matches_uninterrupted_training_bitwise() {
         rustpy_version: rustpy_contracts::RUSTPY_VERSION.into(),
         n_train: tr.x.rows,
         platform: rustpy_workflow::train::platform_fingerprint(),
+        recipe_constants: rustpy_workflow::train::RECIPE_CONSTANTS.to_string(),
     };
     let inputs = |dir: &str| rustpy_workflow::train::TrainInputs {
         candidate: rustpy_contracts::config::Candidate::SmallMlp,

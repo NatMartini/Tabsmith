@@ -202,8 +202,26 @@ pub enum BundleCommand {
 }
 
 fn main() -> ExitCode {
-    let cli = Cli::parse();
-    let json = cli.json;
+    let json = std::env::args().any(|a| a == "--json");
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(e) => {
+            use clap::error::ErrorKind;
+            if matches!(e.kind(), ErrorKind::DisplayHelp | ErrorKind::DisplayVersion) || !json {
+                e.exit();
+            }
+            // Usage errors in JSON mode use the same envelope as every other error.
+            let err = rustpy_contracts::RustpyError::new(
+                rustpy_contracts::ErrorCode::ConfigInvalid,
+                rustpy_contracts::Phase::Config,
+                e.kind().to_string(),
+            )
+            .actual(e.to_string().lines().next().unwrap_or_default().to_string())
+            .next("see `rustpy --help` or `rustpy <command> --help`");
+            output::print_error(&err, true);
+            return ExitCode::from(2);
+        }
+    };
     match commands::dispatch(cli) {
         Ok(code) => ExitCode::from(code),
         Err(e) => {

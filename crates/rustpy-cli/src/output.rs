@@ -12,9 +12,14 @@ pub fn print_error(e: &RustpyError, json: bool) {
 }
 
 pub fn print_json<T: Serialize>(value: &T) {
+    print_json_status(value, true);
+}
+
+/// JSON envelope; `ok` is false whenever the command exits non-zero.
+pub fn print_json_status<T: Serialize>(value: &T, ok: bool) {
     println!(
         "{}",
-        serde_json::to_string_pretty(&serde_json::json!({ "ok": true, "result": value })).unwrap_or_default()
+        serde_json::to_string_pretty(&serde_json::json!({ "ok": ok, "result": value })).unwrap_or_default()
     );
 }
 

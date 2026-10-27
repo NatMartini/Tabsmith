@@ -4,9 +4,8 @@
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
-use rustpy_contracts::hash::sha256_file;
 use rustpy_contracts::manifest::{
-    BundleEvaluation, BundleManifest, ExampleExpected, ExampleInputs, compute_bundle_id, version_at_least,
+    BundleEvaluation, BundleManifest, ExampleExpected, ExampleInputs, version_at_least,
     EVALUATION_FILE, EXAMPLES_EXPECTED_FILE, EXAMPLES_INPUT_FILE, INPUT_SCHEMA_FILE, MANIFEST_FILE,
     MODEL_CONFIG_FILE, MODEL_WEIGHTS_FILE, OUTPUT_SCHEMA_FILE, REQUIRED_FILES, TRANSFORM_FILE,
 };
@@ -59,8 +58,10 @@ pub struct LoadOptions {
     pub verify_hashes: bool,
     /// Run the bundled example records and compare with the expected outputs (default: false).
     pub self_check: bool,
-    /// Allow an update whose input schema requires fields the current bundle does not (default: false).
-    pub allow_new_required_fields: bool,
+    /// Allow an update that breaks the current input/output contract (new required
+    /// fields, changed field kinds or types, stricter policies, a different target
+    /// or label mapping). Default: false.
+    pub allow_contract_change: bool,
 }
 
 impl LoadOptions {
@@ -69,7 +70,7 @@ impl LoadOptions {
             device: Device::Cpu,
             verify_hashes: true,
             self_check: false,
-            allow_new_required_fields: false,
+            allow_contract_change: false,
         }
     }
 
@@ -90,8 +91,8 @@ impl LoadOptions {
         self
     }
 
-    pub fn allow_new_required_fields(mut self, yes: bool) -> Self {
-        self.allow_new_required_fields = yes;
+    pub fn allow_contract_change(mut self, yes: bool) -> Self {
+        self.allow_contract_change = yes;
         self
     }
 }
@@ -120,21 +121,11 @@ fn bundle_err(code: ErrorCode, dir: &Path, msg: impl Into<String>) -> RustpyErro
     RustpyError::new(code, Phase::Load, msg).field(dir.display().to_string())
 }
 
-fn read_json<T: DeserializeOwned>(dir: &Path, rel: &str) -> Result<T> {
-    let path = dir.join(rel);
-    let bytes = fs::read(&path).map_err(|e| {
-        bundle_err(
-            ErrorCode::BundleMissingFile,
-            dir,
-            format!("cannot read `{rel}`: {e}"),
-        )
-        .field(rel)
-        .next("the bundle is incomplete; rebuild it with `rustpy bundle build` or restore a complete copy")
-    })?;
-    serde_json::from_slice(&bytes).map_err(|e| {
+fn parse_json<T: DeserializeOwned>(dir: &Path, rel: &str, bytes: &[u8]) -> Result<T> {
+    serde_json::from_slice(bytes).map_err(|e| {
         bundle_err(ErrorCode::BundleCorrupt, dir, format!("`{rel}` is not valid: {e}"))
             .field(rel)
-            .next("the bundle file is damaged; rebuild the bundle or restore it from a known-good copy")
+            .next("the bundle file is damaged or comes from an incompatible version; rebuild the bundle or restore it from a known-good copy")
     })
 }
 
@@ -146,8 +137,33 @@ fn safe_relative(p: &str) -> bool {
             .all(|c| matches!(c, Component::Normal(_)))
 }
 
+/// Every file under `dir` (relative, `/`-separated); symlinks are reported as errors.
+fn walk(dir: &Path, base: &Path, out: &mut Vec<String>) -> Result<()> {
+    for e in fs::read_dir(dir).map_err(|e| RustpyError::io(Phase::Load, dir, e))? {
+        let e = e.map_err(|e| RustpyError::io(Phase::Load, dir, e))?;
+        let path = e.path();
+        let rel = path
+            .strip_prefix(base)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .replace('\\', "/");
+        let ft = fs::symlink_metadata(&path).map_err(|e| RustpyError::io(Phase::Load, &path, e))?.file_type();
+        if ft.is_symlink() {
+            return Err(bundle_err(ErrorCode::BundleCorrupt, base, format!("bundle contains a symbolic link `{rel}`"))
+                .field(rel)
+                .next("bundles contain regular files only; rebuild the bundle"));
+        } else if ft.is_dir() {
+            walk(&path, base, out)?;
+        } else {
+            out.push(rel);
+        }
+    }
+    Ok(())
+}
+
 impl Bundle {
-    /// Opens and verifies a bundle directory.
+    /// Opens and verifies a bundle directory. Each file is read once; the bytes
+    /// that are hashed are the bytes that are parsed.
     pub fn open(dir: impl AsRef<Path>, opts: &LoadOptions) -> Result<Self> {
         let dir = dir.as_ref().to_path_buf();
         if !dir.join(MANIFEST_FILE).is_file() {
@@ -156,10 +172,11 @@ impl Bundle {
                 .expected("a directory created by `rustpy bundle build`")
                 .next("check the path; list bundles with `rustpy bundle list`"));
         }
-        let manifest: BundleManifest = read_json(&dir, MANIFEST_FILE)?;
+        let manifest_bytes = fs::read(dir.join(MANIFEST_FILE)).map_err(|e| RustpyError::io(Phase::Load, &dir, e))?;
+        let manifest: BundleManifest = parse_json(&dir, MANIFEST_FILE, &manifest_bytes)?;
         Self::check_compatibility(&dir, &manifest, opts)?;
 
-        // Every required file must be declared, present, and (optionally) unmodified.
+        // Every required file must be declared; every declared path safe; nothing else present.
         for required in REQUIRED_FILES {
             if !manifest.files.iter().any(|f| f.path == *required) {
                 return Err(bundle_err(
@@ -170,6 +187,20 @@ impl Bundle {
                 .field(*required));
             }
         }
+        let mut present = Vec::new();
+        walk(&dir, &dir, &mut present)?;
+        for f in &present {
+            if f != MANIFEST_FILE && !manifest.files.iter().any(|e| &e.path == f) {
+                return Err(bundle_err(
+                    ErrorCode::BundleCorrupt,
+                    &dir,
+                    format!("bundle contains a file that is not in its manifest: `{f}`"),
+                )
+                .field(f.clone())
+                .next("a bundle holds exactly the files its manifest lists; remove the extra file or rebuild the bundle"));
+            }
+        }
+        let mut contents: std::collections::HashMap<String, Vec<u8>> = std::collections::HashMap::new();
         for entry in &manifest.files {
             if !safe_relative(&entry.path) {
                 return Err(bundle_err(
@@ -179,18 +210,21 @@ impl Bundle {
                 ));
             }
             let path = dir.join(&entry.path);
-            if !path.is_file() {
-                return Err(bundle_err(
-                    ErrorCode::BundleMissingFile,
-                    &dir,
-                    format!("bundle file `{}` is missing", entry.path),
-                )
-                .field(entry.path.clone())
-                .next("the bundle is incomplete; rebuild it with `rustpy bundle build` or restore a complete copy"));
-            }
+            let bytes = match fs::read(&path) {
+                Ok(b) => b,
+                Err(_) => {
+                    return Err(bundle_err(
+                        ErrorCode::BundleMissingFile,
+                        &dir,
+                        format!("bundle file `{}` is missing", entry.path),
+                    )
+                    .field(entry.path.clone())
+                    .next("the bundle is incomplete; rebuild it with `rustpy bundle build` or restore a complete copy"));
+                }
+            };
             if opts.verify_hashes {
-                let (sha, bytes) = sha256_file(&path).map_err(|e| RustpyError::io(Phase::Load, &path, e))?;
-                if sha != entry.sha256 || bytes != entry.bytes {
+                let sha = rustpy_contracts::hash::sha256_hex(&bytes);
+                if sha != entry.sha256 || bytes.len() as u64 != entry.bytes {
                     return Err(bundle_err(
                         ErrorCode::BundleCorrupt,
                         &dir,
@@ -198,30 +232,43 @@ impl Bundle {
                     )
                     .field(entry.path.clone())
                     .expected(format!("sha256 {} ({} bytes)", entry.sha256, entry.bytes))
-                    .actual(format!("sha256 {sha} ({bytes} bytes)"))
+                    .actual(format!("sha256 {sha} ({} bytes)", bytes.len()))
                     .next("the file was modified or damaged; rebuild the bundle or restore it from a known-good copy"));
                 }
             }
+            contents.insert(entry.path.clone(), bytes);
         }
-        let id = compute_bundle_id(&manifest.files);
+        let id = manifest.expected_id();
         if id != manifest.bundle_id {
             return Err(bundle_err(
                 ErrorCode::BundleCorrupt,
                 &dir,
-                "bundle_id does not match the file list (manifest edited?)",
+                "bundle_id does not match the files and manifest claims (manifest edited?)",
             )
             .expected(id)
-            .actual(manifest.bundle_id.clone()));
+            .actual(manifest.bundle_id.clone())
+            .next("rebuild the bundle; manifests cannot be edited by hand"));
         }
+        let get = |rel: &str| contents.get(rel).map(Vec::as_slice).unwrap_or_default();
+        let input_schema: InputSchema = parse_json(&dir, INPUT_SCHEMA_FILE, get(INPUT_SCHEMA_FILE))?;
+        let output_schema: OutputSchema = parse_json(&dir, OUTPUT_SCHEMA_FILE, get(OUTPUT_SCHEMA_FILE))?;
+        let transform: FittedTransform = parse_json(&dir, TRANSFORM_FILE, get(TRANSFORM_FILE))?;
+        let model_config: ModelConfig = parse_json(&dir, MODEL_CONFIG_FILE, get(MODEL_CONFIG_FILE))?;
+        let evaluation: BundleEvaluation = parse_json(&dir, EVALUATION_FILE, get(EVALUATION_FILE))?;
+        let examples: ExampleInputs = parse_json(&dir, EXAMPLES_INPUT_FILE, get(EXAMPLES_INPUT_FILE))?;
+        let expected: ExampleExpected = parse_json(&dir, EXAMPLES_EXPECTED_FILE, get(EXAMPLES_EXPECTED_FILE))?;
 
-        let input_schema: InputSchema = read_json(&dir, INPUT_SCHEMA_FILE)?;
-        let output_schema: OutputSchema = read_json(&dir, OUTPUT_SCHEMA_FILE)?;
-        let transform: FittedTransform = read_json(&dir, TRANSFORM_FILE)?;
-        let model_config: ModelConfig = read_json(&dir, MODEL_CONFIG_FILE)?;
-        let evaluation: BundleEvaluation = read_json(&dir, EVALUATION_FILE)?;
-        let examples: ExampleInputs = read_json(&dir, EXAMPLES_INPUT_FILE)?;
-        let expected: ExampleExpected = read_json(&dir, EXAMPLES_EXPECTED_FILE)?;
-
+        // Claims in the manifest must agree with the evidence they summarise.
+        let test_id = evaluation.test.as_ref().map(|t| t.evaluation_id.clone());
+        if manifest.evaluation_status != evaluation.status || manifest.provenance.evaluation_id != test_id {
+            return Err(bundle_err(
+                ErrorCode::BundleCorrupt,
+                &dir,
+                "the manifest's evaluation claims do not match evaluation.json",
+            )
+            .expected(format!("{} / {:?}", evaluation.status, test_id))
+            .actual(format!("{} / {:?}", manifest.evaluation_status, manifest.provenance.evaluation_id)));
+        }
         transform.check_consistency().map_err(|m| {
             bundle_err(ErrorCode::BundleCorrupt, &dir, format!("transform.json is inconsistent: {m}"))
         })?;
@@ -262,9 +309,7 @@ impl Bundle {
                 "examples/input.json and examples/expected.json have different lengths",
             ));
         }
-        let weights_path = dir.join(MODEL_WEIGHTS_FILE);
-        let bytes = fs::read(&weights_path).map_err(|e| RustpyError::io(Phase::Load, &weights_path, e))?;
-        let model = DenseModel::from_safetensors(model_config, &bytes)?;
+        let model = DenseModel::from_safetensors(model_config, get(MODEL_WEIGHTS_FILE))?;
 
         Ok(Self {
             dir,
@@ -289,11 +334,21 @@ impl Bundle {
                 .expected(BUNDLE_FORMAT_VERSION.to_string())
                 .actual(m.bundle_format.to_string()));
         }
-        if !version_at_least(RUSTPY_VERSION, &m.runtime.min_runtime_version) {
-            return Err(incompatible(format!(
-                "bundle needs rustpy-runtime >= {}, this is {RUSTPY_VERSION}",
-                m.runtime.min_runtime_version
-            )));
+        match version_at_least(RUSTPY_VERSION, &m.runtime.min_runtime_version) {
+            Some(true) => {}
+            Some(false) => {
+                return Err(incompatible(format!(
+                    "bundle needs rustpy-runtime >= {}, this is {RUSTPY_VERSION}",
+                    m.runtime.min_runtime_version
+                )));
+            }
+            None => {
+                return Err(bundle_err(
+                    ErrorCode::BundleCorrupt,
+                    dir,
+                    format!("min_runtime_version {:?} is not a major.minor.patch version", m.runtime.min_runtime_version),
+                ));
+            }
         }
         if m.runtime.transform_version != TRANSFORM_VERSION {
             return Err(incompatible(format!(

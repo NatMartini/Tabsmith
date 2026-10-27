@@ -157,8 +157,11 @@ impl Project {
         for n in (max + 1)..(max + 1000) {
             let id = format!("{prefix}-{n:03}");
             // Reserve with an exclusive marker file so concurrent commands never share an id.
+            // Markers are never deleted, so an id can only be claimed once; an existing
+            // record or directory is skipped as well.
             let marker = dir.join(format!("{id}.lock"));
             match fs::OpenOptions::new().write(true).create_new(true).open(&marker) {
+                Ok(_) if dir.join(&id).exists() || dir.join(format!("{id}.json")).exists() => continue,
                 Ok(_) => return Ok(id),
                 Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
                 Err(e) => return Err(RustpyError::io(Phase::Internal, &marker, e)),

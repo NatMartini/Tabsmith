@@ -196,3 +196,74 @@ fn copy_dir(from: &Path, to: &Path) {
         }
     }
 }
+
+#[test]
+fn json_usage_errors_flags_and_bind_details() {
+    let tmp = tempfile::tempdir().unwrap();
+    // Usage errors keep the JSON envelope.
+    let out = rustpy(tmp.path(), &["--json", "run", "--bogus"]);
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).expect("JSON even for usage errors");
+    assert_eq!(v["ok"], false);
+    assert_eq!(out.status.code(), Some(2));
+    // `init .` keeps an existing .gitignore.
+    let here = tmp.path().join("here");
+    std::fs::create_dir_all(&here).unwrap();
+    std::fs::write(here.join(".gitignore"), "/target\n*.secret\n").unwrap();
+    ok(&here, &["init", "."]);
+    let gi = std::fs::read_to_string(here.join(".gitignore")).unwrap();
+    assert!(gi.contains("*.secret") && gi.contains("/.rustpy/"), "{gi}");
+    // An inline `data = {...}` table survives `data bind`.
+    let dir = new_project(tmp.path(), "p", 900);
+    let cfg = std::fs::read_to_string(dir.join("rustpy.toml")).unwrap();
+    let cfg = cfg.replacen("[data]\n", "[data_old]\n", 1);
+    let cfg = cfg.replace("[data_old]", "data = { seed = 1234, exclude = [\"inspector_note\"] }\n[data_old]");
+    // Keep only the inline table: drop the old [data] section body.
+    let start = cfg.find("[data_old]").unwrap();
+    let end = cfg[start..].find("\n[selection]").map(|i| start + i).unwrap();
+    std::fs::write(dir.join("rustpy.toml"), format!("{}{}", &cfg[..start], &cfg[end + 1..])).unwrap();
+    ok(&dir, &["data", "bind", "data/defects.csv", "--target", "defect", "--group", "device_id", "--id", "unit_id"]);
+    let eff = json(&dir, &["config"]);
+    let seed = eff["result"].as_array().unwrap().iter().find(|r| r[0] == "data.seed").unwrap()[1].clone();
+    assert_eq!(seed, "1234");
+    // String keys accept bare numbers; flags that would be ignored are refused.
+    ok(&dir, &["config", "--set", "data.positive_label=1"]);
+    let run = json(&dir, &args(&["run", "--candidates", "linear"], &QUICK));
+    let id = run["result"]["runs"][0]["run_id"].as_str().unwrap().to_string();
+    fails(&dir, &["evaluate", "--run", &id, "--set", "selection.threshold=0.2"], "E_CONFIG_INVALID", 2);
+    // The device error names the setting that is actually wrong.
+    let v = fails(&dir, &["plan", "--set", "execution.baseline_device=\"cuda\""], "E_DEVICE_UNSUPPORTED", 5);
+    assert_eq!(v["error"]["field"], "execution.baseline_device");
+}
+
+#[test]
+fn separate_process_predictions_equal_training_side_probabilities() {
+    use rustpy_runtime::model::sigmoid;
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = new_project(tmp.path(), "par", 1500);
+    let run = json(&dir, &args(&["run", "--candidates", "small-mlp"], &QUICK));
+    let id = run["result"]["runs"][0]["run_id"].as_str().unwrap().to_string();
+    ok(&dir, &["bundle", "build", "--run", &id, "--allow-unevaluated"]);
+    // Application side: a separate `rustpy predict` process reading the raw CSV.
+    let out = json(&dir, &["predict", "--bundle", &format!("bundles/{id}"), "--input", "data/defects.csv"]);
+    let preds = out["result"]["predictions"].as_array().unwrap();
+    // Training side: the run's snapshot rows through the fitted transform and kept weights.
+    let ws = rustpy_workflow::Workspace::open(&dir).unwrap();
+    let r = ws.load_run(&id).unwrap();
+    let p = ws.prepare_for_run(&r).unwrap();
+    let model = ws.run_weights(&r).unwrap();
+    let x = rustpy_runtime::apply_transform(&p.fitted.transform, &p.table, rustpy_contracts::Phase::Evaluate).unwrap();
+    let ids = p.table.column("unit_id").unwrap();
+    let mut by_id = std::collections::HashMap::new();
+    for (i, z) in model.logits(&x).into_iter().enumerate() {
+        if let rustpy_runtime::ValueRef::Text(u) = ids.get(i) {
+            by_id.insert(u.to_string(), sigmoid(f64::from(z)));
+        }
+    }
+    assert_eq!(preds.len(), by_id.len());
+    let mut worst = 0f64;
+    for p in preds {
+        let u = p["unit_id"].as_str().unwrap();
+        worst = worst.max((p["probability"].as_f64().unwrap() - by_id[u]).abs());
+    }
+    assert!(worst < 1e-12, "train-side vs separate-process predict: max |Δp| = {worst}");
+}

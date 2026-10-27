@@ -44,6 +44,7 @@ impl FieldKind {
 
 /// One named input field of the model.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct InputField {
     pub name: String,
     pub kind: FieldKind,
@@ -60,6 +61,7 @@ pub struct InputField {
 
 /// Contract for prediction inputs (`input.schema.json`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct InputSchema {
     pub fields: Vec<InputField>,
     /// A field absent from a record is always an error in 0.1 (an explicit null is a missing value).
@@ -85,6 +87,7 @@ impl InputSchema {
 
 /// Contract for prediction outputs (`output.schema.json`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OutputSchema {
     pub target: String,
     pub negative_label: String,

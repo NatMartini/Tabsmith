@@ -16,6 +16,7 @@ pub const SPLIT_ALGORITHM: &str = "rustpy.split.v1";
 /// Version of the stable, key-hashed assignment (grouped splits, or any split with
 /// an id column): a row/group keeps its split when the data grows or is re-ordered.
 pub const SPLIT_ALGORITHM_STABLE: &str = "rustpy.split.v2-stable-hash";
+// v2 stratified-with-id: per-class ordering by the stable hash, then exact cuts.
 
 fn key_text(v: rustpy_runtime::ValueRef<'_>) -> Option<String> {
     coerce_category(v, NanPolicy::Missing).ok().flatten().map(|c| c.into_owned())
@@ -100,11 +101,33 @@ pub fn make_split(
     let id_column = cfg.id_column.as_deref().and_then(|c| table.column(c));
     match (cfg.split, id_column) {
         (SplitStrategy::Stratified, Some(ids)) => {
-            // Stable assignment: each row's split depends only on (seed, id), so a row
-            // keeps its split when the file grows or is re-ordered (data updates).
-            for (i, slot) in assignment.iter_mut().enumerate() {
-                let key = key_text(ids.get(i)).unwrap_or_default();
-                *slot = by_hash(stable_unit(cfg.seed, "row", &key), &fractions);
+            // Stratified and stable: within each class, rows are ordered by a hash of
+            // (seed, id) and cut at the configured fractions. Re-ordering the file never
+            // changes the split; appending data moves at most a few rows near the cuts
+            // (the row-level evaluation checks catch any row that moves).
+            for class in [false, true] {
+                let mut idx: Vec<(f64, usize)> = (0..n)
+                    .filter(|&i| y[i] == class)
+                    .map(|i| (stable_unit(cfg.seed, "row", &key_text(ids.get(i)).unwrap_or_default()), i))
+                    .collect();
+                idx.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+                let label = if class { &target.positive_label } else { &target.negative_label };
+                let nc = idx.len();
+                let mut n_test = (nc as f64 * cfg.test_fraction).round() as usize;
+                let mut n_valid = (nc as f64 * cfg.valid_fraction).round() as usize;
+                if nc >= 3 {
+                    n_test = n_test.max(1);
+                    n_valid = n_valid.max(1);
+                }
+                if n_test + n_valid >= nc {
+                    return Err(degenerate(label, nc));
+                }
+                for &(_, i) in &idx[..n_test] {
+                    assignment[i] = SPLIT_TEST;
+                }
+                for &(_, i) in &idx[n_test..n_test + n_valid] {
+                    assignment[i] = SPLIT_VALID;
+                }
             }
         }
         (SplitStrategy::Stratified, None) => {
@@ -174,8 +197,8 @@ pub fn make_split(
         }
         (SplitStrategy::Time, _) => unreachable!("refused above"),
     }
-    // Hash-based assignment only approximates the fractions; check how far off it is.
-    if cfg.split == SplitStrategy::Group || id_column.is_some() {
+    // Hash-based group assignment only approximates the fractions; check how far off it is.
+    if cfg.split == SplitStrategy::Group {
         let actual: Vec<f64> = [SPLIT_TRAIN, SPLIT_VALID, SPLIT_TEST]
             .iter()
             .map(|c| assignment.iter().filter(|a| *a == c).count() as f64 / n.max(1) as f64)
