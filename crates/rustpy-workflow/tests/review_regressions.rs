@@ -566,3 +566,65 @@ fn shared_hold_out_and_newest_reference() {
     assert_eq!(cmp.recommended.as_deref(), Some(n.run_id.as_str()));
     assert!(cmp.notes.iter().any(|x| x.contains("evaluate --bundle")), "{:?}", cmp.notes);
 }
+
+/// review-2: a bundle from another project whose run id exists here (for a
+/// different model) is not checked against that unrelated run.
+#[test]
+fn foreign_bundle_with_a_colliding_run_id_is_unverifiable() {
+    let a = tempfile::tempdir().unwrap();
+    let b = tempfile::tempdir().unwrap();
+    let wa = project(a.path(), 900, false);
+    let wb = project(b.path(), 900, false);
+    let req = quick(&[]);
+    let ra = wa.run(&req, &linear(), &mut |_| {}).unwrap().runs.remove(0);
+    let reseeded = quick(&["data.seed=7"]);
+    let rb = wb.run(&reseeded, &linear(), &mut |_| {}).unwrap().runs.remove(0);
+    assert_eq!(ra.run_id, rb.run_id, "both projects have run-001");
+    let bb = wb.build_bundle(&rb.run_id, &BundleOptions { allow_unevaluated: true, ..Default::default() }).unwrap();
+    let e = wa.evaluate_bundle(&b.path().join(&bb.path), SplitName::Test, &req, true, false).unwrap_err();
+    assert_eq!(e.code, ErrorCode::LeakageDetected, "{e}");
+}
+
+/// review-3: id columns are read verbatim as text, so zero-padded ids keep
+/// matching when a later delivery also contains non-numeric ids.
+#[test]
+fn id_columns_are_read_as_text() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ws = project(tmp.path(), 300, false);
+    let path = tmp.path().join("data/padded.csv");
+    let mut text = String::from("uid,x,y\n");
+    for i in 0..300 {
+        text.push_str(&format!("{:07},{},{}\n", i, i % 17, i % 3 == 0));
+    }
+    fs::write(&path, &text).unwrap();
+    let r = ws
+        .bind_data(&BindRequest {
+            file: path,
+            target: "y".into(),
+            positive: Some("true".into()),
+            id: Some("uid".into()),
+            ..Default::default()
+        })
+        .unwrap();
+    let p = ws.prepare(ws.resolve(&ConfigRequest::default()).unwrap(), false).unwrap();
+    assert_eq!(r.snapshot.n_rows, 300);
+    match p.table.column("uid").unwrap().get(0) {
+        rustpy_runtime::ValueRef::Text(s) => assert_eq!(s, "0000000"),
+        other => panic!("id read as {other:?}"),
+    }
+}
+
+/// review-4: reading the same file with other options is not a new data version:
+/// a competing model still cannot reuse the test rows.
+#[test]
+fn read_options_do_not_make_a_new_data_version() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ws = project(tmp.path(), 900, false);
+    let a = ws.run(&quick(&[]), &linear(), &mut |_| {}).unwrap().runs.remove(0);
+    ws.evaluate_run(&a.run_id, SplitName::Test, false, false).unwrap();
+    let other = quick(&["data.columns.firmware=\"categorical\""]);
+    let b = ws.run(&other, &mlp(), &mut |_| {}).unwrap().runs.remove(0);
+    assert_ne!(a.snapshot_id, b.snapshot_id, "read options are part of the snapshot id");
+    let e = ws.evaluate_run(&b.run_id, SplitName::Test, false, false).unwrap_err();
+    assert_eq!(e.code, ErrorCode::TestSetReuse, "{e}");
+}

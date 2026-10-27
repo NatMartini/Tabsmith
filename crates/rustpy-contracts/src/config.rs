@@ -620,11 +620,36 @@ fn toml_error(
     };
     let mut err = RustpyError::new(code, Phase::Config, format!("{location}: {message}")).field(location);
     if unknown {
-        err = err.next("fix the spelling; `rustpy config` lists every effective setting and where it came from");
+        let hint = closest_expected(message)
+            .map(|k| format!("did you mean `{k}`? "))
+            .unwrap_or_default();
+        err = err.next(format!("{hint}fix the spelling; docs/configuration.md lists every setting"));
     } else {
         err = err.next("fix the value; see docs/configuration.md for the allowed values and types");
     }
     err
+}
+
+/// For serde's "unknown field `x`, expected one of `a`, `b`" messages: the
+/// expected name closest to `x` (edit distance at most a third of its length).
+fn closest_expected(message: &str) -> Option<String> {
+    let mut quoted = message.split('`').skip(1).step_by(2);
+    let given = quoted.next()?;
+    let (best, d) = quoted.map(|c| (c, edit_distance(given, c))).min_by_key(|(_, d)| *d)?;
+    (d > 0 && d <= given.chars().count().div_ceil(3).max(1)).then(|| best.to_string())
+}
+
+fn edit_distance(a: &str, b: &str) -> usize {
+    let b: Vec<char> = b.chars().collect();
+    let mut prev: Vec<usize> = (0..=b.len()).collect();
+    for (i, ca) in a.chars().enumerate() {
+        let mut cur = vec![i + 1; b.len() + 1];
+        for (j, cb) in b.iter().enumerate() {
+            cur[j + 1] = (prev[j] + usize::from(ca != *cb)).min(prev[j + 1] + 1).min(cur[j] + 1);
+        }
+        prev = cur;
+    }
+    prev[b.len()]
 }
 
 /// Validates a partial layer: unknown keys and wrong types are rejected.
@@ -800,7 +825,7 @@ pub fn resolve(layers: &[ConfigLayer]) -> Result<ResolvedConfig> {
         }
         if e.next_action.is_none() {
             e.next_action = Some(format!(
-                "fix the value; `rustpy config` lists every effective setting and where it came from{}",
+                "fix the value in the layer named above; docs/configuration.md lists every setting{}",
                 e.expected.as_ref().map(|x| format!(" (expected {x})")).unwrap_or_default()
             ));
         }
@@ -1027,6 +1052,13 @@ epochs = 3
         assert!(c.validate().is_err());
         assert!(ProjectConfig::default().validate().is_ok());
         assert!(ProjectConfig::default().require_data().is_err());
+    }
+
+    #[test]
+    fn unknown_keys_suggest_the_closest_name() {
+        let e = ProjectFile::parse("[data]\ntrain_fracton = 0.6\n", "rustpy.toml").unwrap_err();
+        assert!(e.next_action.as_deref().unwrap_or("").contains("did you mean `train_fraction`"), "{e}");
+        assert_eq!(closest_expected("unknown field `zzzzzz`, expected one of `source`, `target`"), None);
     }
 
     #[test]

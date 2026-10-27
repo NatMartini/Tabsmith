@@ -855,7 +855,10 @@ fn predict_file(bundle: &Path, input: &Path, output: Option<&Path>, keep: &[Stri
             format!("input file {} does not exist", input.display()),
         )
         .field("--input")
-        .next("check the --input path (relative to the current directory); for a quick try, write synthetic rows with `rustpy sample-data new.csv --rows 200`"));
+        .next(format!(
+            "check the --input path (relative to the current directory); {}/examples/input.json shows the fields this bundle expects",
+            bundle.display()
+        )));
     }
     let ext = input.extension().and_then(|e| e.to_str()).map(str::to_lowercase).unwrap_or_default();
     // Key columns copied verbatim to the output: the bundle's id column (when the

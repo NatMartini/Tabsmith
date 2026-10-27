@@ -351,8 +351,7 @@ impl Workspace {
         let cfg = &resolved.config;
         let features =
             plan_columns(&snap.snapshot, &snap.table, &cfg.data, cfg.preprocess.max_categories).map_err(as_flag_error)?;
-        let split = make_split(&snap.snapshot.snapshot_id, &snap.table, &features.target, &cfg.data, &features.content_columns())
-            .map_err(as_flag_error)?;
+        let split = make_split(&snap.snapshot.snapshot_id, &snap.table, &features.target, &cfg.data).map_err(as_flag_error)?;
         if req.exclude.is_empty() && !cfg.data.exclude.is_empty() {
             kept_notes.push(format!(
                 "kept data.exclude = {:?} from the previous binding (edit data.exclude in rustpy.toml to change it)",

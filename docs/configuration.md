@@ -39,7 +39,7 @@ epochs = 12
 | `data.format` | `"auto"` | `auto` (by extension), `csv`, `parquet` |
 | `data.target` | — (required) | Binary target column |
 | `data.positive_label` | — (required; `data bind` infers it for 0/1, false/true, no/yes) | Target value of the positive class |
-| `data.id_column` | none | Unique row id; never a feature. Rows keep their split across data versions and are copied to prediction output. Without it, rows are identified by content (feature columns + target): identical rows share a split, an edited row counts as a new row |
+| `data.id_column` | none | Unique row id; never a feature. Rows keep their split across data versions and are copied to prediction output. Without it, the split is keyed by each row's full content (every column) plus its occurrence number among identical rows, and leakage checks recognise rows by their content (model inputs + target): an edited row counts as a new row, and adding or removing columns in the file re-splits the rows (the checks still exclude rows a model has seen). Id and group columns are always read as text |
 | `data.group_column` | none | Entity column; requires `split = "group"` |
 | `data.time_column` | none | Declaring it means a time split is needed: refused in 0.1 (`E_SPLIT_UNSUPPORTED`) |
 | `data.exclude` | `[]` | Columns never used as features |
@@ -98,7 +98,7 @@ scikit-learn's `LogisticRegression(C = 1 / (n_train · l2), class_weight="balanc
 
 - `data.positive_label` 是要检测的类别；`data bind` 对 0/1、false/true、no/yes 会自动推断。
 - `data.source` 的相对路径以项目目录为基准；`data bind` 在文件位于项目内或项目上方至多两级时写入相对路径，否则写入绝对路径。
-- `data.id_column` 是唯一行 id：数据增长时各行保持原切分，并被复制到预测输出中。没有 id 时，行按内容（特征列 + 目标列）识别：完全相同的行在同一子集，被修改过的行视为新行。
+- `data.id_column` 是唯一行 id：数据增长时各行保持原切分，并被复制到预测输出中。没有 id 时，切分以每行的完整内容（所有列）加上它在相同行中的出现序号为键；泄漏检查按内容（模型输入 + 目标列）识别行：被修改过的行视为新行；文件增删列会导致重新切分（检查仍会排除模型见过的行）。id 列和分组列总是按文本读取。
 - `data.group_column` 要求 `split = "group"`：同一实体的行不会跨越两个子集。
 - 声明 `data.time_column` 表示需要按时间切分，0.1 版会拒绝（`E_SPLIT_UNSUPPORTED`），不会退回随机切分。
 - `data.snapshot = "copy"` 会把数据文件复制进 `.rustpy/`，使 Run 可以重放；`reference` 只记录哈希。

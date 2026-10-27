@@ -369,6 +369,10 @@ th{{font-weight:600;color:var(--muted);font-size:12px;text-transform:uppercase;l
         };
         let m = &e.metrics;
         let reuse = match e.test_use_index {
+            Some(1) if !e.test_shared_with.is_empty() => format!(
+                "<span class=\"ok\">first use for this data version</span>; shared hold-out with {}",
+                esc(&e.test_shared_with.join(", "))
+            ),
             Some(1) => "<span class=\"ok\">first use</span>".to_string(),
             Some(n) => format!("<span class=\"bad\">reuse #{n}</span>"),
             None => "–".into(),

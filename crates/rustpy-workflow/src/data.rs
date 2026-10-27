@@ -51,13 +51,18 @@ impl ReadOptions {
                 }
             },
         };
+        // Id and group columns are keys, read verbatim as text: "0000001" must stay
+        // "0000001" whether or not a later delivery also contains "X0000001".
         let mut text_columns: Vec<String> = cfg
             .columns
             .iter()
             .filter(|(_, k)| **k == ColumnKindOverride::Categorical)
             .map(|(n, _)| n.clone())
+            .chain(cfg.id_column.clone())
+            .chain(cfg.group_column.clone())
             .collect();
         text_columns.sort();
+        text_columns.dedup();
         Ok(Self {
             format,
             delimiter: cfg.csv_delimiter.as_bytes()[0],
@@ -740,7 +745,39 @@ pub fn read_for_prediction(
             }
         }
     }
-    Ok(read_table(path, &opts, None)?.table)
+    let table = read_table(path, &opts, None)?.table;
+    // A numeric field read as text holds a value that is not a number (an unknown
+    // missing marker such as "N/A"): keep the numbers as numbers so the transform
+    // reports the offending cell itself, not the first row.
+    let numeric: Vec<&str> = schema
+        .fields
+        .iter()
+        .filter(|f| f.kind == rustpy_contracts::schema::FieldKind::Numeric)
+        .map(|f| f.name.as_str())
+        .collect();
+    let columns = table
+        .columns()
+        .iter()
+        .map(|c| match &c.data {
+            ColumnData::Text(values) if numeric.contains(&c.name.as_str()) => RtColumn {
+                name: c.name.clone(),
+                data: ColumnData::Mixed(
+                    values
+                        .iter()
+                        .map(|v| match v {
+                            None => rustpy_runtime::Value::Null,
+                            Some(t) => match t.trim().parse::<f64>() {
+                                Ok(x) => rustpy_runtime::Value::Float(x),
+                                Err(_) => rustpy_runtime::Value::Text(t.clone()),
+                            },
+                        })
+                        .collect(),
+                ),
+            },
+            _ => c.clone(),
+        })
+        .collect();
+    Ok(Table::new(columns)?)
 }
 
 fn check_header_only(path: &Path, line: &str, delimiter: u8) -> Result<Vec<String>> {
@@ -792,12 +829,6 @@ pub struct FeaturePlan {
 }
 
 impl FeaturePlan {
-    /// Columns that identify a row by its content when there is no id column:
-    /// every feature column plus the target.
-    pub fn content_columns(&self) -> Vec<String> {
-        self.features().map(|(c, _)| c.name.clone()).chain([self.target.name.clone()]).collect()
-    }
-
     pub fn features(&self) -> impl Iterator<Item = (&ColumnDecision, rustpy_contracts::schema::FieldKind)> {
         self.columns.iter().filter_map(|c| match c.role {
             ColumnRole::Feature { kind } => Some((c, kind)),
