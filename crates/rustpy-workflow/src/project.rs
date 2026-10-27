@@ -42,6 +42,25 @@ pub struct Project {
     pub root: PathBuf,
 }
 
+/// [`Path::canonicalize`] without the `\\?\` prefix Windows adds to every
+/// canonical path (`\\?\C:\data` becomes `C:\data`), so paths shown to users
+/// and passed to other programs look like the paths they typed.
+pub fn canonical(path: &Path) -> std::io::Result<PathBuf> {
+    let p = path.canonicalize()?;
+    #[cfg(windows)]
+    {
+        let text = p.to_string_lossy();
+        if let Some(rest) = text.strip_prefix(r"\\?\") {
+            let b = rest.as_bytes();
+            // Only plain drive paths short enough for every Windows API.
+            if b.len() >= 3 && b.len() < 260 && b[0].is_ascii_alphabetic() && b[1] == b':' && b[2] == b'\\' {
+                return Ok(PathBuf::from(rest));
+            }
+        }
+    }
+    Ok(p)
+}
+
 impl Project {
     /// Opens the project whose `rustpy.toml` is in `dir` or the nearest parent.
     pub fn discover(dir: impl AsRef<Path>) -> Result<Self> {
@@ -73,7 +92,7 @@ impl Project {
         let root = root.as_ref();
         // Absolute, canonical root: relative paths in records and the config are
         // always resolved against it, never against the current directory.
-        let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+        let root = canonical(root).unwrap_or_else(|_| root.to_path_buf());
         if !root.join(CONFIG_FILE).is_file() {
             return Err(RustpyError::new(
                 ErrorCode::ConfigNotFound,

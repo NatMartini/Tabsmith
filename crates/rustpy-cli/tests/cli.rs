@@ -317,8 +317,8 @@ fn walkthrough_details() {
 }
 
 /// `rustpy train`: one command from a CSV to a tested bundle; again after new data,
-/// with the previous bundle scored on the same new test rows; `predict` without
-/// --bundle uses the newest bundle.
+/// with the previous bundle and the new model scored on the same new test rows;
+/// `predict` without --bundle uses the newest evaluated bundle.
 #[test]
 fn one_command_train_and_retrain() {
     let tmp = tempfile::tempdir().unwrap();
@@ -342,7 +342,17 @@ fn one_command_train_and_retrain() {
     let prev = &second["result"]["previous"];
     assert_eq!(prev["run_id"], chosen.as_str(), "{second}");
     assert_eq!(prev["evaluation"]["unseen_rows_verified"], true, "{prev}");
+    assert_eq!(prev["new_model_on_same_rows"]["n"], prev["evaluation"]["metrics"]["n"], "same rows for old and new: {prev}");
     let new_bundle = second["result"]["bundle"]["path"].as_str().unwrap().to_string();
+    // Again on unchanged data: same weights, the bundle is kept (no failure, no duplicate).
+    let third = json(dir, &args(&["train"], &QUICK));
+    assert_eq!(third["ok"], true, "{third}");
+    assert_eq!(third["result"]["bundle"]["path"], new_bundle.as_str(), "{third}");
+    assert!(third["result"]["identical_to"].is_string(), "{third}");
+    // A re-split of the same data gives no fresh test split; the candidate it
+    // builds does not replace the evaluated bundle as the default.
+    let reseeded = json(dir, &args(&["train", "--set", "data.seed=7"], &QUICK));
+    assert!(reseeded["result"]["test_skipped"].as_str().unwrap().contains("only new rows"), "{reseeded}");
     // Predict with the newest bundle by default.
     ok(dir, &["sample-data", "new.csv", "--rows", "5", "--seed", "77"]);
     let p = json(dir, &["predict", "--input", "new.csv"]);
@@ -444,4 +454,16 @@ fn predict_keep_details() {
     assert!(e["error"]["actual"].as_str().unwrap().contains("customerId"), "{e}");
     let cmp = json(&dir, &["compare", "--runs", &format!("{id},")]);
     assert_eq!(cmp["result"]["rows"].as_array().unwrap().len(), 1);
+    // Kept values equal to a missing-value token are copied as written (NA is Namibia).
+    let lines: Vec<String> = std::fs::read_to_string(dir.join("in.csv")).unwrap().lines().map(str::to_string).collect();
+    let mut text = format!("country,{}
+", lines[0]);
+    for (line, country) in lines[1..].iter().zip(["NA", "DE", "null"]) {
+        text.push_str(&format!("{country},{line}
+"));
+    }
+    std::fs::write(dir.join("countries.csv"), text).unwrap();
+    let out = ok(&dir, &["predict", "--input", "countries.csv", "--keep", "country,unit_id"]);
+    let kept: Vec<&str> = out.lines().skip(1).map(|l| l.split(',').nth(1).unwrap()).collect();
+    assert_eq!(kept, ["NA", "DE", "null"], "{out}");
 }

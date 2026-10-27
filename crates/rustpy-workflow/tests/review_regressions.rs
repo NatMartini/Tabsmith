@@ -693,3 +693,135 @@ fn parquet_with_temporal_columns() {
     assert!(matches!(day.role, rustpy_workflow::data::ColumnRole::Excluded { .. }), "{:?}", day.role);
     assert!(r.warnings.iter().any(|w| w.contains("holds dates")), "{:?}", r.warnings);
 }
+
+/// review-5: ids that lose their leading zeros on the way through a spreadsheet
+/// still name the same rows: the split keeps them where they were, the old
+/// bundle's training rows are recognised, and the test ledger sees the reuse.
+#[test]
+fn unpadded_ids_still_match_the_old_models_rows() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ws = project(tmp.path(), 300, false);
+    let path = tmp.path().join("data/accounts.csv");
+    let file = |n: usize, padded: bool| {
+        let mut text = String::from("account_no,x,z,y\n");
+        for i in 1..=n {
+            let id = if padded { format!("{i:08}") } else { i.to_string() };
+            text.push_str(&format!("{id},{},{},{}\n", i % 17, (i * 7) % 11, i % 3 == 0));
+        }
+        text
+    };
+    fs::write(&path, file(900, true)).unwrap();
+    ws.bind_data(&BindRequest {
+        file: path.clone(),
+        target: "y".into(),
+        positive: Some("true".into()),
+        id: Some("account_no".into()),
+        ..Default::default()
+    })
+    .unwrap();
+    let req = quick(&[]);
+    let a = ws.run(&req, &linear(), &mut |_| {}).unwrap().runs.remove(0);
+    ws.evaluate_run(&a.run_id, SplitName::Test, false, false).unwrap();
+    let b = ws.build_bundle(&a.run_id, &BundleOptions::default()).unwrap();
+    // The next delivery: the same rows with unpadded ids, plus 300 new rows.
+    fs::write(&path, file(1200, false)).unwrap();
+    let bundle = tmp.path().join(&b.path);
+    let train = ws.evaluate_bundle(&bundle, SplitName::Train, &req, false, false).unwrap();
+    assert!(train.metrics.n < 400, "the old training rows are excluded: {} rows evaluated, {:?}", train.metrics.n, train.notes);
+    // Old rows kept their split, so almost all of the new test rows are unseen.
+    let test = ws.evaluate_bundle(&bundle, SplitName::Test, &req, false, false).unwrap();
+    assert_eq!(test.unseen_rows_verified, Some(true));
+    assert!(test.metrics.n >= 170, "{} rows evaluated, {:?}", test.metrics.n, test.notes);
+}
+
+/// review-5: Parquet durations are read as seconds and time-zone-aware
+/// timestamps as UTC text (planned as dates) instead of failing the whole file.
+#[test]
+fn parquet_durations_and_zoned_timestamps() {
+    use polars::prelude::*;
+    let tmp = tempfile::tempdir().unwrap();
+    let ws = project(tmp.path(), 300, false);
+    let n = 300;
+    let mut df = DataFrame::new(
+        n as usize,
+        vec![
+            Column::new("lead".into(), (0..n).map(|i| i64::from(i % 50) * 1_500_000).collect::<Vec<_>>())
+                .cast(&DataType::Duration(TimeUnit::Microseconds))
+                .unwrap(),
+            // As pandas, Spark and BigQuery export timestamps (cast would drop the zone).
+            Series::new("ts".into(), (0..n).map(|i| 1_793_000_000_000 + i64::from(i) * 3_600_000).collect::<Vec<_>>())
+                .into_datetime(TimeUnit::Milliseconds, Some(TimeZone::UTC))
+                .into(),
+            Column::new("y".into(), (0..n).map(|i| i % 3 == 0).collect::<Vec<_>>()),
+        ],
+    )
+    .unwrap();
+    let path = tmp.path().join("data/orders.parquet");
+    ParquetWriter::new(fs::File::create(&path).unwrap()).finish(&mut df).unwrap();
+    let back = ParquetReader::new(fs::File::open(&path).unwrap()).finish().unwrap();
+    assert!(matches!(back.schema().get("ts"), Some(DataType::Datetime(_, Some(_)))), "{:?}", back.schema());
+    let loaded = read_table(&path, &ReadOptions::from_config(&path, &Default::default()).unwrap(), None).unwrap();
+    assert_eq!(loaded.table.column("lead").unwrap().get(3), rustpy_runtime::ValueRef::Float(4.5));
+    assert_eq!(loaded.table.column("ts").unwrap().get(1), rustpy_runtime::ValueRef::Text("2026-10-26T08:33:20Z"));
+    let r = ws
+        .bind_data(&BindRequest { file: path, target: "y".into(), positive: Some("true".into()), ..Default::default() })
+        .unwrap();
+    let role = |name: &str| r.columns.iter().find(|c| c.name == name).unwrap().role.clone();
+    assert!(matches!(role("lead"), rustpy_workflow::data::ColumnRole::Feature { .. }), "{:?}", role("lead"));
+    assert!(matches!(role("ts"), rustpy_workflow::data::ColumnRole::Excluded { .. }), "{:?}", role("ts"));
+}
+
+/// review-5: `rustpy train` again on unchanged data keeps the existing bundle
+/// (identical weights) instead of failing; a re-split of the same data cannot
+/// spend the test rows again, and the evaluated bundle stays the default.
+#[test]
+fn retraining_unchanged_data_and_bundle_defaults() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ws = project(tmp.path(), 900, false);
+    let req = quick(&[]);
+    let first = ws.train_auto(&req, &linear(), &mut |_| {}).unwrap();
+    let shipped = first.bundle.clone().expect("bundle");
+    assert_eq!(shipped.manifest.evaluation_status, "evaluated");
+    let again = ws.train_auto(&req, &linear(), &mut |_| {}).unwrap();
+    assert_eq!(again.identical_to.as_deref(), first.chosen.as_deref());
+    let kept = again.bundle.expect("bundle");
+    assert_eq!((kept.path.as_str(), kept.already_existed), (shipped.path.as_str(), true));
+    assert_eq!(ws.list_bundles().len(), 1, "no duplicate bundle");
+    // The step-by-step path accepts the identical model's evaluation, too.
+    let run = again.chosen.unwrap();
+    let out = tmp.path().join("bundles/copy");
+    let b = ws.build_bundle(&run, &BundleOptions { out: Some(out), ..Default::default() }).unwrap();
+    assert_eq!(b.manifest.evaluation_status, "evaluated");
+    // A new seed re-splits the same data: no fresh test split, and `predict` keeps
+    // the evaluated bundle by default.
+    let reseeded = ws.train_auto(&quick(&["data.seed=7"]), &linear(), &mut |_| {}).unwrap();
+    let why = reseeded.test_skipped.expect("test refused");
+    assert!(why.contains("only new rows") && !why.contains("data.seed"), "{why}");
+    let candidate = reseeded.bundle.expect("candidate bundle");
+    assert_eq!(candidate.manifest.evaluation_status, "unevaluated-candidate");
+    let (default, m) = ws.latest_bundle().unwrap();
+    assert_eq!(m.evaluation_status, "evaluated", "{}", default.display());
+    assert_eq!(ws.newer_candidates(&m).len(), 1);
+}
+
+/// review-5: after new data arrives, the previous bundle and the new model are
+/// scored on exactly the same unseen test rows.
+#[test]
+fn old_and_new_models_are_compared_on_the_same_rows() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ws = project(tmp.path(), 1200, false);
+    let req = quick(&[]);
+    ws.train_auto(&req, &linear(), &mut |_| {}).unwrap();
+    let data = tmp.path().join("data/defects.csv");
+    let more = tmp.path().join("more.csv");
+    write_defects_csv(&more, 600, 5, SampleVariant::Shifted).unwrap();
+    let mut all = fs::read_to_string(&data).unwrap();
+    all.push_str(fs::read_to_string(&more).unwrap().split_once('\n').unwrap().1);
+    fs::write(&data, all).unwrap();
+    let second = ws.train_auto(&req, &mlp(), &mut |_| {}).unwrap();
+    let prev = second.previous.expect("previous bundle scored");
+    let old = prev.evaluation.expect("old bundle evaluated");
+    let new = prev.new_model_on_same_rows.expect("new model on the same rows");
+    assert_eq!(old.metrics.n, new.n);
+    assert!(new.n <= second.test.unwrap().metrics.n);
+}

@@ -46,6 +46,22 @@ fn value_key(v: ValueRef<'_>, out: &mut String) {
     }
 }
 
+/// Key of an id or group value: its text, trimmed, with leading zeros removed from
+/// all-digit keys, so `00000001` (as one export writes it) and `1` (after a
+/// spreadsheet round trip) are the same entity. `None` for a missing key.
+pub fn entity_key(v: ValueRef<'_>) -> Option<String> {
+    let text = coerce_category(v, NanPolicy::Missing).ok().flatten()?;
+    let t = text.trim();
+    if t.is_empty() {
+        return None;
+    }
+    if t.bytes().all(|b| b.is_ascii_digit()) {
+        let digits = t.trim_start_matches('0');
+        return Some(if digits.is_empty() { "0".into() } else { digits.to_string() });
+    }
+    Some(t.to_string())
+}
+
 /// Fingerprint of row `r` over `columns` (all must be present).
 pub fn row_fingerprint(columns: &[(&str, &ColumnData)], r: usize) -> u64 {
     let mut text = String::new();
@@ -74,7 +90,7 @@ pub fn content_columns<'a>(table: &'a Table, names: &'a [String]) -> Option<Vec<
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum RowKeys {
-    /// Values of the id column.
+    /// Values of the id column (as [`entity_key`]s).
     Ids { column: String, ids: BTreeSet<String> },
     /// Row positions within one snapshot content (identified by its SHA-256), plus
     /// content fingerprints for matching against other data versions.
@@ -93,11 +109,7 @@ impl RowKeys {
     pub fn of(snapshot: &DataSnapshot, table: &Table, rows: &[usize], content: &[String]) -> Self {
         if let RowIdentity::IdColumn { column } = &snapshot.row_identity {
             if let Some(col) = table.column(column) {
-                let ids = rows
-                    .iter()
-                    .filter_map(|&r| coerce_category(col.get(r), NanPolicy::Missing).ok().flatten())
-                    .map(|c| c.into_owned())
-                    .collect();
+                let ids = rows.iter().filter_map(|&r| entity_key(col.get(r))).collect();
                 return RowKeys::Ids {
                     column: column.clone(),
                     ids,
@@ -127,12 +139,7 @@ impl RowKeys {
         match (self, &snapshot.row_identity) {
             (RowKeys::Ids { ids, column }, RowIdentity::IdColumn { column: current }) if column == current => {
                 let col = table.column(current)?;
-                Some(Box::new(move |r| {
-                    coerce_category(col.get(r), NanPolicy::Missing)
-                        .ok()
-                        .flatten()
-                        .is_some_and(|id| ids.contains(id.as_ref()))
-                }))
+                Some(Box::new(move |r| entity_key(col.get(r)).is_some_and(|id| ids.contains(&id))))
             }
             (RowKeys::Positions { snapshot_sha256, rows, .. }, _) if *snapshot_sha256 == snapshot.source.sha256 => {
                 Some(Box::new(move |r| rows.contains(&r)))
@@ -185,4 +192,22 @@ pub struct ExposureCheck {
     pub overlapping_rows: usize,
     /// Sources (run ids) whose rows could not be matched with the evaluated rows.
     pub unverifiable: Vec<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn entity_keys_ignore_zero_padding_and_spaces() {
+        let key = |t: &str| entity_key(ValueRef::Text(t));
+        assert_eq!(key("00000001"), key("1"));
+        assert_eq!(key(" 42 "), Some("42".into()));
+        assert_eq!(key("000"), Some("0".into()));
+        assert_eq!(key("A-007"), Some("A-007".into()));
+        assert_eq!(key("007.5"), Some("007.5".into()));
+        assert_eq!(key("  "), None);
+        assert_eq!(entity_key(ValueRef::Int(7)), key("0007"));
+        assert_eq!(entity_key(ValueRef::Null), None);
+    }
 }
