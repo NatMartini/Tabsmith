@@ -55,7 +55,10 @@ temp_mean,temp_std,temp_max,vibration_rms,vibration_peak,pressure_mean,pressure_
 current_mean,current_std,humidity,voltage_drop,ambient_noise_db,calibration_offset,\
 maintenance_flag,inspector_note,defect\n",
     );
-    let offset = if variant == SampleVariant::Base { 0 } else { 500_000 };
+    // Unit ids differ between variants and seeds, so a "new delivery" generated
+    // with another seed never reuses the ids of the default sample (seed 42).
+    let offset = if variant == SampleVariant::Base { 0 } else { 500_000 }
+        + if seed == 42 { 0 } else { (seed as usize % 1000 + 1) * 1_000_000 };
     for i in 0..rows {
         let dev = rng.below(n_devices as u64) as usize;
         let line = device_line[dev];

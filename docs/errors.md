@@ -7,7 +7,7 @@ Every failure, in the CLI and the SDK, is one `RustpyError`:
 | Field | Meaning |
 |---|---|
 | `code` | Stable code (below); never reused for another meaning |
-| `phase` | Stage: config, data, split, fit, train, resume, evaluate, compare, bundle, load, predict, device, report |
+| `phase` | Stage: config, data, split, fit, plan, train, run (locating run records), resume, evaluate, compare, bundle, load, predict, device, report |
 | `message` | What happened |
 | `run_id`, `field` | Where (run, column, config key, file) |
 | `expected`, `actual` | The contract and what was found |

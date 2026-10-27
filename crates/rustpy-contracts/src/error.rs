@@ -93,6 +93,8 @@ pub enum Phase {
     Fit,
     Plan,
     Train,
+    /// Locating and reading run records (`runs`, `status`, any `--run`).
+    Run,
     Resume,
     Evaluate,
     Compare,

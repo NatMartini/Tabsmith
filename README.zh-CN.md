@@ -37,7 +37,7 @@ rustpy data bind ../customers.csv --target churned --positive yes --group custom
 rustpy plan
 ```
 
-`--group customer_id` 让同一客户的所有行留在同一个子集里。如果每一行都有唯一的键，请改用 `--id <列名>`：文件增长时各行保持原来的切分。没有 id 时，行按内容（输入列 + 目标列）识别；只要旧行没有被修改，这在不同数据版本之间同样有效。
+`--group customer_id` 让同一客户的所有行留在同一个子集里。如果每一行都有唯一的键，请改用 `--id <列名>`：文件增长时各行保持原来的切分。没有 id 时，行按内容识别；只要旧行没有被修改、文件的列保持不变，这在不同数据版本之间同样有效。
 
 ### 新数据到达时
 

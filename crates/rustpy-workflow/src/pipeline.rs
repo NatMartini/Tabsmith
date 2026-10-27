@@ -209,7 +209,7 @@ impl Workspace {
     ) -> Result<Prepared> {
         let cfg = &resolved.config;
         let features = plan_columns(&snapshot, &table, &cfg.data, cfg.preprocess.max_categories)?;
-        let split = make_split(&snapshot.snapshot_id, &table, &features.target, &cfg.data, &features.content_columns())?;
+        let split = make_split(&snapshot.snapshot_id, &table, &features.target, &cfg.data)?;
         let split_path = self.project.dir("splits").join(format!("{}.json", split.split_id));
         if split_path.is_file() && !no_cache {
             let cached: SplitManifest = read_json(&split_path, Phase::Split)?;
@@ -339,12 +339,12 @@ impl Workspace {
         let path = self.run_path(run_id);
         if !path.is_file() {
             let known = self.run_ids();
-            return Err(RustpyError::new(ErrorCode::RunNotFound, Phase::Resume, format!("run `{run_id}` does not exist"))
+            return Err(RustpyError::new(ErrorCode::RunNotFound, Phase::Run, format!("run `{run_id}` does not exist"))
                 .field(run_id)
                 .actual(if known.is_empty() { "no runs yet".into() } else { format!("runs: {}", known.join(", ")) })
                 .next("list runs with `rustpy runs`"));
         }
-        let mut run: RunRecord = read_json(&path, Phase::Resume)?;
+        let mut run: RunRecord = read_json(&path, Phase::Run)?;
         self.refresh_status(&mut run)?;
         Ok(run)
     }
@@ -412,7 +412,9 @@ impl Workspace {
     pub fn data_change_note(&self, snapshot: &DataSnapshot) -> Option<String> {
         let runs = self.list_runs().ok()?;
         let latest = runs.iter().max_by_key(|r| id_number(&r.run_id))?;
-        if latest.snapshot_id == snapshot.snapshot_id {
+        if self.same_data_version(&latest.snapshot_id, &snapshot.snapshot_id)
+            || self.snapshot_sha(&latest.snapshot_id).as_deref() == Some(snapshot.source.sha256.as_str())
+        {
             return None;
         }
         let on_previous: Vec<&str> =
@@ -1139,6 +1141,23 @@ impl Workspace {
         out
     }
 
+    /// Content hash of a snapshot's source file, if the snapshot is in this project.
+    fn snapshot_sha(&self, snapshot_id: &str) -> Option<String> {
+        read_json::<DataSnapshot>(&self.project.dir("snapshots").join(snapshot_id).join("snapshot.json"), Phase::Data)
+            .ok()
+            .map(|s| s.source.sha256)
+    }
+
+    /// Two snapshots are the same data version when their files have the same
+    /// content, even if they were read with different options.
+    fn same_data_version(&self, a: &str, b: &str) -> bool {
+        a == b
+            || match (self.snapshot_sha(a), self.snapshot_sha(b)) {
+                (Some(x), Some(y)) => x == y,
+                _ => false,
+            }
+    }
+
     /// Input columns + target of a run's model (its content columns).
     fn run_content_columns(&self, run: &RunRecord) -> Option<Vec<String>> {
         let f: FittedArtifacts = read_json(
@@ -1221,7 +1240,7 @@ impl Workspace {
                         EvaluationSubject::Bundle { bundle_id, .. } => bundle_id.clone(),
                     };
                     let label = format!("{subject} ({})", prev.evaluation_id);
-                    let same_version = prev.model_snapshot_id.as_deref().is_none_or(|s| s == model_snapshot);
+                    let same_version = prev.model_snapshot_id.as_deref().is_none_or(|s| self.same_data_version(s, model_snapshot));
                     if !same_version {
                         if !other_versions.contains(&label) {
                             other_versions.push(label);
@@ -1415,8 +1434,14 @@ impl Workspace {
         // old model is never scored on its own training rows.
         let source_run = predictor.manifest().provenance.run_id.clone();
         let subject = format!("bundle {} (run {source_run})", predictor.bundle_id());
-        let unverifiable = match self.load_run(&source_run) {
-            Ok(run) => {
+        // The run must be the one that produced these weights: a bundle from another
+        // project may carry a run id that exists here for a different model.
+        let source = self
+            .load_run(&source_run)
+            .ok()
+            .filter(|run| Self::run_model_sha(run) == model_sha && run.snapshot_id == model_snapshot);
+        let unverifiable = match source {
+            Some(run) => {
                 let exposure = self.run_exposure(&run, true);
                 let (seen, unverifiable) = Self::seen_rows(&exposure, &p, &split_rows);
                 if !seen.is_empty() {
@@ -1438,7 +1463,7 @@ impl Workspace {
                 }
                 unverifiable
             }
-            Err(_) => vec![format!("run {source_run} (not in this project)")],
+            None => vec![format!("run {source_run} (not the run that produced this bundle in this project)")],
         };
         let verified = unverifiable.is_empty();
         if !verified {

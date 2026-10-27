@@ -44,8 +44,8 @@ rustpy plan
 `--group customer_id` keeps all rows of one customer in the same split. If every
 row has its own unique key, pass it as `--id <column>` instead: rows then keep
 their split when the file grows. Without an id, rows are recognised by their
-content (input columns + target), which also works across data versions as long
-as old rows are not edited.
+content, which also works across data versions as long as old rows are not
+edited and the file keeps its columns.
 
 ### When new data arrives
 
