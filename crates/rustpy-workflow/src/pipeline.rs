@@ -142,7 +142,7 @@ impl Default for RunOptions {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct RunGroupResult {
     pub group: RunGroup,
     pub runs: Vec<RunRecord>,
