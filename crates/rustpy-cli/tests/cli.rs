@@ -410,3 +410,38 @@ fn serve_predicts_over_http() {
     child.kill().unwrap();
     let _ = child.wait();
 }
+
+/// review-cli: --keep collisions are refused, kept model inputs keep the file's
+/// spelling, list arguments tolerate spaces and trailing commas, and JSON inputs
+/// list their real keys when a --keep column is missing.
+#[test]
+fn predict_keep_details() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = new_project(tmp.path(), "keep", 1200);
+    let run = json(&dir, &args(&["run", "--candidates", "linear"], &QUICK));
+    let id = run["result"]["runs"][0]["run_id"].as_str().unwrap().to_string();
+    ok(&dir, &["bundle", "build", "--run", &id, "--allow-unevaluated"]);
+    std::fs::write(
+        dir.join("in.csv"),
+        std::fs::read_to_string(dir.join("data/defects.csv")).unwrap().lines().take(4).collect::<Vec<_>>().join("\n") + "\n",
+    )
+    .unwrap();
+    let raw_temp: Vec<String> = std::fs::read_to_string(dir.join("in.csv"))
+        .unwrap()
+        .lines()
+        .skip(1)
+        .map(|l| l.split(',').nth(9).unwrap().to_string())
+        .collect();
+    fails(&dir, &["predict", "--input", "in.csv", "--keep", "label"], "E_CONFIG_INVALID", 2);
+    let out = ok(&dir, &["predict", "--input", "in.csv", "--keep", "unit_id, temp_mean,"]);
+    let rows: Vec<&str> = out.lines().collect();
+    assert!(rows[0].starts_with("unit_id,temp_mean,label,probability"), "{out}");
+    for (line, raw) in rows[1..].iter().zip(&raw_temp) {
+        assert_eq!(line.split(',').nth(1).unwrap(), raw, "temp_mean is copied as written in the file");
+    }
+    std::fs::write(dir.join("in.jsonl"), "{\"customerId\": 1}\n").unwrap();
+    let e = fails(&dir, &["predict", "--input", "in.jsonl", "--keep", "customer_id"], "E_SCHEMA_MISSING_COLUMN", 3);
+    assert!(e["error"]["actual"].as_str().unwrap().contains("customerId"), "{e}");
+    let cmp = json(&dir, &["compare", "--runs", &format!("{id},")]);
+    assert_eq!(cmp["result"]["rows"].as_array().unwrap().len(), 1);
+}

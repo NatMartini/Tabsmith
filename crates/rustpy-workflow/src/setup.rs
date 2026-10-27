@@ -226,7 +226,12 @@ impl Workspace {
         } else {
             abs
         };
-        let abs = abs.canonicalize().unwrap_or(abs);
+        // Resolve the directory, not the file: a symlinked file (data/current.csv ->
+        // exports/2026-10.csv) stays bound by its own path, so re-pointing it works.
+        let abs = match (abs.parent().and_then(|p| p.canonicalize().ok()), abs.file_name()) {
+            (Some(dir), Some(name)) => dir.join(name),
+            _ => abs,
+        };
         if !abs.is_file() {
             return Err(RustpyError::new(
                 ErrorCode::DataSourceNotFound,
@@ -352,10 +357,11 @@ impl Workspace {
         let features =
             plan_columns(&snap.snapshot, &snap.table, &cfg.data, cfg.preprocess.max_categories).map_err(as_flag_error)?;
         let split = make_split(&snap.snapshot.snapshot_id, &snap.table, &features.target, &cfg.data).map_err(as_flag_error)?;
-        if req.exclude.is_empty() && !cfg.data.exclude.is_empty() {
+        let earlier: Vec<&String> = cfg.data.exclude.iter().filter(|c| !req.exclude.contains(c)).collect();
+        if !earlier.is_empty() {
             kept_notes.push(format!(
-                "kept data.exclude = {:?} from the previous binding (edit data.exclude in rustpy.toml to change it)",
-                cfg.data.exclude
+                "data.exclude is {:?}: {:?} kept from the previous binding (--exclude adds to the list; edit data.exclude in rustpy.toml to remove entries)",
+                cfg.data.exclude, earlier
             ));
         }
         write_atomic(&project.config_path(), strip_bind_hint(&doc.to_string()).as_bytes())?;
@@ -493,11 +499,20 @@ fn infer_positive(snapshot: &DataSnapshot, table: &rustpy_runtime::Table, target
         }
     }
     let v: Vec<&str> = labels.iter().map(String::as_str).collect();
+    // Two labels that read as negative/positive in any letter case: 0/1, false/true, no/yes, n/y.
     let guess = match v.as_slice() {
-        ["0", "1"] => Some("1"),
-        ["false", "true"] => Some("true"),
-        ["no", "yes"] => Some("yes"),
-        ["False", "True"] => Some("True"),
+        [a, b] => {
+            let lower = |s: &str| s.to_ascii_lowercase();
+            let positive = |s: &str| matches!(lower(s).as_str(), "1" | "true" | "yes" | "y");
+            let negative = |s: &str| matches!(lower(s).as_str(), "0" | "false" | "no" | "n");
+            if negative(a) && positive(b) {
+                Some(*b)
+            } else if positive(a) && negative(b) {
+                Some(*a)
+            } else {
+                None
+            }
+        }
         _ => None,
     };
     guess.map(str::to_string).ok_or_else(|| {

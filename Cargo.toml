@@ -37,7 +37,7 @@ clap = { version = "4.6.7", features = ["derive"] }
 ctrlc = "3.5.2"
 tiny_http = "0.12.0"
 tempfile = "3.27.0"
-polars = { version = "=0.55.2", default-features = false, features = ["csv", "parquet"] }
+polars = { version = "=0.55.2", default-features = false, features = ["csv", "parquet", "dtype-date", "dtype-datetime", "dtype-time", "dtype-duration"] }
 burn = { version = "=0.22.1", default-features = false, features = ["std", "ndarray", "autodiff", "optim"] }
 
 [profile.release]

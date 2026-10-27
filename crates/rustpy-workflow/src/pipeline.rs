@@ -292,8 +292,9 @@ impl Workspace {
     pub fn split_data(&self, p: &Prepared, which: SplitName) -> Result<SplitData> {
         let rows = p.split.rows(which);
         let sub = p.table.take(&rows);
-        let phase = if which == SplitName::Train { Phase::Train } else { Phase::Evaluate };
-        let x = apply_transform(&p.fitted.transform, &sub, phase)?;
+        // Training and validation rows are encoded while training; errors name data rows.
+        let phase = if which == SplitName::Test { Phase::Evaluate } else { Phase::Train };
+        let x = rustpy_runtime::apply_transform_rows(&p.fitted.transform, &sub, phase, &rows)?;
         let y = labels(&sub, &p.features.target);
         Ok(SplitData { x, y, rows })
     }
@@ -1503,7 +1504,10 @@ impl Workspace {
         let sub = p.table.take(&split_rows);
         let y = labels(&sub, t);
         let inputs = sub.select(&names);
-        let pr = predictor.probabilities(&inputs).map_err(|e| e.in_phase(Phase::Evaluate))?;
+        rustpy_runtime::transform::check_table_columns(predictor.input_schema(), &inputs, Phase::Evaluate)?;
+        // Errors name the row of the data file, not the position among the evaluated rows.
+        let x = rustpy_runtime::apply_transform_rows(&predictor.bundle().transform, &inputs, Phase::Evaluate, &split_rows)?;
+        let pr = predictor.probabilities_matrix(&x);
         for u in predictor.unseen_categories(&inputs) {
             notes.push(format!(
                 "{} of {} rows have a `{}` value the bundle never saw (e.g. {}): encoded as all zeros",
