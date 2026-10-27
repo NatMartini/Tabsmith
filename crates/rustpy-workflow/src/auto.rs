@@ -93,10 +93,10 @@ impl Workspace {
         match self.evaluate_run(&chosen, SplitName::Test, false, false) {
             Ok(e) => {
                 // An identical model (same weights, same rows) gets its earlier evaluation back.
-                if let EvaluationSubject::Run { run_id } = &e.subject {
-                    if run_id != &chosen {
-                        report.identical_to = Some(run_id.clone());
-                    }
+                if let EvaluationSubject::Run { run_id } = &e.subject
+                    && run_id != &chosen
+                {
+                    report.identical_to = Some(run_id.clone());
                 }
                 report.test = Some(e);
             }
@@ -136,39 +136,38 @@ impl Workspace {
                 },
             )?);
         }
-        if report.test.is_none() {
-            if let Some((dir, m)) = &previous {
-                if m.evaluation_status == EVALUATED {
-                    report.notes.push(format!(
-                        "`rustpy predict` and `rustpy serve` keep using the evaluated bundle {}; pass --bundle {} to use the candidate",
-                        self.project.rel(dir),
-                        report.bundle.as_ref().map(|b| b.path.as_str()).unwrap_or("<dir>")
-                    ));
-                }
-            }
+        if report.test.is_none()
+            && let Some((dir, m)) = &previous
+            && m.evaluation_status == EVALUATED
+        {
+            report.notes.push(format!(
+                "`rustpy predict` and `rustpy serve` keep using the evaluated bundle {}; pass --bundle {} to use the candidate",
+                self.project.rel(dir),
+                report.bundle.as_ref().map(|b| b.path.as_str()).unwrap_or("<dir>")
+            ));
         }
         // Old vs new on the same unseen test rows (only meaningful when the new model was tested).
-        if let (Some((dir, m)), Some(_), Some(new_bundle)) = (previous, &report.test, &report.bundle) {
-            if weights_sha(&m) != Some(chosen_sha.as_str()) {
-                progress(Progress::Stage(format!(
-                    "scoring the previous bundle {} on the same test rows",
-                    m.bundle_id
-                )));
-                let new_dir = self.project.root.join(&new_bundle.path);
-                let evaluation = self.evaluate_bundle_against(&dir, Some(&new_dir), SplitName::Test, req, false, false);
-                let (evaluation, new_model_on_same_rows, note) = match evaluation {
-                    Ok((e, new)) => (Some(e), new, None),
-                    Err(e) => (None, None, Some(format!("[{}] {}", e.code, e.message))),
-                };
-                report.previous = Some(PreviousModel {
-                    path: self.project.rel(&dir),
-                    bundle_id: m.bundle_id.clone(),
-                    run_id: m.provenance.run_id.clone(),
-                    evaluation,
-                    new_model_on_same_rows,
-                    note,
-                });
-            }
+        if let (Some((dir, m)), Some(_), Some(new_bundle)) = (previous, &report.test, &report.bundle)
+            && weights_sha(&m) != Some(chosen_sha.as_str())
+        {
+            progress(Progress::Stage(format!(
+                "scoring the previous bundle {} on the same test rows",
+                m.bundle_id
+            )));
+            let new_dir = self.project.root.join(&new_bundle.path);
+            let evaluation = self.evaluate_bundle_against(&dir, Some(&new_dir), SplitName::Test, req, false, false);
+            let (evaluation, new_model_on_same_rows, note) = match evaluation {
+                Ok((e, new)) => (Some(e), new, None),
+                Err(e) => (None, None, Some(format!("[{}] {}", e.code, e.message))),
+            };
+            report.previous = Some(PreviousModel {
+                path: self.project.rel(&dir),
+                bundle_id: m.bundle_id.clone(),
+                run_id: m.provenance.run_id.clone(),
+                evaluation,
+                new_model_on_same_rows,
+                note,
+            });
         }
         Ok(report)
     }

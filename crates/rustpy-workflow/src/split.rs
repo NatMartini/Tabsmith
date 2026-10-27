@@ -450,7 +450,7 @@ mod tests {
         grown.reverse();
         let s2 = make_split("s-2", &build(&grown), &info, &cfg).unwrap();
         let a2 = s2.assignment.as_bytes();
-        let moved = (0..2000).filter(|&x| a1[x] != a2[2499 - x as usize]).count();
+        let moved = (0..2000).filter(|&x| a1[x] != a2[2499 - x]).count();
         assert!(moved < 60, "{moved} of 2000 rows changed split");
     }
 
@@ -477,7 +477,7 @@ mod tests {
         assert_eq!((s.test.positives, s.valid.positives), (75, 75));
         // Both feature values appear in every split.
         let code = s.assignment.as_bytes();
-        for split in [b'0', b'1', b'2'] {
+        for split in *b"012" {
             assert!((0..n).any(|i| code[i] == split && i % 2 == 0) && (0..n).any(|i| code[i] == split && i % 2 == 1));
         }
     }
@@ -485,9 +485,11 @@ mod tests {
     #[test]
     fn group_split_has_no_leakage() {
         let (t, info) = table(1000);
-        let mut cfg = DataConfig::default();
-        cfg.split = SplitStrategy::Group;
-        cfg.group_column = Some("g".into());
+        let cfg = DataConfig {
+            split: SplitStrategy::Group,
+            group_column: Some("g".into()),
+            ..Default::default()
+        };
         let s = make_split("s-1", &t, &info, &cfg).unwrap();
         check_group_leakage(&t, &s).unwrap();
         assert!(s.test.groups.unwrap() > 0);
@@ -496,11 +498,15 @@ mod tests {
     #[test]
     fn refuses_time_and_undeclared_grouping() {
         let (t, info) = table(100);
-        let mut cfg = DataConfig::default();
-        cfg.time_column = Some("ts".into());
+        let cfg = DataConfig {
+            time_column: Some("ts".into()),
+            ..Default::default()
+        };
         assert_eq!(make_split("s", &t, &info, &cfg).unwrap_err().code, ErrorCode::SplitUnsupported);
-        let mut cfg = DataConfig::default();
-        cfg.group_column = Some("g".into());
+        let cfg = DataConfig {
+            group_column: Some("g".into()),
+            ..Default::default()
+        };
         assert_eq!(make_split("s", &t, &info, &cfg).unwrap_err().code, ErrorCode::LeakageDetected);
     }
 }

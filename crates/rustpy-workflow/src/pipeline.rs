@@ -133,22 +133,12 @@ pub struct Comparison {
     pub notes: Vec<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct RunOptions {
     pub candidates: Option<Vec<Candidate>>,
     /// R0: recompute split and transform instead of reusing cached stages.
     pub no_cache: bool,
     pub control: RunControl,
-}
-
-impl Default for RunOptions {
-    fn default() -> Self {
-        Self {
-            candidates: None,
-            no_cache: false,
-            control: RunControl::default(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -917,11 +907,11 @@ impl Workspace {
         )?;
         // The continued run belongs to the parent's comparison group.
         let gpath = self.project.dir("groups").join(format!("{}.json", parent.group_id));
-        if let Ok(mut g) = read_json::<RunGroup>(&gpath, Phase::Resume) {
-            if !g.run_ids.contains(&run.run_id) {
-                g.run_ids.push(run.run_id.clone());
-                self.save_group(&g)?;
-            }
+        if let Ok(mut g) = read_json::<RunGroup>(&gpath, Phase::Resume)
+            && !g.run_ids.contains(&run.run_id)
+        {
+            g.run_ids.push(run.run_id.clone());
+            self.save_group(&g)?;
         }
         Ok(run)
     }
@@ -1723,11 +1713,12 @@ impl Workspace {
             let metric_value = valid.as_ref().and_then(|v| v.get(metric));
             let p95 = r.latency.as_ref().map(|l| l.single_row_p95_us);
             let mut ok = r.status == RunStatus::Completed;
-            if let Some(v) = metric_value {
-                if cfg.selection.min_valid_metric > 0.0 && v < cfg.selection.min_valid_metric {
-                    ok = false;
-                    notes.push(format!("{metric} {v:.4} below min_valid_metric {}", cfg.selection.min_valid_metric));
-                }
+            if let Some(v) = metric_value
+                && cfg.selection.min_valid_metric > 0.0
+                && v < cfg.selection.min_valid_metric
+            {
+                ok = false;
+                notes.push(format!("{metric} {v:.4} below min_valid_metric {}", cfg.selection.min_valid_metric));
             }
             if cfg.selection.max_model_kib > 0.0 && model_kib > cfg.selection.max_model_kib {
                 ok = false;
@@ -1736,14 +1727,15 @@ impl Workspace {
                     cfg.selection.max_model_kib
                 ));
             }
-            if let Some(l) = p95 {
-                if cfg.selection.max_p95_latency_us > 0.0 && l > cfg.selection.max_p95_latency_us {
-                    ok = false;
-                    notes.push(format!(
-                        "p95 latency {l:.1} µs above max_p95_latency_us {}",
-                        cfg.selection.max_p95_latency_us
-                    ));
-                }
+            if let Some(l) = p95
+                && cfg.selection.max_p95_latency_us > 0.0
+                && l > cfg.selection.max_p95_latency_us
+            {
+                ok = false;
+                notes.push(format!(
+                    "p95 latency {l:.1} µs above max_p95_latency_us {}",
+                    cfg.selection.max_p95_latency_us
+                ));
             }
             if r.status != RunStatus::Completed {
                 notes.push(format!("run is {}", r.status.as_str()));

@@ -39,3 +39,6 @@ pkg-fmt = "tgz"
 [package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
 pkg-url = "https://github.com/__OWNER__/__REPO__/releases/download/v{ version }/rustpy-{ version }-{ target }.zip"
 pkg-fmt = "zip"
+
+[lints]
+workspace = true
