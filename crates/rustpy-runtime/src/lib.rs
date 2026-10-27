@@ -6,11 +6,17 @@
 //! ```no_run
 //! use rustpy_runtime::{LoadOptions, Predictor, Record};
 //!
+//! // A bundle built by `rustpy train` (here from the synthetic sample data).
 //! let predictor = Predictor::load("bundles/run-002", LoadOptions::cpu())?;
+//! // Every input field of the bundle is required (see its input.schema.json, or
+//! // complete records in examples/input.json); `None` is a missing value, imputed
+//! // as in training.
 //! let record = Record::new()
-//!     .with("temperature_mean", 71.4)
 //!     .with("line", "B")
-//!     .with("hours_in_service", 1200);
+//!     .with("temp_mean", 71.4)
+//!     .with("hours_in_service", 1200)
+//!     .with("calibration_offset", None::<f64>)
+//!     /* … the other input fields … */;
 //! let prediction = predictor.predict_one(&record)?;
 //! println!("{} (p = {:.3})", prediction.label, prediction.probability);
 //! # Ok::<(), rustpy_runtime::RustpyError>(())

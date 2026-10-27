@@ -4,8 +4,8 @@ The `rustpy` command-line tool: from a local CSV/Parquet file to a trained,
 verified tabular binary classifier, packaged as a bundle that a Rust application
 loads with [`rustpy-runtime`](https://crates.io/crates/rustpy-runtime).
 
-Status: early CPU prototype (0.1). It trains a linear baseline and a small MLP on
-the CPU with Burn 0.22 (ndarray backend). No GPU backend is compiled in or
+Status: early release (0.1), CPU only. It trains a linear baseline and a small
+MLP with Burn 0.22 (ndarray backend). No GPU backend is compiled in or
 certified.
 
 ## Install
@@ -35,7 +35,23 @@ cargo install rustpy-cli --locked
 
 Every method installs a command named `rustpy`.
 
-## Five-minute tour
+## Quick start
+
+```text
+rustpy sample-data machines.csv                # 10,000 synthetic rows (CC0), target `defect`
+rustpy train machines.csv --target defect --group device_id
+rustpy sample-data new.csv --rows 200 --seed 7 # some new rows
+rustpy predict --input new.csv --keep unit_id --output predictions.csv
+rustpy serve --port 8080                       # HTTP/JSON: POST /predict, GET /schema, GET /health
+```
+
+`rustpy train` splits the data (keeping each device's rows together), learns the
+preprocessing from the training rows, trains a linear baseline and a small MLP,
+picks one on the validation split, tests it once and builds a verified bundle.
+Run it again after new data arrives: it also scores the previous bundle and the
+new model on the same unseen test rows.
+
+## Step by step
 
 ```text
 rustpy init defect-model --sample-data         # project + synthetic rows, bound to target `defect`
@@ -46,6 +62,7 @@ rustpy compare                                 # validation-only comparison and 
 rustpy evaluate --run run-002 --split test     # the test split is used once, by the final candidate
 rustpy bundle build --run run-002              # immutable bundle: weights + preprocessing + schemas + evidence
 rustpy bundle check bundles/run-002            # verifies hashes, versions and example predictions
+rustpy sample-data new.csv --rows 200 --seed 7 # some new rows to predict
 rustpy predict --bundle bundles/run-002 --input new.csv --output preds.csv
 rustpy report                                  # offline HTML/JSON report in .rustpy/reports/
 ```
@@ -59,7 +76,9 @@ Documentation, limitations and the source are in the
 
 `rustpy` 命令行工具：从本地 CSV/Parquet 文件训练、验证表格二分类模型，并打包成
 Rust 应用可通过 `rustpy-runtime` 加载的 bundle。当前为 0.1 CPU 原型，GPU 路径尚未
-编译或认证。安装方式见上文；中文文档见仓库中的 `README.zh-CN.md`。
+编译或认证。快速上手：`rustpy sample-data machines.csv`，然后
+`rustpy train machines.csv --target defect --group device_id`。安装方式见上文；中文文档见仓库中的
+`README.zh-CN.md`。
 
 ## License
 
