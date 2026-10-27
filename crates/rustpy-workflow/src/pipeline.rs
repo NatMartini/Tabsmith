@@ -419,13 +419,29 @@ impl Workspace {
         }
         let on_previous: Vec<&str> =
             runs.iter().filter(|r| r.snapshot_id == latest.snapshot_id).map(|r| r.run_id.as_str()).collect();
-        Some(format!(
+        let mut note = format!(
             "new data version: {} is now snapshot {}, while {} used snapshot {}. Earlier runs and bundles keep their own data version and stay usable; to compare an old model with a new one on the same new rows use `rustpy evaluate --bundle <old bundle> --split test`",
             snapshot.source.path,
             snapshot.snapshot_id,
             on_previous.join(", "),
             latest.snapshot_id
-        ))
+        );
+        // Without an id column the split is keyed by every column: a changed column
+        // set re-splits the old rows.
+        let previous: Option<DataSnapshot> =
+            read_json(&self.project.dir("snapshots").join(&latest.snapshot_id).join("snapshot.json"), Phase::Data).ok();
+        if let (Some(prev), rustpy_contracts::data::RowIdentity::RowIndex) = (previous, &snapshot.row_identity) {
+            let names = |s: &DataSnapshot| s.columns.iter().map(|c| c.name.clone()).collect::<BTreeSet<_>>();
+            let (old, new) = (names(&prev), names(snapshot));
+            if old != new {
+                let added: Vec<&String> = new.difference(&old).collect();
+                let removed: Vec<&String> = old.difference(&new).collect();
+                note.push_str(&format!(
+                    ". The file's columns changed (added {added:?}, removed {removed:?}): without data.id_column its rows are split anew, so fewer old test rows stay test rows (rows a model saw are still excluded from its evaluations)"
+                ));
+            }
+        }
+        Some(note)
     }
 
     pub fn list_runs(&self) -> Result<Vec<RunRecord>> {
