@@ -39,11 +39,21 @@ pub fn environment() -> EnvironmentInfo {
 
 /// Read-only GPU discovery (Linux sysfs). Nothing is installed or initialised.
 pub fn detect_devices() -> Vec<DetectedDevice> {
+    let verified = cfg!(all(target_os = "linux", target_arch = "x86_64"));
     let mut out = vec![DetectedDevice {
         kind: "cpu".into(),
         name: cpu_model().unwrap_or_else(|| format!("{} CPU", std::env::consts::ARCH)),
-        certification: Certification::Certified,
-        note: Some(format!("{} logical CPUs", logical_cpus())),
+        certification: if verified { Certification::Certified } else { Certification::NotCertified },
+        note: Some(if verified {
+            format!("{} logical CPUs; recipe verified on linux/x86_64", logical_cpus())
+        } else {
+            format!(
+                "{} logical CPUs; the recipe has only been verified on linux/x86_64, not on {}/{}",
+                logical_cpus(),
+                std::env::consts::OS,
+                std::env::consts::ARCH
+            )
+        }),
     }];
     if let Ok(entries) = fs::read_dir("/sys/class/drm") {
         let mut seen = std::collections::BTreeSet::new();
@@ -84,7 +94,12 @@ pub fn detect_devices() -> Vec<DetectedDevice> {
 }
 
 /// Resolves a device request into a plan. `estimated_peak_mb` is checked against the budget.
-pub fn plan_device(request: DeviceRequest, exec: &ExecutionConfig, estimated_peak_mb: f64) -> Result<DevicePlan> {
+pub fn plan_device(
+    request: DeviceRequest,
+    key: &str,
+    exec: &ExecutionConfig,
+    estimated_peak_mb: f64,
+) -> Result<DevicePlan> {
     let detected = detect_devices();
     let mut notes = Vec::new();
     match exec.precision {
@@ -124,10 +139,10 @@ pub fn plan_device(request: DeviceRequest, exec: &ExecutionConfig, estimated_pea
                     other.as_str()
                 ),
             )
-            .field("execution.candidate_device")
+            .field(key)
             .expected("cpu or auto-certified")
             .actual(format!("requested {}; detected: {}", other.as_str(), found.join("; ")))
-            .next("use candidate_device = \"cpu\" (or \"auto-certified\"); RustPy never falls back silently"));
+            .next(format!("set {key} = \"cpu\" (or \"auto-certified\"); RustPy never falls back silently")));
         }
     }
     if estimated_peak_mb > exec.max_memory_mb as f64 {
@@ -164,6 +179,12 @@ pub fn plan_device(request: DeviceRequest, exec: &ExecutionConfig, estimated_pea
         memory_budget_mb: exec.max_memory_mb,
         notes,
     })
+}
+
+/// Resets the process peak-RSS counter (Linux `clear_refs` = 5) so the next
+/// `peak_rss_mb` reading covers only what follows. Returns false where unsupported.
+pub fn reset_peak_rss() -> bool {
+    fs::write("/proc/self/clear_refs", "5").is_ok()
 }
 
 /// Peak resident set size of this process (Linux VmHWM), in MB.

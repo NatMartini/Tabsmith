@@ -131,6 +131,9 @@ pub struct RunRecord {
     pub transform_id: String,
     pub config_hash: String,
     pub train_config: CandidateTrainConfig,
+    /// Non-configurable recipe choices (optimizer, initialisation, loss).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recipe_constants: Option<String>,
     pub train_seed: u64,
     pub threshold: f64,
     /// Stages taken from cache instead of being recomputed (R1).

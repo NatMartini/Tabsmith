@@ -7,7 +7,7 @@ use rustpy_contracts::evaluation::EvaluationSubject;
 use rustpy_contracts::data::SplitName;
 use rustpy_contracts::hash::sha256_file;
 use rustpy_contracts::manifest::{
-    compute_bundle_id, BundleEvaluation, BundleManifest, BundleProvenance, ExampleExpected, ExampleInputs,
+    BundleEvaluation, BundleManifest, BundleProvenance, ExampleExpected, ExampleInputs,
     ExpectedPrediction, FileEntry, RuntimeRequirements, EVALUATION_FILE, EXAMPLES_EXPECTED_FILE, EXAMPLES_INPUT_FILE,
     INPUT_SCHEMA_FILE, MANIFEST_FILE, MODEL_CONFIG_FILE, MODEL_WEIGHTS_FILE, OUTPUT_SCHEMA_FILE, TRANSFORM_FILE,
 };
@@ -59,11 +59,14 @@ pub fn synthetic_examples(fitted: &FittedArtifacts) -> Vec<Record> {
                 alt.insert(name.clone(), round6(m - s));
                 missing.insert(name.clone(), Value::Null);
             }
-            FeatureTransform::Categorical { name, categories, .. } => {
+            FeatureTransform::Categorical { name, categories, missing_slot, .. } => {
                 typical.insert(name.clone(), categories[0].clone());
                 high.insert(name.clone(), categories.last().cloned().unwrap_or_default());
                 alt.insert(name.clone(), categories.get(1).cloned().unwrap_or_else(|| categories[0].clone()));
-                missing.insert(name.clone(), Value::Null);
+                // A missing value is only valid input when it was seen in training or
+                // unknown values are ignored; otherwise use a known category.
+                let missing_ok = *missing_slot || t.unknown_category == rustpy_contracts::config::UnknownCategoryPolicy::Ignore;
+                missing.insert(name.clone(), if missing_ok { Value::Null } else { Value::from(categories[0].clone()) });
             }
         }
     }
@@ -261,7 +264,7 @@ impl Workspace {
                     files.push(file_entry(&tmp, rel)?);
                 }
                 m.files = files.clone();
-                m.bundle_id = compute_bundle_id(files);
+                m.bundle_id = m.expected_id();
                 write_json(&tmp.join(MANIFEST_FILE), m)
             };
             write_manifest(&mut manifest, &mut files)?;
@@ -310,7 +313,22 @@ impl Workspace {
                 .next("choose another directory with --out")),
             };
         }
-        fs::rename(&tmp, &out).map_err(|e| RustpyError::io(Phase::Bundle, &out, e))?;
+        if let Err(e) = fs::rename(&tmp, &out) {
+            let _ = fs::remove_dir_all(&tmp);
+            // Another build may have published the same bundle meanwhile.
+            if let Ok(m) = read_json::<BundleManifest>(&out.join(MANIFEST_FILE), Phase::Bundle) {
+                if m.bundle_id == manifest.bundle_id {
+                    let check = Predictor::load(&out, LoadOptions::cpu().with_self_check(true))?.self_check()?;
+                    return Ok(BundleBuildReport {
+                        path: self.project.rel(&out),
+                        manifest: m,
+                        check,
+                        already_existed: true,
+                    });
+                }
+            }
+            return Err(RustpyError::io(Phase::Bundle, &out, e));
+        }
         let mut check = check;
         check.bundle_dir = out.display().to_string();
         Ok(BundleBuildReport {

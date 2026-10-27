@@ -52,6 +52,15 @@ impl CoerceError {
             .expected("a finite number or null")
             .actual(value.preview())
             .next("clean or clip the value before prediction/training"),
+            CoerceError::NonIntegralCategory(f) if f.is_finite() && f.abs() >= 9.0e15 => RustpyError::new(
+                ErrorCode::SchemaTypeMismatch,
+                phase,
+                format!("{at}: categorical value {f} is too large to be represented exactly as a number"),
+            )
+            .field(field)
+            .expected("an integer below 2^53, or the value as text")
+            .actual(f.to_string())
+            .next(format!("send `{field}` as text if the bundle was trained on text codes")),
             CoerceError::NonIntegralCategory(f) => RustpyError::new(
                 ErrorCode::SchemaTypeMismatch,
                 phase,

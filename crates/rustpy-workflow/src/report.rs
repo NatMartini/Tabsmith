@@ -36,6 +36,20 @@ pub struct ProjectReport {
     pub groups: Vec<(RunGroup, Comparison)>,
     pub evaluations: Vec<EvaluationRecord>,
     pub bundles: Vec<BundleStatus>,
+    /// Per run: config hash and the effective settings that differ from the first
+    /// run of its group.
+    pub config_diffs: Vec<ConfigDiff>,
+    /// Missing values, split warnings, dropped features.
+    pub data_issues: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ConfigDiff {
+    pub group_id: String,
+    pub run_id: String,
+    pub reference_run: String,
+    pub config_hash: String,
+    pub differences: Vec<String>,
 }
 
 fn esc(s: &str) -> String {
@@ -122,7 +136,76 @@ impl Workspace {
                 }
             })
             .collect();
+        // Configuration differences within each group.
+        let mut config_diffs = Vec::new();
+        for (g, _) in &groups {
+            let resolved: Vec<(String, rustpy_contracts::config::ResolvedConfig)> = g
+                .run_ids
+                .iter()
+                .filter_map(|id| {
+                    read_json(&self.project.run_dir(id).join("resolved.json"), Phase::Report)
+                        .ok()
+                        .map(|r| (id.clone(), r))
+                })
+                .collect();
+            let Some((ref_id, reference)) = resolved.first() else { continue };
+            let base: std::collections::BTreeMap<String, String> =
+                reference.effective_values().into_iter().map(|(k, v, _)| (k, v)).collect();
+            for (id, r) in &resolved {
+                let differences = r
+                    .effective_values()
+                    .into_iter()
+                    .filter(|(k, v, _)| base.get(k) != Some(v))
+                    .map(|(k, v, src)| format!("{k} = {v} ({src}; {ref_id}: {})", base.get(&k).map(String::as_str).unwrap_or("unset")))
+                    .collect();
+                config_diffs.push(ConfigDiff {
+                    group_id: g.group_id.clone(),
+                    run_id: id.clone(),
+                    reference_run: ref_id.clone(),
+                    config_hash: r.config_hash.clone(),
+                    differences,
+                });
+            }
+        }
+        // Data issues: missing values per snapshot, split warnings, dropped features.
+        let mut data_issues = Vec::new();
+        for snap in &snapshots {
+            for c in &snap.columns {
+                let missing = c.null_count + c.nan_count;
+                if missing > 0 || c.inf_count > 0 {
+                    data_issues.push(format!(
+                        "{}: `{}` has {} null, {} NaN, {} infinite of {} rows",
+                        snap.snapshot_id, c.name, c.null_count, c.nan_count, c.inf_count, snap.n_rows
+                    ));
+                }
+            }
+            for l in &snap.limitations {
+                data_issues.push(format!("{}: {l}", snap.snapshot_id));
+            }
+        }
+        if let Ok(it) = fs::read_dir(self.project.dir("splits")) {
+            for e in it.flatten() {
+                if let Ok(sp) = read_json::<rustpy_contracts::data::SplitManifest>(&e.path(), Phase::Report) {
+                    for w in &sp.warnings {
+                        data_issues.push(format!("{}: {w}", sp.split_id));
+                    }
+                }
+            }
+        }
+        if let Ok(it) = fs::read_dir(self.project.dir("transforms")) {
+            for e in it.flatten() {
+                if let Ok(fa) = read_json::<crate::fit::FittedArtifacts>(&e.path().join("fitted.json"), Phase::Report) {
+                    for d in &fa.transform.dropped {
+                        data_issues.push(format!("{}: feature `{}` dropped ({})", fa.transform_id, d.name, d.reason));
+                    }
+                }
+            }
+        }
+        data_issues.sort();
+        data_issues.dedup();
         Ok(ProjectReport {
+            config_diffs,
+            data_issues,
             generated_at: now_rfc3339(),
             rustpy_version: RUSTPY_VERSION.to_string(),
             engine: ENGINE.to_string(),
@@ -335,6 +418,30 @@ th{{font-weight:600;color:var(--muted);font-size:12px;text-transform:uppercase;l
         );
     }
     h.push_str("</table></div>");
+
+    h.push_str("<h2>Configuration</h2><div class=\"wrap\"><table><tr><th>group</th><th>run</th><th>config hash</th><th>differences from the group's first run</th></tr>");
+    for d in &r.config_diffs {
+        let _ = write!(
+            h,
+            "<tr><td><code>{}</code></td><td><code>{}</code></td><td><code>{}</code></td><td class=\"note\">{}</td></tr>",
+            esc(&d.group_id),
+            esc(&d.run_id),
+            &d.config_hash[..12.min(d.config_hash.len())],
+            if d.differences.is_empty() { "—".to_string() } else { esc(&d.differences.join("; ")) }
+        );
+    }
+    h.push_str("</table></div>");
+
+    h.push_str("<h2>Data issues</h2>");
+    if r.data_issues.is_empty() {
+        h.push_str("<p class=\"meta\">none recorded</p>");
+    } else {
+        h.push_str("<ul>");
+        for i in &r.data_issues {
+            let _ = write!(h, "<li class=\"note\">{}</li>", esc(i));
+        }
+        h.push_str("</ul>");
+    }
 
     h.push_str("<h2>Devices</h2><div class=\"wrap\"><table><tr><th>run</th><th>requested</th><th>used</th><th>precision</th><th>threads</th><th>peak RSS</th><th>matches plan</th><th>detected devices</th></tr>");
     for run in &r.runs {

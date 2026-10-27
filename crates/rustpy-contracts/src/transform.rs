@@ -10,10 +10,12 @@ use crate::config::{NanPolicy, UnknownCategoryPolicy};
 
 /// Implementation version of the standard transform. A bundle declares the
 /// version it needs; a runtime refuses versions it does not implement.
-pub const TRANSFORM_VERSION: &str = "rustpy.std-tabular.v1";
+///
+/// v2: missing-value tokens and typed categoricals are part of the transform.
+pub const TRANSFORM_VERSION: &str = "rustpy.std-tabular.v2";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum FeatureTransform {
     /// `z = (x - mean) / std`, missing `x` replaced by `impute` first.
     Numeric {
@@ -66,12 +68,16 @@ impl FeatureTransform {
 
 /// A field that is part of the input contract but contributes no feature.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DroppedField {
     pub name: String,
     pub reason: String,
 }
 
+/// Bundle contract types reject unknown fields: a runtime that does not know a
+/// field cannot honour its semantics, so it must refuse rather than ignore it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct FittedTransform {
     pub version: String,
     pub features: Vec<FeatureTransform>,

@@ -629,10 +629,36 @@ fn toml_error(
 
 /// Validates a partial layer: unknown keys and wrong types are rejected.
 pub fn validate_layer(table: &toml::Table, origin: &str) -> Result<()> {
-    toml::Value::Table(table.clone())
-        .try_into::<ProjectConfig>()
-        .map(|_| ())
-        .map_err(|e| toml_error(e.message(), origin, None, None))
+    let check = |t: &toml::Table| toml::Value::Table(t.clone()).try_into::<ProjectConfig>().map(|_| ());
+    match check(table) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            // Find the offending key: validate each leaf on its own.
+            let mut leaves = Vec::new();
+            collect_leaves(table, "", &mut leaves);
+            for (path, value) in leaves {
+                if let Err(le) = check(&single_leaf(&path, value)) {
+                    let mut err = toml_error(le.message(), &format!("{origin}, key `{path}`"), None, None);
+                    err.field = Some(path);
+                    return Err(err);
+                }
+            }
+            Err(toml_error(e.message(), origin, None, None))
+        }
+    }
+}
+
+fn single_leaf(path: &str, value: toml::Value) -> toml::Table {
+    let mut leaf = value;
+    for part in path.split('.').rev() {
+        let mut t = toml::Table::new();
+        t.insert(part.to_string(), leaf);
+        leaf = toml::Value::Table(t);
+    }
+    match leaf {
+        toml::Value::Table(t) => t,
+        _ => unreachable!("path has at least one part"),
+    }
 }
 
 /// Parses `a.b.c=value` into a single-leaf layer table. The value is read as a TOML
@@ -654,18 +680,23 @@ pub fn parse_override(spec: &str) -> Result<toml::Table> {
         Ok(mut t) => t.remove("v").unwrap_or_else(|| toml::Value::String(raw.to_string())),
         Err(_) => toml::Value::String(raw.to_string()),
     };
-    let mut leaf = value;
-    for part in key.split('.').rev() {
-        let mut t = toml::Table::new();
-        t.insert(part.to_string(), leaf);
-        leaf = toml::Value::Table(t);
+    let is_string = value.is_str();
+    let table = single_leaf(key, value);
+    match validate_layer(&table, &format!("--set {spec}")) {
+        Ok(()) => Ok(table),
+        Err(e) => {
+            // `--set data.positive_label=1`: a string key given a bare number/bool.
+            if !is_string && e.code == ErrorCode::ConfigInvalid {
+                let as_text = single_leaf(key, toml::Value::String(raw.to_string()));
+                if validate_layer(&as_text, "").is_ok() {
+                    return Ok(as_text);
+                }
+            }
+            let mut e = e;
+            e.field = Some(key.to_string());
+            Err(e)
+        }
     }
-    let toml::Value::Table(table) = leaf else { unreachable!() };
-    validate_layer(&table, &format!("--set {spec}")).map_err(|mut e| {
-        e.field = Some(key.to_string());
-        e
-    })?;
-    Ok(table)
 }
 
 /// Effective configuration with per-leaf provenance.
@@ -751,7 +782,19 @@ pub fn resolve(layers: &[ConfigLayer]) -> Result<ResolvedConfig> {
     let config: ProjectConfig = toml::Value::Table(merged)
         .try_into()
         .map_err(|e: toml::de::Error| toml_error(e.message(), "merged configuration", None, None))?;
-    config.validate()?;
+    config.validate().map_err(|mut e| {
+        // Say which layer supplied the offending value.
+        if let Some(src) = e.field.as_ref().and_then(|f| sources.get(f.as_str())) {
+            e.message = format!("{} (value from {src})", e.message);
+        }
+        if e.next_action.is_none() {
+            e.next_action = Some(format!(
+                "fix the value; `rustpy config` lists every effective setting and where it came from{}",
+                e.expected.as_ref().map(|x| format!(" (expected {x})")).unwrap_or_default()
+            ));
+        }
+        e
+    })?;
     let config_hash = canonical_hash(&config);
     Ok(ResolvedConfig {
         config,

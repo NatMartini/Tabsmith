@@ -15,7 +15,7 @@ use rustpy_workflow::pipeline::{Progress, RunOptions};
 use rustpy_workflow::setup::{init_project, BindRequest};
 use rustpy_workflow::{ConfigRequest, RunControl, Workspace};
 
-use crate::output::{duration, f4, opt4, print_json, Table};
+use crate::output::{duration, f4, opt4, print_json, print_json_status, Table};
 use crate::{BundleCommand, Cli, Command, ConfigArgs, DataCommand};
 
 fn workspace(cli_project: &Option<PathBuf>) -> Result<Workspace> {
@@ -189,13 +189,27 @@ pub fn dispatch(cli: Cli) -> Result<u8> {
             };
             let mut progress = progress_printer(json);
             let result = ws.run(&config_request(&config), &opts, &mut progress)?;
+            // Exit code: 130 when cancelled, else the first failed run's error family.
+            let code: u8 = if result.cancelled {
+                130
+            } else {
+                result
+                    .runs
+                    .iter()
+                    .find(|r| r.status != RunStatus::Completed)
+                    .map(|r| r.error.as_ref().map_or(1, |e| e.code.exit_code().clamp(1, 255) as u8))
+                    .unwrap_or(0)
+            };
             if json {
-                print_json(&serde_json::json!({
-                    "group": result.group,
-                    "runs": result.runs,
-                    "comparison": result.comparison,
-                    "reused_stages": result.reused,
-                }));
+                print_json_status(
+                    &serde_json::json!({
+                        "group": result.group,
+                        "runs": result.runs,
+                        "comparison": result.comparison,
+                        "reused_stages": result.reused,
+                    }),
+                    code == 0,
+                );
             } else {
                 if !result.reused.is_empty() {
                     println!("reused cached stages (R1): {}", result.reused.join(", "));
@@ -212,10 +226,7 @@ pub fn dispatch(cli: Cli) -> Result<u8> {
                     );
                 }
             }
-            if result.cancelled {
-                return Ok(130);
-            }
-            Ok(if result.runs.iter().all(|r| r.status == RunStatus::Completed) { 0 } else { 1 })
+            Ok(code)
         }
         Command::Runs => {
             let ws = workspace(&cli.project)?;
@@ -280,25 +291,37 @@ pub fn dispatch(cli: Cli) -> Result<u8> {
             };
             let mut progress = progress_printer(json);
             let r = ws.resume(&run, warm_start, &config_request(&config), &control, &mut progress)?;
+            let code: u8 = match r.status {
+                RunStatus::Completed => 0,
+                RunStatus::Cancelled => 130,
+                _ => r.error.as_ref().map_or(1, |e| e.code.exit_code().clamp(1, 255) as u8),
+            };
             if json {
-                print_json(&r);
+                print_json_status(&r, code == 0);
             } else {
                 print_run(&r);
                 if let Some(e) = &r.error {
                     eprint!("{}", e.render());
                 }
             }
-            Ok(match r.status {
-                RunStatus::Completed => 0,
-                RunStatus::Cancelled => 130,
-                _ => 1,
-            })
+            Ok(code)
         }
         Command::Evaluate { run, bundle, split, allow_test_reuse, config } => {
             let ws = workspace(&cli.project)?;
             let split = parse_split(&split)?;
             let rec = match (run, bundle) {
-                (Some(r), None) => ws.evaluate_run(&r, split, allow_test_reuse)?,
+                (Some(r), None) => {
+                    if config.profile.is_some() || !config.overrides.is_empty() {
+                        return Err(RustpyError::new(
+                            ErrorCode::ConfigInvalid,
+                            Phase::Evaluate,
+                            "--set/--profile do not apply to `evaluate --run`: a run is evaluated with its recorded configuration (threshold, preprocessing)",
+                        )
+                        .field("--set/--profile")
+                        .next("drop the flags; to evaluate other settings, train a run with them (`rustpy run --set ...`)"));
+                    }
+                    ws.evaluate_run(&r, split, allow_test_reuse)?
+                }
                 (None, Some(b)) => ws.evaluate_bundle(&b, split, &config_request(&config), allow_test_reuse)?,
                 _ => {
                     return Err(RustpyError::new(ErrorCode::ConfigInvalid, Phase::Evaluate, "pass exactly one of --run or --bundle")
@@ -384,7 +407,7 @@ pub fn dispatch(cli: Cli) -> Result<u8> {
             let p = Predictor::load(&dir, LoadOptions::device(dev).with_self_check(true))?;
             let r = p.self_check()?;
             if json {
-                print_json(&serde_json::json!({"check": r, "manifest": p.manifest()}));
+                print_json_status(&serde_json::json!({"check": r, "manifest": p.manifest()}), r.passed);
             } else {
                 println!("bundle {} at {}", r.bundle_id, dir.display());
                 println!("  files verified (sha256): {}", r.files_verified);
@@ -540,7 +563,7 @@ fn print_plan(plan: &rustpy_workflow::setup::PlanReport) {
 
 fn print_comparison(c: &rustpy_workflow::Comparison) {
     println!("\ncomparison on the validation split (metric: {})", c.metric);
-    let mut t = Table::new(&["run", "candidate", "status", &c.metric, "AUC", "F1", "log loss", "params", "p95 latency", "train time", "comparable"]);
+    let mut t = Table::new(&["run", "candidate", "status", &c.metric, "AUC", "F1", "log loss", "params", "p95 latency", "train time", "peak mem", "comparable"]);
     for r in &c.rows {
         t.row(vec![
             r.run_id.clone(),
@@ -553,6 +576,7 @@ fn print_comparison(c: &rustpy_workflow::Comparison) {
             r.parameters.to_string(),
             r.p95_latency_us.map(|l| format!("{l:.0} µs")).unwrap_or_else(|| "–".into()),
             duration(r.train_ms),
+            r.peak_rss_mb.map(|m| format!("{m:.0} MB")).unwrap_or_else(|| "–".into()),
             if r.comparable { "yes".into() } else { "no".into() },
         ]);
     }
@@ -649,15 +673,40 @@ fn predict_file(bundle: &Path, input: &Path, output: Option<&Path>, json: bool) 
             let table = rustpy_workflow::data::read_for_prediction(input, predictor.input_schema(), &predictor.bundle().transform)?;
             let ids = match id_field.as_ref().and_then(|f| table.column(f)) {
                 Some(col) => (0..table.n_rows())
-                    .map(|i| rustpy_runtime::coerce_category(col.get(i), rustpy_contracts::config::NanPolicy::Missing).ok().flatten().map(|c| c.into_owned()))
+                    .map(|i| match col.get(i) {
+                        rustpy_runtime::ValueRef::Null => Some(String::new()),
+                        rustpy_runtime::ValueRef::Text(s) => Some(s.to_string()),
+                        rustpy_runtime::ValueRef::Int(v) => Some(v.to_string()),
+                        rustpy_runtime::ValueRef::Float(v) => Some(v.to_string()),
+                        rustpy_runtime::ValueRef::Bool(v) => Some(v.to_string()),
+                    })
                     .collect(),
                 None => vec![None; table.n_rows()],
             };
             (predictor.predict_table(&table)?, ids)
         }
     };
-    let id_header = id_field.clone().unwrap_or_else(|| "row".into());
-    let jsonl = json || output.is_some_and(|o| o.extension().is_some_and(|e| e == "jsonl"));
+    // The id column is used only when the input has it; otherwise rows are numbered.
+    let id_header = match &id_field {
+        Some(f) if ids.iter().any(Option::is_some) => f.clone(),
+        _ => "row".into(),
+    };
+    if json && output.is_none() {
+        // One JSON document on stdout.
+        let rows: Vec<serde_json::Value> = preds
+            .iter()
+            .zip(&ids)
+            .enumerate()
+            .map(|(i, (p, id))| {
+                let idv = id.clone().map(serde_json::Value::String).unwrap_or(serde_json::Value::from(i));
+                serde_json::json!({ id_header.as_str(): idv, "label": p.label, "probability": p.probability, "is_positive": p.is_positive })
+            })
+            .collect();
+        print_json(&serde_json::json!({"bundle_id": predictor.bundle_id(), "predictions": rows}));
+        return Ok(0);
+    }
+    // The file format follows --output's extension (.jsonl or CSV).
+    let jsonl = output.is_some_and(|o| o.extension().is_some_and(|e| e == "jsonl" || e == "ndjson"));
     let mut text = String::new();
     if jsonl {
         for (i, (p, id)) in preds.iter().zip(&ids).enumerate() {
@@ -675,8 +724,10 @@ fn predict_file(bundle: &Path, input: &Path, output: Option<&Path>, json: bool) 
     match output {
         Some(path) => {
             std::fs::write(path, text).map_err(|e| RustpyError::io(Phase::Predict, path, e))?;
-            if !json {
-                let pos = preds.iter().filter(|p| p.is_positive).count();
+            let pos = preds.iter().filter(|p| p.is_positive).count();
+            if json {
+                print_json(&serde_json::json!({"path": path, "rows": preds.len(), "positive": pos, "bundle_id": predictor.bundle_id()}));
+            } else {
                 eprintln!("wrote {} predictions ({pos} positive) to {} using bundle {}", preds.len(), path.display(), predictor.bundle_id());
             }
         }

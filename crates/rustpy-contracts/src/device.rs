@@ -53,7 +53,8 @@ pub struct DeviceReceipt {
     pub device: String,
     pub precision: String,
     pub threads: usize,
-    /// Peak resident set size of the process at the end of the stage (VmHWM), if available.
+    /// Peak resident set size during this run (VmHWM, reset at the start of the run
+    /// on Linux; includes the data already loaded by the process), if available.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub peak_rss_mb: Option<f64>,
     pub host_device_transfers: String,

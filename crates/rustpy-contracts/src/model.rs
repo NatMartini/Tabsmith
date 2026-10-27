@@ -17,6 +17,7 @@ pub enum Activation {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct LayerSpec {
     pub in_dim: usize,
     pub out_dim: usize,
@@ -24,6 +25,7 @@ pub struct LayerSpec {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ModelConfig {
     pub format: String,
     /// `linear` or `small-mlp`.

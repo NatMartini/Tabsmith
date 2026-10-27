@@ -72,20 +72,40 @@ pub fn init_project(dir: &Path, recipe: &str, sample_data: bool) -> Result<InitR
         )
         .next("use the existing project, or choose another directory"));
     }
+    let sample_file = dir.join("data").join("defects.csv");
+    if sample_data && sample_file.exists() {
+        return Err(RustpyError::new(
+            ErrorCode::ConfigInvalid,
+            Phase::Config,
+            format!("`{}` already exists; the sample data would overwrite it", sample_file.display()),
+        )
+        .next("run `rustpy init` without --sample-data, or in an empty directory"));
+    }
     fs::create_dir_all(dir.join("data")).map_err(|e| RustpyError::io(Phase::Config, dir, e))?;
     write_atomic(&dir.join(CONFIG_FILE), TEMPLATE.as_bytes())?;
-    write_atomic(&dir.join(".gitignore"), b"/.rustpy/\n")?;
+    // Never overwrite user files: add the state directory to an existing .gitignore.
+    let gitignore = dir.join(".gitignore");
+    let existing = fs::read_to_string(&gitignore).unwrap_or_default();
+    if !existing.lines().any(|l| l.trim() == "/.rustpy/" || l.trim() == ".rustpy/" || l.trim() == ".rustpy") {
+        let mut text = existing.clone();
+        if !text.is_empty() && !text.ends_with('\n') {
+            text.push('\n');
+        }
+        text.push_str("/.rustpy/\n");
+        write_atomic(&gitignore, text.as_bytes())?;
+    }
     let mut report = InitReport {
         project: dir.display().to_string(),
         config: dir.join(CONFIG_FILE).display().to_string(),
         sample_data: None,
     };
     if sample_data {
-        let file = dir.join("data").join("defects.csv");
+        let file = sample_file;
         crate::sample::write_defects_csv(&file, 10_000, 42, crate::sample::SampleVariant::Base)?;
         let ws = Workspace::open(dir)?;
         ws.bind_data(&BindRequest {
-            file: PathBuf::from("data/defects.csv"),
+            // Absolute: never resolved against the caller's current directory.
+            file: ws.project.root.join("data").join("defects.csv"),
             target: "defect".into(),
             positive: Some("1".into()),
             split: Some("group".into()),
@@ -121,10 +141,35 @@ pub struct BindReport {
 }
 
 fn data_table(doc: &mut DocumentMut) -> &mut EditTable {
+    // `data = { ... }` inline tables are converted (keeping their keys), not replaced.
+    if let Some(Item::Value(toml_edit::Value::InlineTable(t))) = doc.get("data") {
+        let table = t.clone().into_table();
+        doc.insert("data", Item::Table(table));
+    }
     if !doc.contains_table("data") {
         doc.insert("data", Item::Table(EditTable::new()));
     }
     doc["data"].as_table_mut().expect("data is a table")
+}
+
+/// Maps an error raised while validating `data bind` flags back to the flag.
+fn as_flag_error(mut e: RustpyError) -> RustpyError {
+    let flag = match e.field.as_deref() {
+        Some("data.target") => Some("--target"),
+        Some("data.positive_label") => Some("--positive"),
+        Some("data.group_column") => Some("--group"),
+        Some("data.id_column") => Some("--id"),
+        Some("data.split") => Some("--split"),
+        Some("data.exclude") => Some("--exclude"),
+        _ => None,
+    };
+    if let Some(flag) = flag {
+        e.field = Some(flag.to_string());
+        if let Some(n) = &e.next_action {
+            e.next_action = Some(n.replace("in rustpy.toml", &format!("with {flag}")));
+        }
+    }
+    e
 }
 
 impl Workspace {
@@ -159,16 +204,31 @@ impl Workspace {
             .strip_prefix(&root)
             .map(|p| p.to_string_lossy().replace('\\', "/"))
             .unwrap_or_else(|_| abs.display().to_string());
-        let split = match (&req.split, &req.group) {
-            (Some(s), _) => s.clone(),
-            (None, Some(_)) => "group".to_string(),
-            (None, None) => "stratified".to_string(),
-        };
+        if let Some(sp) = &req.split {
+            if !matches!(sp.as_str(), "stratified" | "group" | "time") {
+                return Err(RustpyError::new(ErrorCode::ConfigInvalid, Phase::Config, format!("unknown split `{sp}`"))
+                    .field("--split")
+                    .expected("stratified (independent rows) or group (with --group <column>)"));
+            }
+        }
+        // Only the flags given change the file; a new source or target invalidates the
+        // keys that describe the old one (they are re-inferred or must be passed again).
+        let old_source = doc.get("data").and_then(|d| d.get("source")).and_then(|v| v.as_str()).map(str::to_string);
+        let old_target = doc.get("data").and_then(|d| d.get("target")).and_then(|v| v.as_str()).map(str::to_string);
+        let rebinding = old_source.as_deref() != Some(source.as_str()) || old_target.as_deref() != Some(req.target.as_str());
         {
             let data = data_table(&mut doc);
             data["source"] = value(source.clone());
             data["target"] = value(req.target.clone());
-            data["split"] = value(split.clone());
+            if old_target.as_deref() != Some(req.target.as_str()) {
+                // A different target means different labels.
+                data.remove("positive_label");
+            }
+            match (&req.split, &req.group) {
+                (Some(sp), _) => data["split"] = value(sp.clone()),
+                (None, Some(_)) => data["split"] = value("group"),
+                (None, None) => {}
+            }
             if let Some(p) = &req.positive {
                 data["positive_label"] = value(p.clone());
             }
@@ -196,23 +256,75 @@ impl Workspace {
             let pf = ProjectFile::parse(&doc.to_string(), CONFIG_FILE)?;
             resolve(&[pf.project])
         };
-        let mut resolved = resolve_doc(&doc)?;
-        let snap = snapshot_source(project, &resolved.config.data)?;
+        let mut resolved = resolve_doc(&doc).map_err(as_flag_error)?;
+        let mut snap = snapshot_source(project, &resolved.config.data).map_err(as_flag_error)?;
+        let mut kept_notes = Vec::new();
+        if rebinding {
+            // Keys that name columns of the previous file are kept only if the new file
+            // has those columns; the report lists what was kept or dropped.
+            let has = |c: &str| snap.snapshot.column(c).is_some();
+            let data = data_table(&mut doc);
+            for key in ["id_column", "group_column", "time_column"] {
+                let given = (key == "id_column" && req.id.is_some()) || (key == "group_column" && req.group.is_some());
+                if let Some(col) = data.get(key).and_then(|v| v.as_str()).map(str::to_string) {
+                    if given {
+                        continue;
+                    }
+                    if has(&col) {
+                        kept_notes.push(format!("kept data.{key} = \"{col}\" from the previous binding"));
+                    } else {
+                        data.remove(key);
+                        kept_notes.push(format!("dropped data.{key} = \"{col}\" (no such column in the new file)"));
+                        if key == "group_column" && data.get("split").and_then(|v| v.as_str()) == Some("group") && req.split.is_none() {
+                            data.remove("split");
+                            kept_notes.push("split reset to the default (stratified) because the group column is gone".into());
+                        }
+                    }
+                }
+            }
+            if let Some(arr) = data.get("exclude").and_then(|v| v.as_array()).cloned() {
+                let mut kept = toml_edit::Array::new();
+                for v in arr.iter() {
+                    if let Some(c) = v.as_str() {
+                        if has(c) {
+                            kept.push(c);
+                        } else {
+                            kept_notes.push(format!("dropped `{c}` from data.exclude (no such column)"));
+                        }
+                    }
+                }
+                data["exclude"] = value(kept);
+            }
+            if let Some(cols) = data.get("columns").and_then(|v| v.as_table_like()).map(|t| t.iter().map(|(k, _)| k.to_string()).collect::<Vec<_>>()) {
+                for c in cols {
+                    if !has(&c) {
+                        if let Some(t) = data.get_mut("columns").and_then(|v| v.as_table_like_mut()) {
+                            t.remove(&c);
+                        }
+                        kept_notes.push(format!("dropped data.columns.{c} (no such column)"));
+                    }
+                }
+            }
+            resolved = resolve_doc(&doc).map_err(as_flag_error)?;
+            // The snapshot identity depends on the id column: take it again.
+            snap = snapshot_source(project, &resolved.config.data).map_err(as_flag_error)?;
+        }
         if resolved.config.data.positive_label.is_none() {
             let positive = infer_positive(&snap.snapshot, &snap.table, &req.target)?;
             data_table(&mut doc)["positive_label"] = value(positive);
-            resolved = resolve_doc(&doc)?;
+            resolved = resolve_doc(&doc).map_err(as_flag_error)?;
         }
         let cfg = &resolved.config;
-        let features = plan_columns(&snap.snapshot, &snap.table, &cfg.data, cfg.preprocess.max_categories)?;
-        let split = make_split(&snap.snapshot.snapshot_id, &snap.table, &features.target, &cfg.data)?;
+        let features =
+            plan_columns(&snap.snapshot, &snap.table, &cfg.data, cfg.preprocess.max_categories).map_err(as_flag_error)?;
+        let split = make_split(&snap.snapshot.snapshot_id, &snap.table, &features.target, &cfg.data).map_err(as_flag_error)?;
         write_atomic(&project.config_path(), doc.to_string().as_bytes())?;
         Ok(BindReport {
             source,
             snapshot: snap.snapshot,
             target: features.target.clone(),
             columns: features.columns.clone(),
-            warnings: features.warnings.iter().chain(&split.warnings).cloned().collect(),
+            warnings: kept_notes.iter().chain(&features.warnings).chain(&split.warnings).cloned().collect(),
             split: format!("{} (seed {})", split.strategy, split.seed),
             split_counts: [
                 ("train".into(), split.train.rows, split.train.positives),

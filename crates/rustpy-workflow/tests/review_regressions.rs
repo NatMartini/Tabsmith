@@ -343,3 +343,130 @@ fn grouped_split_with_few_unequal_groups_is_refused_or_warned() {
         Ok(r) => assert!(r.warnings.iter().any(|w| w.contains("configured")), "{:?}", r.warnings),
     }
 }
+
+/// runtime-02: bundles build with unknown_category = "error".
+#[test]
+fn bundle_builds_with_strict_unknown_categories() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ws = project(tmp.path(), 1200, true);
+    let a = ws
+        .run(&quick(&["preprocess.unknown_category=\"error\""]), &linear(), &mut |_| {})
+        .unwrap()
+        .runs
+        .remove(0);
+    let b = ws
+        .build_bundle(&a.run_id, &BundleOptions { allow_unevaluated: true, ..Default::default() })
+        .unwrap();
+    assert!(b.check.passed);
+}
+
+fn bundle(ws: &Workspace, dir: &Path, extra: &[&str]) -> std::path::PathBuf {
+    let a = ws.run(&quick(extra), &linear(), &mut |_| {}).unwrap().runs.remove(0);
+    let out = dir.join(format!("bundles/{}", a.run_id));
+    ws.build_bundle(&a.run_id, &BundleOptions { allow_unevaluated: true, out: Some(out.clone()) }).unwrap();
+    out
+}
+
+fn copy_dir(from: &Path, to: &Path) {
+    fs::create_dir_all(to).unwrap();
+    for e in fs::read_dir(from).unwrap() {
+        let e = e.unwrap();
+        if e.path().is_dir() {
+            copy_dir(&e.path(), &to.join(e.file_name()));
+        } else {
+            fs::copy(e.path(), to.join(e.file_name())).unwrap();
+        }
+    }
+}
+
+/// runtime-05/08/12: manifest claims, unlisted files and malformed versions are rejected.
+#[test]
+fn bundle_tampering_is_rejected() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ws = project(tmp.path(), 1200, true);
+    let b = bundle(&ws, tmp.path(), &[]);
+    assert!(Predictor::load(&b, LoadOptions::cpu()).is_ok());
+    let tamper = |name: &str, f: &dyn Fn(&Path)| -> ErrorCode {
+        let t = tmp.path().join(name);
+        copy_dir(&b, &t);
+        f(&t);
+        Predictor::load(&t, LoadOptions::cpu()).unwrap_err().code
+    };
+    let edit_manifest = |key: &'static str, v: serde_json::Value| {
+        move |t: &Path| {
+            let mut m: serde_json::Value = serde_json::from_slice(&fs::read(t.join("manifest.json")).unwrap()).unwrap();
+            let mut cur = &mut m;
+            let parts: Vec<&str> = key.split('.').collect();
+            for p in &parts[..parts.len() - 1] {
+                cur = cur.get_mut(*p).unwrap();
+            }
+            cur[parts[parts.len() - 1]] = v.clone();
+            fs::write(t.join("manifest.json"), serde_json::to_vec(&m).unwrap()).unwrap();
+        }
+    };
+    assert_eq!(tamper("t1", &edit_manifest("evaluation_status", "evaluated".into())), ErrorCode::BundleCorrupt);
+    assert_eq!(tamper("t2", &edit_manifest("runtime.min_runtime_version", "banana".into())), ErrorCode::BundleCorrupt);
+    assert_eq!(tamper("t3", &|t: &Path| fs::write(t.join("train.csv"), "x\n1\n").unwrap()), ErrorCode::BundleCorrupt);
+    assert_eq!(
+        tamper("t4", &|t: &Path| {
+            let mut tr: serde_json::Value = serde_json::from_slice(&fs::read(t.join("transform.json")).unwrap()).unwrap();
+            tr["future_semantics"] = serde_json::json!(true);
+            fs::write(t.join("transform.json"), serde_json::to_vec(&tr).unwrap()).unwrap();
+        }),
+        ErrorCode::BundleCorrupt
+    );
+}
+
+/// runtime-04/06: updates that break the input or output contract are refused.
+#[test]
+fn contract_breaking_updates_are_refused() {
+    use rustpy_runtime::PredictorHandle;
+    let tmp = tempfile::tempdir().unwrap();
+    let ws = project(tmp.path(), 1200, true);
+    let base = bundle(&ws, tmp.path(), &[]);
+    let flipped = bundle(&ws, tmp.path(), &["data.positive_label=\"0\""]);
+    let stricter = bundle(&ws, tmp.path(), &["preprocess.extra_columns=\"error\"", "data.exclude=[\"supplier\"]"]);
+    let h = PredictorHandle::load(&base, LoadOptions::cpu()).unwrap();
+    let before = h.current().bundle_id().to_string();
+    let e = h.try_update(&flipped, LoadOptions::cpu()).unwrap_err();
+    assert_eq!(e.code, ErrorCode::PredictorUpdateFailed);
+    assert!(e.message.contains("prediction meaning changed"), "{}", e.message);
+    let e = h.try_update(&stricter, LoadOptions::cpu()).unwrap_err();
+    assert!(e.message.contains("removed field `supplier`"), "{}", e.message);
+    assert_eq!(h.current().bundle_id(), before);
+    let r = h.try_update(&flipped, LoadOptions::cpu().allow_contract_change(true)).unwrap();
+    assert!(!r.output_changes.is_empty());
+}
+
+/// plan-gaps-12: label mapping for a positive class that sorts first, and text labels.
+#[test]
+fn positive_label_semantics_hold_for_any_label_order() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ws = project(tmp.path(), 1500, true);
+    let b1 = bundle(&ws, tmp.path(), &[]);
+    let b0 = bundle(&ws, tmp.path(), &["data.positive_label=\"0\""]);
+    let p1 = Predictor::load(&b1, LoadOptions::cpu()).unwrap();
+    let p0 = Predictor::load(&b0, LoadOptions::cpu()).unwrap();
+    assert_eq!(p0.output_schema().positive_label, "0");
+    let recs: Vec<Record> = p1.bundle().examples.records.iter().map(|r| Record::from_json(r).unwrap()).collect();
+    for (a, b) in p1.predict(&recs).unwrap().iter().zip(p0.predict(&recs).unwrap()) {
+        // Same data, opposite positive class: probabilities are (close to) complementary.
+        assert!((a.probability + b.probability - 1.0).abs() < 0.2, "{} vs {}", a.probability, b.probability);
+        // ...so, away from the threshold, both name the same class.
+        if (a.probability - 0.5).abs() > 0.2 {
+            assert_eq!(a.label, b.label);
+        }
+    }
+    assert!(p1.predict(&[]).unwrap().is_empty());
+}
+
+/// plan-gaps-12: the target cannot be a feature, excluded or given a kind.
+#[test]
+fn target_cannot_be_excluded_or_typed() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ws = project(tmp.path(), 600, true);
+    for o in ["data.exclude=[\"defect\"]", "data.columns.defect=\"numeric\""] {
+        let e = ws.plan(&quick(&[o])).unwrap_err();
+        assert_eq!(e.code, ErrorCode::ConfigInvalid, "{o}: {e}");
+    }
+}

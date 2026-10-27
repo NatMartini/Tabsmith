@@ -40,6 +40,7 @@ pub const REQUIRED_FILES: &[&str] = &[
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct FileEntry {
     pub path: String,
     pub sha256: String,
@@ -47,6 +48,7 @@ pub struct FileEntry {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RuntimeRequirements {
     /// Oldest `rustpy-runtime` version that can load this bundle.
     pub min_runtime_version: String,
@@ -58,6 +60,7 @@ pub struct RuntimeRequirements {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BundleProvenance {
     pub run_id: String,
     pub candidate: String,
@@ -70,6 +73,7 @@ pub struct BundleProvenance {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BundleManifest {
     pub bundle_format: u32,
     /// Content id: hash over the sorted file entries (excludes the manifest itself).
@@ -105,6 +109,7 @@ pub struct BundleEvaluation {
 
 /// `examples/input.json`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ExampleInputs {
     /// Synthetic records built from transform statistics; never copies of training rows.
     pub records: Vec<serde_json::Value>,
@@ -113,6 +118,7 @@ pub struct ExampleInputs {
 
 /// One expected prediction in `examples/expected.json`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ExpectedPrediction {
     pub label: String,
     pub probability: f64,
@@ -120,14 +126,17 @@ pub struct ExpectedPrediction {
 
 /// `examples/expected.json`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ExampleExpected {
     pub predictions: Vec<ExpectedPrediction>,
     /// Absolute tolerance on probabilities.
     pub tolerance: f64,
 }
 
-/// Bundle id = sha256 over `path\0sha256\n` lines of the sorted file entries.
-pub fn compute_bundle_id(files: &[FileEntry]) -> String {
+/// Bundle id = sha256 over `path\0sha256\n` lines of the sorted file entries,
+/// followed by the canonical JSON of the manifest's claims (everything except
+/// `bundle_id` and `created_at`). Editing a file or a claim changes the id.
+pub fn compute_bundle_id(files: &[FileEntry], claims: &serde_json::Value) -> String {
     let mut sorted: Vec<&FileEntry> = files.iter().collect();
     sorted.sort_by(|a, b| a.path.cmp(&b.path));
     let mut text = String::new();
@@ -137,21 +146,47 @@ pub fn compute_bundle_id(files: &[FileEntry]) -> String {
         text.push_str(&f.sha256);
         text.push('\n');
     }
+    text.push_str(&crate::hash::canonical_hash(claims));
     format!("b-{}", &sha256_hex(text.as_bytes())[..16])
 }
 
-/// Compares dotted `major.minor.patch` versions (missing parts count as 0).
-pub fn version_at_least(have: &str, need: &str) -> bool {
-    fn parse(v: &str) -> Vec<u64> {
-        v.split(['.', '-', '+'])
-            .take(3)
-            .map(|p| p.parse::<u64>().unwrap_or(0))
-            .collect()
+impl BundleManifest {
+    /// The manifest fields covered by the bundle id.
+    pub fn claims(&self) -> serde_json::Value {
+        let mut v = serde_json::to_value(self).expect("manifest serializes");
+        if let Some(o) = v.as_object_mut() {
+            o.remove("bundle_id");
+            o.remove("created_at");
+            o.remove("files");
+        }
+        v
     }
-    let (mut h, mut n) = (parse(have), parse(need));
-    h.resize(3, 0);
-    n.resize(3, 0);
-    h >= n
+
+    pub fn expected_id(&self) -> String {
+        compute_bundle_id(&self.files, &self.claims())
+    }
+}
+
+/// Parses a strict `major.minor.patch` version.
+pub fn parse_version(v: &str) -> Option<[u64; 3]> {
+    let mut parts = v.split('.');
+    let mut out = [0u64; 3];
+    for slot in &mut out {
+        let p = parts.next()?;
+        if p.is_empty() || !p.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        *slot = p.parse().ok()?;
+    }
+    if parts.next().is_some() {
+        return None;
+    }
+    Some(out)
+}
+
+/// `have >= need` for strict `major.minor.patch` versions; `None` if either is malformed.
+pub fn version_at_least(have: &str, need: &str) -> Option<bool> {
+    Some(parse_version(have)? >= parse_version(need)?)
 }
 
 #[cfg(test)]
@@ -159,17 +194,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn bundle_id_is_order_independent() {
+    fn bundle_id_is_order_independent_and_covers_claims() {
         let a = FileEntry { path: "a".into(), sha256: "1".into(), bytes: 1 };
         let b = FileEntry { path: "b".into(), sha256: "2".into(), bytes: 1 };
-        assert_eq!(compute_bundle_id(&[a.clone(), b.clone()]), compute_bundle_id(&[b, a]));
+        let c = serde_json::json!({"evaluation_status": "evaluated"});
+        assert_eq!(compute_bundle_id(&[a.clone(), b.clone()], &c), compute_bundle_id(&[b.clone(), a.clone()], &c));
+        let d = serde_json::json!({"evaluation_status": "unevaluated-candidate"});
+        assert_ne!(compute_bundle_id(&[a.clone(), b.clone()], &c), compute_bundle_id(&[a, b], &d));
     }
 
     #[test]
     fn versions() {
-        assert!(version_at_least("0.1.0", "0.1.0"));
-        assert!(version_at_least("0.2.0", "0.1.9"));
-        assert!(!version_at_least("0.1.0", "0.1.1"));
-        assert!(version_at_least("1.0", "0.9.9"));
+        assert_eq!(version_at_least("0.1.0", "0.1.0"), Some(true));
+        assert_eq!(version_at_least("0.2.0", "0.1.9"), Some(true));
+        assert_eq!(version_at_least("0.1.0", "0.1.1"), Some(false));
+        assert_eq!(version_at_least("0.1.0", "banana"), None);
+        assert_eq!(version_at_least("0.1.0", "v0.2.0"), None);
+        assert_eq!(version_at_least("0.1.0", "1.0"), None);
     }
 }
