@@ -351,3 +351,62 @@ fn one_command_train_and_retrain() {
     // Data flags without a file are a usage error, not silently ignored.
     fails(dir, &["train", "--target", "defect"], "E_CONFIG_INVALID", 2);
 }
+
+/// Minimal HTTP/1.1 client for the serve test: returns (status, JSON body).
+fn http(addr: &str, method: &str, path: &str, body: &str) -> (u16, serde_json::Value) {
+    use std::io::{Read, Write};
+    let mut s = std::net::TcpStream::connect(addr).unwrap();
+    write!(s, "{method} {path} HTTP/1.1\r\nHost: x\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+    let mut text = String::new();
+    s.read_to_string(&mut text).unwrap();
+    let status: u16 = text.split_whitespace().nth(1).unwrap().parse().unwrap();
+    let json = text.split_once("\r\n\r\n").map(|(_, b)| b).unwrap_or("");
+    (status, serde_json::from_str(json).unwrap_or(serde_json::Value::Null))
+}
+
+/// `rustpy serve`: predictions over HTTP equal `rustpy predict`; errors are
+/// structured; /reload swaps bundles only when they pass their self-check.
+#[test]
+fn serve_predicts_over_http() {
+    use std::io::BufRead;
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = new_project(tmp.path(), "srv", 1200);
+    let run = json(&dir, &args(&["run", "--candidates", "linear"], &QUICK));
+    let id = run["result"]["runs"][0]["run_id"].as_str().unwrap().to_string();
+    ok(&dir, &["bundle", "build", "--run", &id, "--allow-unevaluated"]);
+    let mut child = Command::new(BIN)
+        .current_dir(&dir)
+        .args(["serve", "--port", "0", "--allow-reload"])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut first = String::new();
+    std::io::BufReader::new(child.stdout.take().unwrap()).read_line(&mut first).unwrap();
+    let addr = first.trim().strip_prefix("listening on http://").unwrap_or_else(|| panic!("{first}")).to_string();
+    let (code, health) = http(&addr, "GET", "/health", "");
+    assert_eq!(code, 200);
+    assert!(health["bundle_id"].as_str().unwrap().starts_with("b-"));
+    let examples = std::fs::read_to_string(dir.join(format!("bundles/{id}/examples/input.json"))).unwrap();
+    let records: serde_json::Value = serde_json::from_str(&examples).unwrap();
+    let body = serde_json::json!({"records": records["records"]}).to_string();
+    let (code, out) = http(&addr, "POST", "/predict", &body);
+    assert_eq!(code, 200, "{out}");
+    let expected: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join(format!("bundles/{id}/examples/expected.json"))).unwrap()).unwrap();
+    let got = out["predictions"].as_array().unwrap();
+    let want = expected["predictions"].as_array().unwrap();
+    assert_eq!(got.len(), want.len());
+    for (g, w) in got.iter().zip(want) {
+        assert!((g["probability"].as_f64().unwrap() - w["probability"].as_f64().unwrap()).abs() < 1e-6);
+    }
+    let (code, err) = http(&addr, "POST", "/predict", "{\"line\": \"A\"}");
+    assert_eq!(code, 400);
+    assert_eq!(err["error"]["code"], "E_SCHEMA_MISSING_COLUMN");
+    let (code, err) = http(&addr, "POST", "/reload", "{\"bundle\": \"does/not/exist\"}");
+    assert!(code >= 400, "{err}");
+    let (_, still) = http(&addr, "GET", "/health", "");
+    assert_eq!(still["bundle_id"], health["bundle_id"], "a failed reload keeps the old bundle");
+    child.kill().unwrap();
+    let _ = child.wait();
+}

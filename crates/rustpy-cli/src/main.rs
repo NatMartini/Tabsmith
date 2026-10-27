@@ -2,6 +2,7 @@
 
 mod commands;
 mod output;
+mod serve;
 
 use std::process::ExitCode;
 
@@ -182,6 +183,23 @@ pub enum Command {
         /// column is always copied when the input has it.
         #[arg(long, value_delimiter = ',')]
         keep: Vec<String>,
+    },
+    /// Serve a bundle over HTTP: POST /predict, GET /schema, GET /health.
+    Serve {
+        /// Bundle directory (default: the project's most recently built bundle).
+        #[arg(long)]
+        bundle: Option<std::path::PathBuf>,
+        /// Address to bind (use 0.0.0.0 to accept connections from other machines).
+        #[arg(long, default_value = "127.0.0.1")]
+        host: String,
+        #[arg(long, default_value_t = 8080)]
+        port: u16,
+        /// Worker threads.
+        #[arg(long, default_value_t = 4)]
+        threads: usize,
+        /// Enable POST /reload {"bundle": "<dir>"} (the new bundle must load and self-check).
+        #[arg(long)]
+        allow_reload: bool,
     },
     /// Write a static HTML + JSON report of the project to .rustpy/reports/.
     Report,
