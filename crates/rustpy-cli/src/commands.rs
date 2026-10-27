@@ -69,7 +69,7 @@ fn progress_printer(json: bool) -> impl FnMut(Progress) {
                 if !explained {
                     explained = true;
                     eprintln!(
-                        "  (loss = class-weighted log loss, the training objective; early stopping keeps the epoch with the lowest validation loss. The comparison's log_loss is unweighted.)"
+                        "  (loss = the training objective: log loss, class-weighted unless train.<candidate>.class_weight = \"none\"; early stopping keeps the epoch with the lowest validation loss. The comparison's log_loss is unweighted.)"
                     );
                 }
             }
@@ -95,6 +95,11 @@ fn progress_printer(json: bool) -> impl FnMut(Progress) {
             }
         }
     }
+}
+
+/// Comma-separated list arguments: trimmed, without empty entries ("a, b," -> [a, b]).
+fn clean(list: Vec<String>) -> Vec<String> {
+    list.into_iter().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()
 }
 
 pub fn dispatch(cli: Cli) -> Result<u8> {
@@ -136,7 +141,7 @@ pub fn dispatch(cli: Cli) -> Result<u8> {
         }
         Command::Data(DataCommand::Bind { file, target, positive, split, group, id, exclude }) => {
             let ws = workspace(&cli.project)?;
-            let r = ws.bind_data(&BindRequest { file, target, positive, split, group, id, exclude })?;
+            let r = ws.bind_data(&BindRequest { file, target, positive, split, group, id, exclude: clean(exclude) })?;
             if json {
                 print_json(&r);
                 return Ok(0);
@@ -258,7 +263,7 @@ pub fn dispatch(cli: Cli) -> Result<u8> {
                             .next(format!("rustpy train {} --target <column>", file.display()))
                     })?,
                 };
-                let b = ws.bind_data(&BindRequest { file, target, positive, split, group, id, exclude })?;
+                let b = ws.bind_data(&BindRequest { file, target, positive, split, group, id, exclude: clean(exclude) })?;
                 if !json {
                     eprintln!(
                         "· data {}: {} rows × {} columns, target `{}` (positive {:?}: {} rows, negative {:?}: {} rows)",
@@ -355,7 +360,7 @@ pub fn dispatch(cli: Cli) -> Result<u8> {
         }
         Command::Compare { runs } => {
             let ws = workspace(&cli.project)?;
-            let c = ws.compare(&runs)?;
+            let c = ws.compare(&clean(runs))?;
             if json {
                 print_json(&c);
             } else {
@@ -531,7 +536,7 @@ pub fn dispatch(cli: Cli) -> Result<u8> {
         }
         Command::Predict { bundle, input, output, keep } => {
             let bundle = resolve_bundle(&cli.project, bundle, json)?;
-            predict_file(&bundle, &input, output.as_deref(), &keep, json)
+            predict_file(&bundle, &input, output.as_deref(), &clean(keep), json)
         }
         Command::Serve { bundle, host, port, threads, allow_reload } => {
             let bundle = resolve_bundle(&cli.project, bundle, json)?;
@@ -676,7 +681,7 @@ fn resolve_bundle(project: &Option<PathBuf>, bundle: Option<PathBuf>, json: bool
 }
 
 fn parse_candidates(list: Option<Vec<String>>) -> Result<Option<Vec<Candidate>>> {
-    list.map(|list| {
+    list.map(clean).map(|list| {
         list.iter()
             .map(|c| {
                 Candidate::parse(c).ok_or_else(|| {
@@ -864,6 +869,19 @@ fn predict_file(bundle: &Path, input: &Path, output: Option<&Path>, keep: &[Stri
     // Key columns copied verbatim to the output: the bundle's id column (when the
     // input has it) and any --keep columns.
     let id_field = predictor.input_schema().passthrough_id.clone();
+    const OUTPUT_COLUMNS: [&str; 5] = ["row", "label", "probability", "is_positive", "unseen_categories"];
+    if let Some(k) = keep.iter().find(|k| OUTPUT_COLUMNS.contains(&k.as_str())) {
+        return Err(RustpyError::new(
+            ErrorCode::ConfigInvalid,
+            Phase::Predict,
+            format!("--keep `{k}` collides with an output column of the same name"),
+        )
+        .field("--keep")
+        .expected(format!("columns other than {OUTPUT_COLUMNS:?}"))
+        .next(format!("rename `{k}` in the input file (e.g. to `true_{k}`) before predicting")));
+    }
+    let mut present_keys: std::collections::BTreeSet<String> = Default::default();
+    let n_records: usize;
     let mut key_cols: Vec<String> = Vec::new();
     for k in id_field.iter().chain(keep) {
         if !k.is_empty() && !key_cols.contains(k) {
@@ -893,19 +911,39 @@ fn predict_file(bundle: &Path, input: &Path, output: Option<&Path>, keep: &[Stri
                     })
                     .collect::<Result<_>>()?
             };
+            for (i, v) in values.iter().enumerate() {
+                if let Some(o) = v.as_object() {
+                    present_keys.extend(o.keys().cloned());
+                } else {
+                    return Err(RustpyError::new(
+                        ErrorCode::SchemaTypeMismatch,
+                        Phase::Predict,
+                        format!("record {} is not a JSON object", i + 1),
+                    )
+                    .field("--input")
+                    .expected("one JSON object per record"));
+                }
+            }
+            n_records = values.len();
             let records = values.iter().map(Record::from_json).collect::<Result<Vec<_>>>()?;
             predictor.records_table(&records, &key_cols)?
         }
-        _ => rustpy_workflow::data::read_for_prediction(input, predictor.input_schema(), &predictor.bundle().transform, &key_cols)?,
+        _ => {
+            let t = rustpy_workflow::data::read_for_prediction(input, predictor.input_schema(), &predictor.bundle().transform, &key_cols)
+                .map_err(|e| input_error(e, input))?;
+            present_keys.extend(t.names().into_iter().map(str::to_string));
+            n_records = t.n_rows();
+            t
+        }
     };
-    // --keep columns must exist; the id column is used only when the input has it.
+    // --keep columns must exist (an empty batch has nothing to check); the id
+    // column is used only when the input has it.
     for k in keep {
-        if table.column(k).is_none() {
-            let mut present = table.names();
-            present.sort_unstable();
+        if n_records > 0 && !present_keys.contains(k) {
+            let present: Vec<&String> = present_keys.iter().collect();
             return Err(RustpyError::new(ErrorCode::SchemaMissingColumn, Phase::Predict, format!("--keep column `{k}` is not in the input"))
                 .field(k.clone())
-                .actual(format!("columns present: [{}]", present.join(", ")))
+                .actual(format!("columns present: {present:?}"))
                 .next("pass columns that exist in the input file, separated by commas (--keep customer_id,month)"));
         }
     }
@@ -921,8 +959,19 @@ fn predict_file(bundle: &Path, input: &Path, output: Option<&Path>, keep: &[Stri
     let model_table = table.select(&model_cols);
     let preds = predictor.predict_table(&model_table)?;
     let unseen = predictor.unseen_categories(&model_table);
+    // Kept columns that are also model inputs were parsed (59.3320 -> 59.332);
+    // re-read them as text so the output carries the file's own spelling.
+    let verbatim = match ext.as_str() {
+        "json" | "jsonl" | "ndjson" => None,
+        _ if key_cols.iter().any(|k| schema.field(k).is_some()) => Some(
+            rustpy_workflow::data::read_columns_as_text(input, schema, &predictor.bundle().transform, &key_cols)
+                .map_err(|e| input_error(e, input))?,
+        ),
+        _ => None,
+    };
+    let key_source = verbatim.as_ref().unwrap_or(&table);
     let key_values: Vec<Vec<String>> = (0..table.n_rows())
-        .map(|i| key_cols.iter().map(|k| value_ref_text(table.column(k).expect("checked above").get(i))).collect())
+        .map(|i| key_cols.iter().map(|k| value_ref_text(key_source.column(k).expect("checked above").get(i))).collect())
         .collect();
     // Without key columns, rows are numbered from 1 in input order.
     let headers: Vec<String> = if key_cols.is_empty() { vec!["row".into()] } else { key_cols.clone() };
@@ -996,6 +1045,20 @@ fn predict_file(bundle: &Path, input: &Path, output: Option<&Path>, keep: &[Stri
         }
     }
     Ok(0)
+}
+
+/// Read errors in `predict` concern `--input`, not the project's data.source.
+fn input_error(e: RustpyError, input: &Path) -> RustpyError {
+    if e.phase != Phase::Data {
+        return e;
+    }
+    let next = match e.code {
+        ErrorCode::DataUnsupported => "predict reads .csv, .parquet, .json and .jsonl files; rename or convert the input".to_string(),
+        _ => format!("check {} (it needs a header row and at least the bundle's input columns)", input.display()),
+    };
+    let mut e = e.in_phase(Phase::Predict).next(next);
+    e.field = Some("--input".into());
+    e
 }
 
 /// Human-readable warnings for categorical values the bundle has never seen.

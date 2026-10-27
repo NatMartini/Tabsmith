@@ -628,3 +628,68 @@ fn read_options_do_not_make_a_new_data_version() {
     let e = ws.evaluate_run(&b.run_id, SplitName::Test, false, false).unwrap_err();
     assert_eq!(e.code, ErrorCode::TestSetReuse, "{e}");
 }
+
+/// review-cli: capitalised Yes/No labels are inferred; --exclude adds to the list
+/// and says what it kept; a symlinked data file stays bound by its own path.
+#[test]
+fn bind_labels_exclude_note_and_symlinks() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ws = project(tmp.path(), 300, false);
+    let mut text = String::from("a,b,c,Churn\n");
+    for i in 0..300 {
+        text.push_str(&format!("{},{},{},{}\n", i % 7, i % 5, i % 3, if i % 4 == 0 { "Yes" } else { "No" }));
+    }
+    fs::write(tmp.path().join("data/telco.csv"), &text).unwrap();
+    let bind = |exclude: Vec<String>| {
+        ws.bind_data(&BindRequest {
+            file: tmp.path().join("data/telco.csv"),
+            target: "Churn".into(),
+            exclude,
+            ..Default::default()
+        })
+    };
+    let r = bind(vec!["a".into()]).unwrap();
+    assert_eq!(r.target.positive_label, "Yes");
+    let r = bind(vec!["b".into()]).unwrap();
+    assert!(r.warnings.iter().any(|w| w.contains("kept from the previous binding") && w.contains("\"a\"")), "{:?}", r.warnings);
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink("telco.csv", tmp.path().join("data/current.csv")).unwrap();
+        let r = ws
+            .bind_data(&BindRequest {
+                file: tmp.path().join("data/current.csv"),
+                target: "Churn".into(),
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(r.source, "data/current.csv");
+    }
+}
+
+/// review-cli: Parquet files with date and timestamp columns can be bound; the
+/// temporal columns are read as text and planned as dates (not features).
+#[test]
+fn parquet_with_temporal_columns() {
+    use polars::prelude::*;
+    let tmp = tempfile::tempdir().unwrap();
+    let ws = project(tmp.path(), 300, false);
+    let n = 300;
+    let days: Vec<i32> = (0..n).map(|i| 19_000 + i).collect();
+    let mut df = DataFrame::new(
+        n as usize,
+        vec![
+            Column::new("day".into(), days).cast(&DataType::Date).unwrap(),
+            Column::new("x".into(), (0..n).map(|i| f64::from(i % 13)).collect::<Vec<_>>()),
+            Column::new("y".into(), (0..n).map(|i| i % 3 == 0).collect::<Vec<_>>()),
+        ],
+    )
+    .unwrap();
+    let path = tmp.path().join("data/events.parquet");
+    ParquetWriter::new(fs::File::create(&path).unwrap()).finish(&mut df).unwrap();
+    let r = ws
+        .bind_data(&BindRequest { file: path, target: "y".into(), positive: Some("true".into()), ..Default::default() })
+        .unwrap();
+    let day = r.columns.iter().find(|c| c.name == "day").unwrap();
+    assert!(matches!(day.role, rustpy_workflow::data::ColumnRole::Excluded { .. }), "{:?}", day.role);
+    assert!(r.warnings.iter().any(|w| w.contains("holds dates")), "{:?}", r.warnings);
+}

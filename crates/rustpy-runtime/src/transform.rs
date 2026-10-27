@@ -133,7 +133,7 @@ pub fn check_table_columns(schema: &InputSchema, table: &Table, phase: Phase) ->
         if table.column(&field.name).is_none() {
             let mut present: Vec<&str> = names.clone();
             present.sort_unstable();
-            return Err(missing_column_error(&field.name, field.kind, &present, None, phase));
+            return Err(missing_column_error(&field.name, field.kind, field.nullable, &present, None, phase));
         }
     }
     if schema.extra_columns == rustpy_contracts::config::ExtraColumnPolicy::Error {
@@ -150,6 +150,7 @@ pub fn check_table_columns(schema: &InputSchema, table: &Table, phase: Phase) ->
 pub(crate) fn missing_column_error(
     name: &str,
     kind: FieldKind,
+    nullable: bool,
     present: &[&str],
     record: Option<usize>,
     phase: Phase,
@@ -162,11 +163,17 @@ pub(crate) fn missing_column_error(
         format!("{subject} is missing required field `{name}`"),
     )
     .field(name)
-    .expected(format!("field `{name}` ({}; a missing value is allowed: null in records, an empty cell in CSV)", kind.as_str()))
+    .expected(if nullable {
+        format!("field `{name}` ({}; a missing value is allowed: null in records, an empty cell in CSV)", kind.as_str())
+    } else {
+        format!("field `{name}` ({}; a value is required: this bundle does not accept missing values here)", kind.as_str())
+    })
     .actual(format!("fields present: [{}]", shown.join(", ")))
-    .next(format!(
-        "add `{name}` to the input (missing values are imputed as in training); the bundle's input.schema.json lists every field"
-    ))
+    .next(if nullable {
+        format!("add `{name}` to the input (missing values are imputed as in training); the bundle's input.schema.json lists every field")
+    } else {
+        format!("add `{name}` with a value seen in training; the bundle's input.schema.json lists every field")
+    })
 }
 
 pub(crate) fn extra_column_error(name: &str, phase: Phase) -> RustpyError {
@@ -181,6 +188,16 @@ pub(crate) fn extra_column_error(name: &str, phase: Phase) -> RustpyError {
 
 /// Applies the frozen transform to a table. Statistics are never re-estimated here.
 pub fn apply_transform(t: &FittedTransform, table: &Table, phase: Phase) -> Result<Matrix> {
+    transform_impl(t, table, phase, &|r| r)
+}
+
+/// Like [`apply_transform`] for a table holding rows `rows` of a larger dataset:
+/// errors name the row of the dataset (`rows[i]`), not the position in `table`.
+pub fn apply_transform_rows(t: &FittedTransform, table: &Table, phase: Phase, rows: &[usize]) -> Result<Matrix> {
+    transform_impl(t, table, phase, &|r| rows.get(r).copied().unwrap_or(r))
+}
+
+fn transform_impl(t: &FittedTransform, table: &Table, phase: Phase, source_row: &dyn Fn(usize) -> usize) -> Result<Matrix> {
     let rows = table.n_rows();
     let cols = t.output_dim;
     let mut data = vec![0f32; rows * cols];
@@ -188,7 +205,13 @@ pub fn apply_transform(t: &FittedTransform, table: &Table, phase: Phase) -> Resu
     for feature in &t.features {
         let name = feature.name();
         let column = table.column(name).ok_or_else(|| {
-            missing_column_error(name, feature_kind(feature), &table.names(), None, phase)
+            let nullable = match feature {
+                FeatureTransform::Numeric { .. } => true,
+                FeatureTransform::Categorical { missing_slot, .. } => {
+                    *missing_slot || t.unknown_category == UnknownCategoryPolicy::Ignore
+                }
+            };
+            missing_column_error(name, feature_kind(feature), nullable, &table.names(), None, phase)
         })?;
         match feature {
             FeatureTransform::Numeric {
@@ -202,14 +225,14 @@ pub fn apply_transform(t: &FittedTransform, table: &Table, phase: Phase) -> Resu
                     let v = column.get(row);
                     let v = tokens.numeric(v);
                     let x = coerce_numeric(v, t.nan)
-                        .map_err(|e| with_missing_tokens(e.into_error(name, row, v, phase), &t.missing_tokens))?
+                        .map_err(|e| with_missing_tokens(e.into_error(name, source_row(row), v, phase), &t.missing_tokens))?
                         .unwrap_or(*impute);
                     let z = ((x - mean) / std) as f32;
                     if !z.is_finite() {
                         return Err(RustpyError::new(
                             ErrorCode::InvalidValue,
                             phase,
-                            format!("field `{name}`, record {}: value {x} is too large to encode (out of the f32 range after scaling)", row + 1),
+                            format!("field `{name}`, record {}: value {x} is too large to encode (out of the f32 range after scaling)", source_row(row) + 1),
                         )
                         .field(name)
                         .expected(format!("a value within the f32 range after standardization (training mean {mean:.4}, std {std:.4})"))
@@ -231,8 +254,8 @@ pub fn apply_transform(t: &FittedTransform, table: &Table, phase: Phase) -> Resu
                 for row in 0..rows {
                     let v = column.get(row);
                     let v = tokens.categorical(v);
-                    check_category_type(*raw_dtype, v).map_err(|e| e.into_error(name, row, v, phase))?;
-                    let slot = match coerce_category(v, t.nan).map_err(|e| e.into_error(name, row, v, phase))? {
+                    check_category_type(*raw_dtype, v).map_err(|e| e.into_error(name, source_row(row), v, phase))?;
+                    let slot = match coerce_category(v, t.nan).map_err(|e| e.into_error(name, source_row(row), v, phase))? {
                         Some(c) => index.get(c.as_ref()).copied(),
                         None if *missing_slot => Some(categories.len()),
                         None => None,
@@ -240,7 +263,7 @@ pub fn apply_transform(t: &FittedTransform, table: &Table, phase: Phase) -> Resu
                     match slot {
                         Some(s) => data[row * cols + offset + s] = 1.0,
                         None if t.unknown_category == UnknownCategoryPolicy::Ignore => {}
-                        None => return Err(unknown_category_error(name, row, v, categories, phase)),
+                        None => return Err(unknown_category_error(name, source_row(row), v, categories, phase)),
                     }
                 }
             }
@@ -524,7 +547,7 @@ mod tests {
         assert!(e.message.contains("record 2"), "{}", e.message);
         let next = e.next_action.unwrap();
         assert!(next.contains("\"NA\"") && next.contains("\"-999\""), "{next}");
-        let e = missing_column_error("x", FieldKind::Numeric, &["c"], None, Phase::Predict);
+        let e = missing_column_error("x", FieldKind::Numeric, true, &["c"], None, Phase::Predict);
         assert!(e.message.starts_with("the input is missing"), "{}", e.message);
     }
 

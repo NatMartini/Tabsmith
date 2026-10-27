@@ -26,7 +26,7 @@ pub use bundle::{Bundle, Device, LoadOptions};
 pub use predictor::{CheckReport, Prediction, Predictor, PredictorHandle, UpdateReport};
 pub use rustpy_contracts::{ErrorCode, Phase, RustpyError};
 pub use transform::{
-    apply_transform, check_category_type, coerce_category, coerce_numeric, unseen_categories, CoerceError, Matrix, MissingTokens,
+    apply_transform, apply_transform_rows, check_category_type, coerce_category, coerce_numeric, unseen_categories, CoerceError, Matrix, MissingTokens,
     UnseenCategories,
 };
 pub use value::{Column, ColumnData, Record, Table, Value, ValueRef};

@@ -114,7 +114,7 @@ pub enum Command {
         /// Unique row id column (kept out of the features, copied to predictions).
         #[arg(long)]
         id: Option<String>,
-        /// Columns to exclude from the features (comma-separated).
+        /// Columns to exclude from the features (comma-separated; added to the existing data.exclude).
         #[arg(long, value_delimiter = ',')]
         exclude: Vec<String>,
         /// Comma-separated subset of candidates (default: selection.candidates).
@@ -226,7 +226,7 @@ pub enum DataCommand {
         /// Unique row id column (never used as a feature).
         #[arg(long)]
         id: Option<String>,
-        /// Columns to exclude from the features (comma-separated).
+        /// Columns to exclude from the features (comma-separated; added to the existing data.exclude).
         #[arg(long, value_delimiter = ',')]
         exclude: Vec<String>,
     },

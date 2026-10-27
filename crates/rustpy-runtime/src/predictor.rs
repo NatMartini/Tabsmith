@@ -197,7 +197,7 @@ impl Predictor {
             for field in schema.fields.iter().filter(|f| f.required) {
                 if !r.contains(&field.name) {
                     let present: Vec<&str> = r.names().collect();
-                    return Err(missing_column_error(&field.name, field.kind, &present, Some(i), Phase::Predict));
+                    return Err(missing_column_error(&field.name, field.kind, field.nullable, &present, Some(i), Phase::Predict));
                 }
             }
             if schema.extra_columns == ExtraColumnPolicy::Error {

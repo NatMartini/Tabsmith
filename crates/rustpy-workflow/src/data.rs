@@ -253,9 +253,15 @@ fn raw_of(dtype: &DataType) -> Option<RawDtype> {
         DataType::Boolean => Some(RawDtype::Bool),
         DataType::String => Some(RawDtype::Text),
         other => {
-            // Parquet dictionary/categorical and decimal columns map to text / float.
+            // Parquet dictionary/categorical and decimal columns map to text / float;
+            // dates, timestamps and durations to their text form (planned as dates).
             let name = format!("{other:?}");
-            if name.starts_with("Categorical") || name.starts_with("Enum") {
+            if name.starts_with("Categorical")
+                || name.starts_with("Enum")
+                || name.starts_with("Date")
+                || name.starts_with("Time")
+                || name.starts_with("Duration")
+            {
                 Some(RawDtype::Text)
             } else if name.starts_with("Decimal") {
                 Some(RawDtype::Float)
@@ -780,6 +786,25 @@ pub fn read_for_prediction(
     Ok(Table::new(columns)?)
 }
 
+/// Reads only `columns`, as verbatim text (for copying identifiers to the output).
+pub fn read_columns_as_text(
+    path: &Path,
+    schema: &rustpy_contracts::schema::InputSchema,
+    transform: &rustpy_contracts::transform::FittedTransform,
+    columns: &[String],
+) -> Result<Table> {
+    let mut cfg = DataConfig::default();
+    if let Some(d) = &schema.csv_delimiter {
+        cfg.csv_delimiter = d.clone();
+    }
+    cfg.null_values = transform.missing_tokens.clone();
+    let mut opts = ReadOptions::from_config(path, &cfg)?;
+    opts.text_columns = columns.to_vec();
+    let table = read_table(path, &opts, None)?.table;
+    let names: Vec<&str> = columns.iter().map(String::as_str).filter(|c| table.column(c).is_some()).collect();
+    Ok(table.select(&names))
+}
+
 fn check_header_only(path: &Path, line: &str, delimiter: u8) -> Result<Vec<String>> {
     let line = line.trim_start_matches('\u{feff}');
     let names: Vec<String> = line.split(delimiter as char).map(|s| s.trim_matches('"').to_string()).collect();
@@ -843,27 +868,53 @@ fn looks_like_id_name(name: &str) -> bool {
     lower == "id" || lower.ends_with("_id") || lower.ends_with("-id") || name.ends_with("Id") || name.ends_with("ID")
 }
 
-/// ISO-like dates and months (`2026-01`, `2026/01/31`, `2026-01-31T08:00`) and
-/// day-first or month-first dates with a four-digit year (`31.01.2026`, `1/31/2026`).
+/// Dates and months as exported by databases and spreadsheets: `2026-01`,
+/// `2026/1`, `2026-01-31`, `2026/1/5 08:00`, `2026-01-31T08:00`, `31.01.2026`,
+/// `1/31/2026`, `1/31/26`, `2026年1月`. Version strings (`6.1.7601`) and codes
+/// (`12-34-5678`) are not dates: parts must be valid months, days and years.
 fn looks_like_date(s: &str) -> bool {
-    let b = s.trim().as_bytes();
-    let digits = |r: std::ops::Range<usize>| b.get(r).is_some_and(|x| x.iter().all(u8::is_ascii_digit));
-    let sep = |i: usize| matches!(b.get(i), Some(b'-' | b'/' | b'.'));
-    let month_ok = |r: std::ops::Range<usize>| {
-        std::str::from_utf8(&b[r]).ok().and_then(|m| m.parse::<u32>().ok()).is_some_and(|m| (1..=12).contains(&m))
-    };
-    // YYYY-MM[-DD[...]]
-    if digits(0..4) && sep(4) && digits(5..7) && month_ok(5..7) {
-        return b.len() == 7 || (sep(7) && digits(8..10));
+    let s = s.trim();
+    // Drop a time part: "2026-01-31T08:00", "2026/1/5 08:00".
+    let date = s.split(['T', ' ']).next().unwrap_or(s);
+    if let Some(rest) = date.strip_suffix('月').or_else(|| date.strip_suffix('日')) {
+        // 2026年1月 / 2026年1月5日
+        let parts: Vec<&str> = rest.split(['年', '月']).collect();
+        let num = |p: &str| p.parse::<u32>().ok();
+        return match parts.as_slice() {
+            [y, m] => num(y).is_some_and(year_ok) && num(m).is_some_and(|m| (1..=12).contains(&m)) && y.len() == 4,
+            [y, m, d] => {
+                y.len() == 4
+                    && num(y).is_some_and(year_ok)
+                    && num(m).is_some_and(|m| (1..=12).contains(&m))
+                    && num(d).is_some_and(|d| (1..=31).contains(&d))
+            }
+            _ => false,
+        };
     }
-    // D/M/YYYY, DD.MM.YYYY, M-D-YYYY (optionally followed by a time)
-    let parts: Vec<&[u8]> = b.split(|c| matches!(c, b'-' | b'/' | b'.')).collect();
-    if parts.len() == 3 {
-        let year = parts[2].iter().take_while(|c| c.is_ascii_digit()).count() == 4;
-        let small = |p: &[u8]| (1..=2).contains(&p.len()) && p.iter().all(u8::is_ascii_digit);
-        return small(parts[0]) && small(parts[1]) && year;
+    let parts: Vec<&str> = date.split(['-', '/', '.']).collect();
+    if parts.iter().any(|p| p.is_empty() || p.len() > 4 || !p.bytes().all(|b| b.is_ascii_digit())) {
+        return false;
     }
-    false
+    let n: Vec<u32> = parts.iter().map(|p| p.parse().unwrap_or(0)).collect();
+    let month = |x: u32| (1..=12).contains(&x);
+    let day = |x: u32| (1..=31).contains(&x);
+    let short = |i: usize| parts[i].len() <= 2;
+    match n.as_slice() {
+        // YYYY-MM (a two-part value needs a separator other than '.', which is a decimal number).
+        [y, m] => parts[0].len() == 4 && year_ok(*y) && short(1) && month(*m) && !date.contains('.'),
+        // YYYY-M-D
+        [y, m, d] if parts[0].len() == 4 => year_ok(*y) && short(1) && short(2) && month(*m) && day(*d),
+        // D.M.YYYY, M/D/YYYY, D-M-YY ...: one of the first two parts is a month, the other a day.
+        [a, b, y] if short(0) && short(1) && (parts[2].len() == 4 || parts[2].len() == 2) => {
+            let year = if parts[2].len() == 4 { year_ok(*y) } else { true };
+            year && ((month(*a) && day(*b)) || (day(*a) && month(*b)))
+        }
+        _ => false,
+    }
+}
+
+fn year_ok(y: u32) -> bool {
+    (1900..=2200).contains(&y)
 }
 
 /// Decides the role of every column and validates the target.
@@ -1202,10 +1253,13 @@ mod tests {
 
     #[test]
     fn date_like_text() {
-        for d in ["2026-01", "2026/12", "2026-01-31", "2026-01-31T08:00:00", "31.01.2026", "1/31/2026", "12-5-2026 10:00"] {
+        for d in [
+            "2026-01", "2026/12", "2026/1", "2026-1", "2026/1/5", "2026-01-31", "2026-01-31T08:00:00", "2026/1/5 08:00",
+            "31.01.2026", "1/31/2026", "1/31/26", "12-5-2026 10:00", "2026年1月", "2026年1月5日",
+        ] {
             assert!(looks_like_date(d), "{d}");
         }
-        for t in ["2026-13", "A-17", "S01", "12-34", "1.2.3", "2026", "line-B", "2026-1"] {
+        for t in ["2026-13", "A-17", "S01", "12-34", "1.2.3", "2026", "line-B", "6.1.7601", "12-34-5678", "2026.5", "3.14", "v2.0"] {
             assert!(!looks_like_date(t), "{t}");
         }
     }
