@@ -3,8 +3,15 @@ name = "rustpy-runtime"
 description = "Lightweight RustPy prediction runtime: bundle verification, frozen preprocessing, model execution."
 version.workspace = true
 edition.workspace = true
-rust-version.workspace = true
+# Lower than the workspace minimum: applications that only load bundles do not pay
+# for Burn or Polars. 1.88 is the floor set by sha2 0.11; checked by the `msrv` CI job.
+rust-version = "1.88"
 license.workspace = true
+authors.workspace = true
+readme = "README.md"
+keywords = ["machine-learning", "inference", "tabular", "classification", "prediction"]
+categories = ["science"]
+include = ["/src/**/*.rs", "/README.md", "/LICENSE-MIT", "/LICENSE-APACHE"]
 
 [dependencies]
 rustpy-contracts.workspace = true

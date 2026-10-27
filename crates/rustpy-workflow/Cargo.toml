@@ -5,6 +5,13 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+authors.workspace = true
+readme = "README.md"
+keywords = ["machine-learning", "training", "tabular", "classification", "burn"]
+categories = ["science"]
+# Integration tests and examples stay in the repository: some read fixtures from
+# ../../fixtures, which a published package cannot contain.
+include = ["/src/**/*.rs", "/README.md", "/LICENSE-MIT", "/LICENSE-APACHE"]
 
 [dependencies]
 rustpy-contracts.workspace = true
