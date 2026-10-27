@@ -530,22 +530,16 @@ pub fn dispatch(cli: Cli) -> Result<u8> {
             Ok(0)
         }
         Command::Predict { bundle, input, output, keep } => {
-            let bundle = match bundle {
-                Some(b) => b,
-                None => {
-                    let ws = workspace(&cli.project).map_err(|e| e.next("pass --bundle <dir>, or run inside a project that has built one"))?;
-                    let (dir, m) = ws.latest_bundle().ok_or_else(|| {
-                        RustpyError::new(ErrorCode::BundleNotFound, Phase::Predict, "this project has no bundle yet")
-                            .field("--bundle")
-                            .next("rustpy train <file> --target <column> (or rustpy bundle build --run <run>)")
-                    })?;
-                    if !json {
-                        eprintln!("· using the latest bundle {} ({}, from {})", ws.project.rel(&dir), m.bundle_id, m.provenance.run_id);
-                    }
-                    dir
-                }
-            };
+            let bundle = resolve_bundle(&cli.project, bundle, json)?;
             predict_file(&bundle, &input, output.as_deref(), &keep, json)
+        }
+        Command::Serve { bundle, host, port, threads, allow_reload } => {
+            let bundle = resolve_bundle(&cli.project, bundle, json)?;
+            let stop = Arc::new(AtomicBool::new(false));
+            let s = stop.clone();
+            let _ = ctrlc::set_handler(move || s.store(true, Ordering::SeqCst));
+            crate::serve::serve(crate::serve::ServeOptions { bundle, host, port, threads, allow_reload }, stop)?;
+            Ok(0)
         }
         Command::Report => {
             let ws = workspace(&cli.project)?;
@@ -662,6 +656,23 @@ fn print_plan(plan: &rustpy_workflow::setup::PlanReport) {
         println!("note: {w}");
     }
     println!("\nnext: rustpy run");
+}
+
+/// `--bundle`, or the project's most recently built bundle.
+fn resolve_bundle(project: &Option<PathBuf>, bundle: Option<PathBuf>, json: bool) -> Result<PathBuf> {
+    if let Some(b) = bundle {
+        return Ok(b);
+    }
+    let ws = workspace(project).map_err(|e| e.next("pass --bundle <dir>, or run inside a project that has built one"))?;
+    let (dir, m) = ws.latest_bundle().ok_or_else(|| {
+        RustpyError::new(ErrorCode::BundleNotFound, Phase::Predict, "this project has no bundle yet")
+            .field("--bundle")
+            .next("rustpy train <file> --target <column> (or rustpy bundle build --run <run>)")
+    })?;
+    if !json {
+        eprintln!("· using the latest bundle {} ({}, from {})", ws.project.rel(&dir), m.bundle_id, m.provenance.run_id);
+    }
+    Ok(dir)
 }
 
 fn parse_candidates(list: Option<Vec<String>>) -> Result<Option<Vec<Candidate>>> {
