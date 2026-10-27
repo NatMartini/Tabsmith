@@ -911,7 +911,10 @@ fn parse_candidates(list: Option<Vec<String>>) -> Result<Option<Vec<Candidate>>>
 
 /// Summary of `rustpy train`.
 fn print_auto(ws: &Workspace, r: &rustpy_workflow::auto::AutoReport) {
-    print_comparison(&r.group.comparison);
+    // The data-change note was already shown as a progress line while training.
+    let mut comparison = r.group.comparison.clone();
+    comparison.notes.retain(|n| !n.starts_with("new data version:"));
+    print_comparison(&comparison);
     for run in &r.group.runs {
         if let Some(e) = &run.error {
             eprint!("{}", e.render());
