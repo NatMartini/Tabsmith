@@ -80,6 +80,28 @@ step 13-app-predict 0 "$APP" ./target/release/predict-app "$P/bundles/$BEST"
 (cd "$APP" && ./target/release/predict-app "$P/bundles/$BEST" <"$WORK/records.jsonl") >"$EVID/app_predictions.txt" 2>&1
 step 14-app-typed 0 "$APP" ./target/release/typed "$P/bundles/$BEST"
 
+echo "== one command: rustpy train, predict with the newest bundle, serve over HTTP"
+O="$WORK/one"
+mkdir -p "$O"
+step 15a-sample-data 0 "$O" "$BIN" sample-data machines.csv --rows 10000
+step 15b-train 0 "$O" "$BIN" train machines.csv --target defect --group device_id
+"$BIN" --project "$O" train --json >"$EVID/train_retrain_same_data.json" 2>/dev/null
+step 15c-sample-new 0 "$O" "$BIN" sample-data new.csv --rows 200 --seed 7
+step 15d-predict-default-bundle 0 "$O" "$BIN" predict --input new.csv --keep unit_id --output preds.csv
+step 15e-more-data 0 "$O" sh -c "$BIN sample-data more.csv --rows 3000 --seed 5 --shifted && tail -n +2 more.csv >> machines.csv"
+step 15f-retrain-new-data 0 "$O" "$BIN" train
+"$BIN" --project "$O" runs --json >"$EVID/train_runs.json"
+(cd "$O" && exec "$BIN" serve --port 0 >"$EVID/logs/16-serve.out" 2>"$EVID/logs/16-serve.err") &
+SPID=$!
+for _ in $(seq 50); do grep -q "listening on" "$EVID/logs/16-serve.out" 2>/dev/null && break; sleep 0.1; done
+ADDR=$(sed -n 's|listening on http://||p' "$EVID/logs/16-serve.out" | head -1)
+B=$(ls -d "$O"/bundles/*/ | tail -1)
+step 16a-serve-health 0 "$O" curl -fsS "http://$ADDR/health"
+step 16b-serve-predict 0 "$O" curl -fsS -X POST "http://$ADDR/predict" --data-binary "@${B}examples/input.json"
+step 16c-serve-bad-input 22 "$O" curl -fsS -X POST "http://$ADDR/predict" -d '{"line": "A"}'
+kill -INT $SPID; wait $SPID
+echo "{\"step\": \"16d-serve-sigint\", \"exit\": $?, \"expected_exit\": 0}" >>"$STEPS"
+
 echo "== second iteration: new data delivery at the same path"
 step 20-new-data 0 "$P" "$BIN" sample-data data/defects.csv --rows 12000 --seed 43 --shifted
 step 21-run-v2 0 "$P" "$BIN" run
