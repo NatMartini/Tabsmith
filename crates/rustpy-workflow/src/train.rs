@@ -177,6 +177,31 @@ pub struct ResumeKey {
     pub engine: String,
     pub rustpy_version: String,
     pub n_train: usize,
+    /// OS / architecture / SIMD features: bit-identical continuation is only claimed
+    /// on the same platform (the matrix kernels are chosen by CPU features).
+    #[serde(default)]
+    pub platform: String,
+}
+
+/// Platform identity relevant to floating-point results.
+pub fn platform_fingerprint() -> String {
+    #[allow(unused_mut)]
+    let mut features: Vec<&str> = Vec::new();
+    #[cfg(target_arch = "x86_64")]
+    {
+        for (name, on) in [
+            ("sse2", std::arch::is_x86_feature_detected!("sse2")),
+            ("avx", std::arch::is_x86_feature_detected!("avx")),
+            ("avx2", std::arch::is_x86_feature_detected!("avx2")),
+            ("fma", std::arch::is_x86_feature_detected!("fma")),
+            ("avx512f", std::arch::is_x86_feature_detected!("avx512f")),
+        ] {
+            if on {
+                features.push(name);
+            }
+        }
+    }
+    format!("{}/{} [{}]", std::env::consts::OS, std::env::consts::ARCH, features.join(","))
 }
 
 impl ResumeKey {
@@ -198,6 +223,7 @@ impl ResumeKey {
         cmp!(engine, "training engine");
         cmp!(rustpy_version, "rustpy version");
         cmp!(n_train, "training rows");
+        cmp!(platform, "platform (OS/CPU features)");
         if self.train_config != other.train_config {
             d.push("training configuration".into());
         }
@@ -253,6 +279,9 @@ pub struct RunControl {
     /// Test hook: abort the process right after this global step, without cleanup,
     /// to simulate a crash (`rustpy run --simulate-crash-after-steps N`, hidden).
     pub crash_after_steps: Option<u64>,
+    /// Test hook: request cancellation once this global step is reached (a clean
+    /// stop with a mid-epoch checkpoint, like Ctrl-C at a deterministic point).
+    pub cancel_after_steps: Option<u64>,
 }
 
 pub struct TrainInputs<'a> {
@@ -411,6 +440,9 @@ pub fn train(
             state.next_batch += 1;
             state.epoch_loss_sum += f64::from(loss_value);
             state.epoch_batches += 1;
+            if control.cancel_after_steps == Some(state.step) {
+                control.cancel.store(true, Ordering::SeqCst);
+            }
             if control.crash_after_steps == Some(state.step) {
                 eprintln!("[test hook] simulating a crash after step {}", state.step);
                 std::process::exit(137);
@@ -590,8 +622,8 @@ pub fn latest_checkpoint(root: &Path) -> Option<PathBuf> {
     list_checkpoints(root).pop()
 }
 
-/// Verifies hashes and compatibility, then restores model, optimizer and loop state.
-pub fn load_checkpoint(dir: &Path, key: &ResumeKey, device: &Device) -> Result<LoadedCheckpoint> {
+/// Verifies every file of a checkpoint against its recorded hash.
+pub fn verify_checkpoint(dir: &Path) -> Result<()> {
     let files: CheckpointFiles = crate::project::read_json(&dir.join("files.json"), Phase::Resume)
         .map_err(|_| ck_err(ErrorCode::CheckpointCorrupt, format!("checkpoint `{}` has no file list", dir.display())))?;
     for (f, sha, bytes) in &files.files {
@@ -603,9 +635,15 @@ pub fn load_checkpoint(dir: &Path, key: &ResumeKey, device: &Device) -> Result<L
                 format!("checkpoint file `{}` is missing or damaged", p.display()),
             )
             .field(p.display().to_string())
-            .next("resume from an earlier checkpoint is not possible automatically; start a new run (`rustpy run`)"));
+            .next("an older checkpoint is used automatically when one verifies; otherwise start a new run (`rustpy run`)"));
         }
     }
+    Ok(())
+}
+
+/// Verifies hashes and compatibility, then restores model, optimizer and loop state.
+pub fn load_checkpoint(dir: &Path, key: &ResumeKey, device: &Device) -> Result<LoadedCheckpoint> {
+    verify_checkpoint(dir)?;
     let saved: ResumeKey = crate::project::read_json(&dir.join("key.json"), Phase::Resume)?;
     let diffs = saved.differences(key);
     if !diffs.is_empty() {

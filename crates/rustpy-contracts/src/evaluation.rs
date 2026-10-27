@@ -30,7 +30,7 @@ pub struct BinaryMetrics {
     pub recall: f64,
     pub specificity: f64,
     pub f1: f64,
-    /// Mean binary cross-entropy of the predicted probabilities (clipped to [1e-15, 1 - 1e-15]).
+    /// Mean binary cross-entropy of the predicted probabilities (clipped to [ε, 1 − ε] with ε = f64::EPSILON, as scikit-learn).
     pub log_loss: f64,
     pub brier: f64,
     /// Area under the ROC curve (ties averaged); `None` when only one class is present.
@@ -123,6 +123,18 @@ pub struct EvaluationRecord {
     pub test_use_index: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub latency: Option<LatencyStats>,
+    /// SHA-256 of the evaluated weights (`model.safetensors`); a run and its bundle share it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_sha256: Option<String>,
+    /// Data snapshot the evaluated model was trained on (its "generation").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_snapshot_id: Option<String>,
+    /// `Some(true)`: the evaluated rows were verified to be unseen by the model
+    /// (training rows, and validation rows for a test evaluation, of the model and of
+    /// runs it was warm-started from). `None`: rows could not be matched (no id column
+    /// across data versions), so this could not be verified.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unseen_rows_verified: Option<bool>,
     #[serde(default)]
     pub notes: Vec<String>,
 }

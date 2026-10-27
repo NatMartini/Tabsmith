@@ -69,6 +69,9 @@ pub struct InputSchema {
     pub nan: NanPolicy,
     /// Infinite numeric values are always rejected in 0.1.
     pub infinite: String,
+    /// CSV delimiter of the training data (used by offline CSV prediction).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub csv_delimiter: Option<String>,
     /// Optional id column copied to prediction outputs when present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub passthrough_id: Option<String>,

@@ -32,6 +32,10 @@ pub enum FeatureTransform {
         categories: Vec<String>,
         missing_slot: bool,
         offset: usize,
+        /// Raw type seen in training; values of another type are rejected rather
+        /// than silently mapped (e.g. the number 12 for the text code "012").
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        raw_dtype: Option<crate::schema::RawDtype>,
     },
 }
 
@@ -76,6 +80,11 @@ pub struct FittedTransform {
     pub output_names: Vec<String>,
     pub nan: NanPolicy,
     pub unknown_category: UnknownCategoryPolicy,
+    /// Tokens that mean "missing" (the project's `data.null_values`): text values
+    /// equal to a token, and numbers equal to a numeric token (e.g. "-999"), are
+    /// treated as missing on every path, exactly as when the CSV was read.
+    #[serde(default)]
+    pub missing_tokens: Vec<String>,
     /// Split manifest the statistics were learned from (training rows only).
     pub fitted_on_split: String,
     pub fitted_rows: usize,

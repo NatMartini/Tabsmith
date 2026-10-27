@@ -70,6 +70,15 @@ pub struct ColumnProfile {
     /// Most frequent values (text form) with counts; at most 10.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub top_values: Vec<(String, u64)>,
+    /// Float columns: every finite value is an integer (possible encoded identifier).
+    #[serde(default)]
+    pub all_integral: bool,
+    /// Text columns: number of values that parse as a number.
+    #[serde(default)]
+    pub numeric_text: u64,
+    /// Text columns that are mostly numeric: examples of the values that are not.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub non_numeric_examples: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -159,6 +168,9 @@ pub struct SplitManifest {
     pub test: SplitCounts,
     /// Split algorithm version; part of the cache key.
     pub algorithm: String,
+    /// E.g. fractions of a hash-based split that differ from the configured ones.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<String>,
 }
 
 impl SplitManifest {

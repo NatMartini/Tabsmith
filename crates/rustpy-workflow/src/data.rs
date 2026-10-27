@@ -78,48 +78,39 @@ fn read_err(path: &Path, msg: impl Into<String>) -> RustpyError {
     RustpyError::new(ErrorCode::DataReadFailed, Phase::Data, msg).field(path.display().to_string())
 }
 
+/// Result of the CSV structure pre-pass.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CsvStructure {
+    /// Header names exactly as the parser will name them (BOM removed, not trimmed).
+    pub header: Vec<String>,
+    /// Number of data records (blank lines excluded).
+    pub records: usize,
+    /// Blank lines after the last record (each becomes an all-missing row in the parser).
+    pub trailing_blank_lines: usize,
+}
+
 /// Scans a CSV file's structure (RFC 4180 quoting): header names and the field
-/// count of every record. Polars fills short rows with nulls silently, so this
-/// pre-pass turns ragged rows and duplicate headers into explicit errors.
-pub fn check_csv_structure(path: &Path, delimiter: u8) -> Result<Vec<String>> {
-    let bytes = fs::read(path).map_err(|e| RustpyError::io(Phase::Data, path, e))?;
+/// count of every record. Polars fills short rows and blank lines with missing
+/// values silently, so this pre-pass turns ragged rows, blank lines inside the
+/// data, CR-only line endings and duplicate headers into explicit errors.
+pub fn check_csv_structure(path: &Path, delimiter: u8) -> Result<CsvStructure> {
+    let raw = fs::read(path).map_err(|e| RustpyError::io(Phase::Data, path, e))?;
+    let bytes: &[u8] = raw.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(&raw);
     if bytes.iter().all(|b| b.is_ascii_whitespace()) {
         return Err(read_err(path, format!("`{}` is empty", path.display()))
             .next("point data.source at a CSV file with a header row and data rows"));
     }
     let mut header: Vec<String> = Vec::new();
-    let mut field = Vec::new();
-    let mut fields_in_record = 0usize;
+    let mut field: Vec<u8> = Vec::new();
+    let mut fields = 0usize;
     let mut in_quotes = false;
-    let mut record = 0usize;
+    let mut records = 0usize; // data records seen
+    let mut have_header = false;
     let mut line = 1usize;
+    let mut record_start_line = 1usize;
+    let mut has_content = false;
+    let mut pending_blank: Vec<usize> = Vec::new(); // blank lines not yet followed by a record
     let mut i = 0usize;
-    let mut record_has_content = false;
-    let mut expected = 0usize;
-    let mut finish_record = |header: &mut Vec<String>, field: &mut Vec<u8>, fields: &mut usize, record: &mut usize, line: usize, has: bool| -> Result<()> {
-        if !has {
-            field.clear();
-            *fields = 0;
-            return Ok(());
-        }
-        *fields += 1;
-        if *record == 0 {
-            header.push(String::from_utf8_lossy(field).trim().to_string());
-            expected = *fields;
-        } else if *fields != expected {
-            return Err(read_err(
-                path,
-                format!("CSV record ending on line {line} has {} fields, the header has {expected}", *fields),
-            )
-            .expected(format!("{expected} fields per row"))
-            .actual(format!("{} fields", *fields))
-            .next("fix the row (missing or extra delimiters / unbalanced quotes) and bind again"));
-        }
-        field.clear();
-        *fields = 0;
-        *record += 1;
-        Ok(())
-    };
     while i < bytes.len() {
         let b = bytes[i];
         if in_quotes {
@@ -136,26 +127,55 @@ pub fn check_csv_structure(path: &Path, delimiter: u8) -> Result<Vec<String>> {
                 }
                 field.push(b);
             }
-        } else if b == b'"' {
+            i += 1;
+            continue;
+        }
+        if b == b'\r' && bytes.get(i + 1) != Some(&b'\n') {
+            return Err(read_err(path, format!("line {line} ends with a bare carriage return (CR-only line endings)"))
+                .next("convert the file to LF or CRLF line endings"));
+        }
+        if b == b'"' {
             in_quotes = true;
-            record_has_content = true;
+            has_content = true;
         } else if b == delimiter {
-            if record == 0 {
-                header.push(String::from_utf8_lossy(&field).trim().to_string());
+            if !have_header {
+                header.push(String::from_utf8_lossy(&field).to_string());
             }
             field.clear();
-            fields_in_record += 1;
-            record_has_content = true;
+            fields += 1;
+            has_content = true;
         } else if b == b'\n' || b == b'\r' {
-            finish_record(&mut header, &mut field, &mut fields_in_record, &mut record, line, record_has_content)?;
-            record_has_content = false;
-            if b == b'\r' && bytes.get(i + 1) == Some(&b'\n') {
-                i += 1;
+            if b == b'\r' {
+                i += 1; // CRLF
             }
+            if has_content {
+                fields += 1;
+                if !have_header {
+                    header.push(String::from_utf8_lossy(&field).to_string());
+                    have_header = true;
+                } else {
+                    if let Some(&blank) = pending_blank.first() {
+                        return Err(blank_line_error(path, blank));
+                    }
+                    if fields != header.len() {
+                        return Err(ragged_error(path, record_start_line, fields, header.len()));
+                    }
+                    records += 1;
+                }
+            } else if have_header {
+                pending_blank.push(line);
+            } else {
+                return Err(read_err(path, format!("line {line} is blank before the header row"))
+                    .next("remove blank lines at the start of the file"));
+            }
+            field.clear();
+            fields = 0;
+            has_content = false;
             line += 1;
+            record_start_line = line;
         } else {
             field.push(b);
-            record_has_content = true;
+            has_content = true;
         }
         i += 1;
     }
@@ -163,10 +183,25 @@ pub fn check_csv_structure(path: &Path, delimiter: u8) -> Result<Vec<String>> {
         return Err(read_err(path, "CSV file ends inside a quoted field (unbalanced quote)")
             .next("fix the quoting and bind again"));
     }
-    finish_record(&mut header, &mut field, &mut fields_in_record, &mut record, line, record_has_content)?;
+    if has_content {
+        fields += 1;
+        if !have_header {
+            header.push(String::from_utf8_lossy(&field).to_string());
+            have_header = true;
+        } else {
+            if let Some(&blank) = pending_blank.first() {
+                return Err(blank_line_error(path, blank));
+            }
+            if fields != header.len() {
+                return Err(ragged_error(path, record_start_line, fields, header.len()));
+            }
+            records += 1;
+        }
+    }
+    let _ = have_header;
     let mut seen = HashSet::new();
     for h in &header {
-        if h.is_empty() {
+        if h.trim().is_empty() {
             return Err(read_err(path, "the CSV header has an empty column name")
                 .next("give every column a name in the header row"));
         }
@@ -176,11 +211,27 @@ pub fn check_csv_structure(path: &Path, delimiter: u8) -> Result<Vec<String>> {
                 .next("rename the duplicate column"));
         }
     }
-    if record < 2 {
+    if records == 0 {
         return Err(read_err(path, "the CSV file has a header but no data rows")
             .next("bind a file that contains data rows"));
     }
-    Ok(header)
+    Ok(CsvStructure {
+        header,
+        records,
+        trailing_blank_lines: pending_blank.len(),
+    })
+}
+
+fn blank_line_error(path: &Path, line: usize) -> RustpyError {
+    read_err(path, format!("line {line} is blank; a blank line inside the data would be read as a row of missing values"))
+        .next(format!("remove the blank line {line} (and any others) from the file"))
+}
+
+fn ragged_error(path: &Path, line: usize, fields: usize, expected: usize) -> RustpyError {
+    read_err(path, format!("CSV record starting on line {line} has {fields} fields, the header has {expected}"))
+        .expected(format!("{expected} fields per row"))
+        .actual(format!("{fields} fields"))
+        .next("fix the row (missing or extra delimiters / unbalanced quotes) and bind again")
 }
 
 fn raw_of(dtype: &DataType) -> Option<RawDtype> {
@@ -196,7 +247,17 @@ fn raw_of(dtype: &DataType) -> Option<RawDtype> {
         | DataType::UInt64 => Some(RawDtype::Int),
         DataType::Boolean => Some(RawDtype::Bool),
         DataType::String => Some(RawDtype::Text),
-        _ => None,
+        other => {
+            // Parquet dictionary/categorical and decimal columns map to text / float.
+            let name = format!("{other:?}");
+            if name.starts_with("Categorical") || name.starts_with("Enum") {
+                Some(RawDtype::Text)
+            } else if name.starts_with("Decimal") {
+                Some(RawDtype::Float)
+            } else {
+                None
+            }
+        }
     }
 }
 
@@ -228,9 +289,12 @@ pub fn read_table(path: &Path, opts: &ReadOptions, frozen: Option<&[(String, Opt
         .field(path.display().to_string())
         .next("check data.source in rustpy.toml or bind a file with `rustpy data bind <file>`"));
     }
+    let mut expected_rows: Option<CsvStructure> = None;
     let df = match opts.format {
         SourceFormat::Csv => {
-            let header = check_csv_structure(path, opts.delimiter)?;
+            let structure = check_csv_structure(path, opts.delimiter)?;
+            expected_rows = Some(structure.clone());
+            let header = structure.header;
             let nulls: Vec<PlSmallStr> = opts.null_values.iter().map(|s| PlSmallStr::from(s.as_str())).collect();
             let delimiter = opts.delimiter;
             let mut read = CsvReadOptions::default()
@@ -276,6 +340,25 @@ pub fn read_table(path: &Path, opts: &ReadOptions, frozen: Option<&[(String, Opt
             let file = fs::File::open(path).map_err(|e| RustpyError::io(Phase::Data, path, e))?;
             ParquetReader::new(file).finish().map_err(|e| polars_err(path, e))?
         }
+    };
+    // Reconcile the parser's row count with the structure pre-pass: trailing blank
+    // lines become all-missing rows in the parser and are dropped here; any other
+    // difference is an error rather than silently misaligned rows.
+    let df = match &expected_rows {
+        Some(st) if df.height() == st.records => df,
+        Some(st) if df.height() == st.records + st.trailing_blank_lines => df.slice(0, st.records),
+        Some(st) => {
+            return Err(read_err(
+                path,
+                format!(
+                    "the CSV parser produced {} rows but the file has {} data records",
+                    df.height(),
+                    st.records
+                ),
+            )
+            .next("check the file for unusual line endings or quoting"));
+        }
+        None => df,
     };
     if df.height() == 0 {
         return Err(read_err(path, "the data has no rows").next("bind a file that contains data rows"));
@@ -337,6 +420,9 @@ pub fn profile_columns(data: &LoadedData) -> Vec<ColumnProfile> {
             distinct: 0,
             numeric: None,
             top_values: Vec::new(),
+            all_integral: false,
+            numeric_text: 0,
+            non_numeric_examples: Vec::new(),
         };
         match &col.data {
             ColumnData::Float(v) => {
@@ -359,6 +445,7 @@ pub fn profile_columns(data: &LoadedData) -> Vec<ColumnProfile> {
                 p.distinct = distinct.len() as u64;
                 if n > 0 {
                     p.numeric = Some(NumericSummary { min, max, mean: sum / n as f64 });
+                    p.all_integral = v.iter().flatten().filter(|f| f.is_finite()).all(|f| f.fract() == 0.0);
                 }
             }
             ColumnData::Int(v) => {
@@ -405,6 +492,18 @@ pub fn profile_columns(data: &LoadedData) -> Vec<ColumnProfile> {
                     }
                 }
                 p.distinct = counts.len() as u64;
+                let mut non_numeric: Vec<(&str, u64)> = Vec::new();
+                for (k, c) in &counts {
+                    if k.trim().parse::<f64>().is_ok() {
+                        p.numeric_text += c;
+                    } else {
+                        non_numeric.push((k, *c));
+                    }
+                }
+                if p.numeric_text * 2 > v.len() as u64 - p.null_count {
+                    non_numeric.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
+                    p.non_numeric_examples = non_numeric.iter().take(5).map(|(k, _)| k.to_string()).collect();
+                }
                 p.top_values = top_n(counts.into_iter().map(|(k, c)| (k.to_string(), c)));
             }
             ColumnData::Mixed(v) => {
@@ -461,7 +560,12 @@ pub fn snapshot_source(project: &Project, cfg: &DataConfig) -> Result<SnapshotDa
         .next("check data.source in rustpy.toml or bind a file with `rustpy data bind <file>`"));
     }
     let (sha, bytes) = sha256_file(&path).map_err(|e| RustpyError::io(Phase::Data, &path, e))?;
-    let identity = canonical_hash(&(sha.as_str(), &opts, cfg.snapshot, cfg.id_column.as_deref()));
+    // Reference snapshots point at a file: its location is part of the identity.
+    let location = match cfg.snapshot {
+        SnapshotMode::Reference => Some(path.display().to_string()),
+        SnapshotMode::Copy => None,
+    };
+    let identity = canonical_hash(&(sha.as_str(), &opts, cfg.snapshot, cfg.id_column.as_deref(), location));
     let snapshot_id = format!("s-{}", short(&identity));
     let dir = project.dir("snapshots").join(&snapshot_id);
     if dir.join("snapshot.json").is_file() {
@@ -594,9 +698,18 @@ pub fn load_snapshot(project: &Project, snapshot_id: &str) -> Result<(DataSnapsh
 
 /// Reads a CSV/Parquet file for offline prediction with a bundle: categorical
 /// fields that were text in training are read as text (keeps e.g. leading zeros).
-pub fn read_for_prediction(path: &Path, schema: &rustpy_contracts::schema::InputSchema) -> Result<Table> {
-    let defaults = DataConfig::default();
-    let mut opts = ReadOptions::from_config(path, &defaults)?;
+pub fn read_for_prediction(
+    path: &Path,
+    schema: &rustpy_contracts::schema::InputSchema,
+    transform: &rustpy_contracts::transform::FittedTransform,
+) -> Result<Table> {
+    // Read with the training data's delimiter and missing-value tokens.
+    let mut cfg = DataConfig::default();
+    if let Some(d) = &schema.csv_delimiter {
+        cfg.csv_delimiter = d.clone();
+    }
+    cfg.null_values = transform.missing_tokens.clone();
+    let mut opts = ReadOptions::from_config(path, &cfg)?;
     opts.text_columns = schema
         .fields
         .iter()
@@ -705,6 +818,26 @@ pub fn plan_columns(snapshot: &DataSnapshot, table: &Table, cfg: &DataConfig, ma
     }
     for c in cfg.columns.keys() {
         must_exist(c, &format!("data.columns.{c}"))?;
+    }
+
+    for (key, col) in [
+        ("data.target", Some(target)),
+        ("data.id_column", cfg.id_column.as_deref()),
+        ("data.group_column", cfg.group_column.as_deref()),
+    ] {
+        if let Some(c) = col {
+            if let Some(prof) = snapshot.column(c) {
+                if prof.raw_dtype.is_none() {
+                    return Err(RustpyError::new(
+                        ErrorCode::DataUnsupported,
+                        Phase::Data,
+                        format!("{key} `{c}` has the unsupported type {}", prof.engine_dtype),
+                    )
+                    .field(key)
+                    .next("convert the column to text, integer or boolean values"));
+                }
+            }
+        }
     }
 
     // Target: exactly two labels, no missing values, positive label present.
@@ -839,20 +972,43 @@ pub fn plan_columns(snapshot: &DataSnapshot, table: &Table, cfg: &DataConfig, ma
                     reason: format!("unsupported type {} (dates/nested types are not features in 0.1)", prof.engine_dtype),
                 },
                 Some(_) if non_missing == 0 => ColumnRole::Excluded { reason: "all values are missing".into() },
-                Some(RawDtype::Float) => ColumnRole::Feature { kind: FieldKind::Numeric },
-                Some(RawDtype::Int) => {
-                    if prof.distinct == non_missing && non_missing >= 20 && prof.null_count == 0 {
-                        ColumnRole::Excluded {
-                            reason: "every value is unique (looks like an identifier); set data.columns.<name> = \"numeric\" to use it".into(),
-                        }
-                    } else {
-                        ColumnRole::Feature { kind: FieldKind::Numeric }
+                Some(RawDtype::Float | RawDtype::Int)
+                    if prof.distinct == non_missing
+                        && non_missing >= 20
+                        && (prof.raw_dtype == Some(RawDtype::Int) || prof.all_integral) =>
+                {
+                    ColumnRole::Excluded {
+                        reason: format!(
+                            "every value is a unique integer (looks like an identifier); set data.columns.{name} = \"numeric\" to use it as a feature"
+                        ),
                     }
                 }
+                Some(RawDtype::Float | RawDtype::Int) => ColumnRole::Feature { kind: FieldKind::Numeric },
                 Some(RawDtype::Bool) => ColumnRole::Feature { kind: FieldKind::Categorical },
                 Some(RawDtype::Text) => {
                     let sample_dates = prof.top_values.iter().filter(|(v, _)| looks_like_date(v)).count();
-                    if !prof.top_values.is_empty() && sample_dates * 10 >= prof.top_values.len() * 9 {
+                    if !prof.non_numeric_examples.is_empty() && prof.numeric_text * 10 >= non_missing * 9 {
+                        // A numeric column with a few stray tokens ("?", "n/a", ...): never guess.
+                        return Err(RustpyError::new(
+                            ErrorCode::SchemaTypeMismatch,
+                            Phase::Data,
+                            format!(
+                                "column `{name}` looks numeric ({} of {non_missing} values are numbers) but contains non-numeric values",
+                                prof.numeric_text
+                            ),
+                        )
+                        .field(name)
+                        .actual(format!("non-numeric values: {:?}", prof.non_numeric_examples))
+                        .next(format!(
+                            "if these mean \"missing\", add them to data.null_values (e.g. null_values = [\"\", \"NA\", \"null\", {:?}]); otherwise fix the data or set data.columns.{name} = \"categorical\" or \"ignore\"",
+                            prof.non_numeric_examples[0]
+                        )));
+                    } else if !prof.top_values.is_empty() && sample_dates * 10 >= prof.top_values.len() * 9 {
+                        if cfg.time_column.is_none() {
+                            warnings.push(format!(
+                                "column `{name}` holds dates: if rows depend on time (drift, seasonality), declare data.time_column = \"{name}\"; RustPy then refuses the random split instead of leaking future rows into training"
+                            ));
+                        }
                         ColumnRole::Excluded { reason: "date/time text is not a feature in 0.1".into() }
                     } else if prof.distinct as usize > max_categories {
                         if prof.distinct * 2 > non_missing {
@@ -863,20 +1019,29 @@ pub fn plan_columns(snapshot: &DataSnapshot, table: &Table, cfg: &DataConfig, ma
                                 ),
                             }
                         } else {
-                            return Err(RustpyError::new(
+                            let repeats = non_missing as f64 / prof.distinct.max(1) as f64;
+                            let mut e = RustpyError::new(
                                 ErrorCode::CardinalityBudget,
                                 Phase::Data,
                                 format!(
-                                    "text column `{name}` has {} distinct values, above preprocess.max_categories = {max_categories}",
+                                    "text column `{name}` has {} distinct values (each repeated ~{repeats:.0} times), above preprocess.max_categories = {max_categories}",
                                     prof.distinct
                                 ),
                             )
                             .field(name)
                             .expected(format!("at most {max_categories} categories"))
-                            .actual(prof.distinct.to_string())
-                            .next(format!(
-                                "exclude it (data.exclude = [\"{name}\"]), group rare values upstream, or raise preprocess.max_categories"
-                            )));
+                            .actual(prof.distinct.to_string());
+                            e = if cfg.group_column.is_none() && prof.distinct >= 20 {
+                                // Repeated ids are often entities, which matter for the split.
+                                e.next(format!(
+                                    "if `{name}` identifies an entity (device, customer, patient) whose rows are related, split by it: rustpy data bind <file> --target <col> --group {name}; otherwise exclude it (data.exclude = [\"{name}\"]) or raise preprocess.max_categories"
+                                ))
+                            } else {
+                                e.next(format!(
+                                    "exclude it (data.exclude = [\"{name}\"]), group rare values upstream, or raise preprocess.max_categories"
+                                ))
+                            };
+                            return Err(e);
                         }
                     } else {
                         ColumnRole::Feature { kind: FieldKind::Categorical }
@@ -924,7 +1089,19 @@ mod tests {
     fn csv_structure_errors() {
         let d = tempfile::tempdir().unwrap();
         let ok = write(d.path(), "ok.csv", "a,b\n1,\"x,y\"\n2,\"q\"\"z\"\n");
-        assert_eq!(check_csv_structure(&ok, b',').unwrap(), vec!["a", "b"]);
+        let st = check_csv_structure(&ok, b',').unwrap();
+        assert_eq!((st.header, st.records, st.trailing_blank_lines), (vec!["a".into(), "b".into()], 2, 0));
+        let bom = write(d.path(), "bom.csv", "\u{feff}x, y\n1,2\n");
+        assert_eq!(check_csv_structure(&bom, b',').unwrap().header, vec!["x", " y"]);
+        let blank = write(d.path(), "blank.csv", "a,b\n1,2\n\n3,4\n");
+        assert!(check_csv_structure(&blank, b',').unwrap_err().message.contains("line 3 is blank"));
+        let trailing = write(d.path(), "t.csv", "a,b\n1,2\n3,4\n\n\n");
+        let st = check_csv_structure(&trailing, b',').unwrap();
+        assert_eq!((st.records, st.trailing_blank_lines), (2, 2));
+        let cr = write(d.path(), "cr.csv", "a,b\r1,2\r");
+        assert!(check_csv_structure(&cr, b',').unwrap_err().message.contains("carriage return"));
+        let quoted_newline = write(d.path(), "q.csv", "a,b\n1,\"line1\n\nline3\"\n");
+        assert_eq!(check_csv_structure(&quoted_newline, b',').unwrap().records, 1);
         let short = write(d.path(), "s.csv", "a,b,c\n1,2,3\n4,5\n");
         assert_eq!(check_csv_structure(&short, b',').unwrap_err().code, ErrorCode::DataReadFailed);
         let dup = write(d.path(), "d.csv", "a,a\n1,2\n");

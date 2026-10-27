@@ -7,7 +7,7 @@ use rustpy_contracts::hash::{canonical_hash, short};
 use rustpy_contracts::schema::{FieldKind, InputField, InputSchema, OutputSchema, RawDtype};
 use rustpy_contracts::transform::{DroppedField, FeatureTransform, FittedTransform, TRANSFORM_VERSION};
 use rustpy_contracts::{ErrorCode, Phase, Result, RustpyError};
-use rustpy_runtime::{coerce_category, coerce_numeric, Table};
+use rustpy_runtime::{check_category_type, coerce_category, coerce_numeric, MissingTokens, Table};
 use serde::{Deserialize, Serialize};
 
 use crate::data::{ColumnRole, FeaturePlan};
@@ -22,9 +22,9 @@ pub struct FittedArtifacts {
 }
 
 /// Identity of a fitted transform: split + preprocessing config + column roles + version.
-pub fn transform_id(split_id: &str, pre: &PreprocessConfig, plan: &FeaturePlan, threshold: f64) -> String {
+pub fn transform_id(split_id: &str, pre: &PreprocessConfig, plan: &FeaturePlan, threshold: f64, missing_tokens: &[String]) -> String {
     let roles: Vec<(&str, &ColumnRole)> = plan.columns.iter().map(|c| (c.name.as_str(), &c.role)).collect();
-    let h = canonical_hash(&(split_id, pre, roles, TRANSFORM_VERSION, threshold.to_bits()));
+    let h = canonical_hash(&(split_id, pre, roles, TRANSFORM_VERSION, threshold.to_bits(), missing_tokens));
     format!("t-{}", short(&h))
 }
 
@@ -38,7 +38,10 @@ pub fn fit_transform(
     split_id: &str,
     threshold: f64,
     id_column: Option<&str>,
+    missing_tokens: &[String],
+    csv_delimiter: Option<&str>,
 ) -> Result<FittedArtifacts> {
+    let tokens = MissingTokens::new(missing_tokens);
     let mut features = Vec::new();
     let mut dropped = Vec::new();
     let mut fields = Vec::new();
@@ -54,7 +57,7 @@ pub fn fit_transform(
             FieldKind::Numeric => {
                 let mut values = Vec::with_capacity(train.n_rows());
                 for r in 0..train.n_rows() {
-                    let v = col.get(r);
+                    let v = tokens.numeric(col.get(r));
                     match coerce_numeric(v, pre.nan) {
                         Ok(Some(x)) => values.push(x),
                         Ok(None) => {}
@@ -95,7 +98,10 @@ pub fn fit_transform(
                 let mut counts: HashMap<String, usize> = HashMap::new();
                 let mut missing = 0usize;
                 for r in 0..train.n_rows() {
-                    let v = col.get(r);
+                    let v = tokens.categorical(col.get(r));
+                    if let Err(e) = check_category_type(Some(raw_dtype), v) {
+                        return Err(e.into_error(name, row_ids[r], v, Phase::Fit));
+                    }
                     match coerce_category(v, pre.nan) {
                         Ok(Some(c)) => *counts.entry(c.into_owned()).or_default() += 1,
                         Ok(None) => missing += 1,
@@ -138,6 +144,7 @@ pub fn fit_transform(
                         categories,
                         missing_slot: missing > 0,
                         offset,
+                        raw_dtype: Some(raw_dtype),
                     });
                     offset += slots;
                 }
@@ -183,6 +190,7 @@ pub fn fit_transform(
         output_names: names,
         nan: pre.nan,
         unknown_category: pre.unknown_category,
+        missing_tokens: missing_tokens.to_vec(),
         fitted_on_split: split_id.to_string(),
         fitted_rows: train.n_rows(),
     };
@@ -196,6 +204,7 @@ pub fn fit_transform(
         unknown_category: pre.unknown_category,
         nan: pre.nan,
         infinite: "error".to_string(),
+        csv_delimiter: csv_delimiter.map(str::to_string),
         passthrough_id: id_column.map(str::to_string),
     };
     let output_schema = OutputSchema::new(
@@ -205,7 +214,7 @@ pub fn fit_transform(
         threshold,
     );
     Ok(FittedArtifacts {
-        transform_id: transform_id(split_id, pre, plan, threshold),
+        transform_id: transform_id(split_id, pre, plan, threshold, missing_tokens),
         transform,
         input_schema,
         output_schema,
@@ -232,7 +241,7 @@ mod tests {
         let f = |n: &str, k| ColumnDecision {
             name: n.into(),
             role: ColumnRole::Feature { kind: k },
-            raw_dtype: Some(RawDtype::Float),
+            raw_dtype: Some(if k == FieldKind::Categorical { RawDtype::Text } else { RawDtype::Float }),
             decided_by: "inferred".into(),
         };
         FeaturePlan {
@@ -259,7 +268,7 @@ mod tests {
             Column { name: "k".into(), data: ColumnData::Float(vec![Some(5.0), Some(5.0), Some(5.0)]) },
         ])
         .unwrap();
-        let fa = fit_transform(&train, &[0, 1, 2], &plan(), &PreprocessConfig::default(), "sp", 0.5, None).unwrap();
+        let fa = fit_transform(&train, &[0, 1, 2], &plan(), &PreprocessConfig::default(), "sp", 0.5, None, &[], None).unwrap();
         let t = &fa.transform;
         assert_eq!(t.output_dim, 3);
         assert_eq!(t.output_names, vec!["x", "c=b", "c=a"]);
@@ -292,7 +301,7 @@ mod tests {
         ])
         .unwrap();
         let pre = PreprocessConfig { max_categories: 5, ..Default::default() };
-        let e = fit_transform(&train, &(0..10).collect::<Vec<_>>(), &plan(), &pre, "sp", 0.5, None).unwrap_err();
+        let e = fit_transform(&train, &(0..10).collect::<Vec<_>>(), &plan(), &pre, "sp", 0.5, None, &[], None).unwrap_err();
         assert_eq!(e.code, ErrorCode::CardinalityBudget);
     }
 }
