@@ -3,3 +3,4 @@ examples/predict-app/target
 *.tmp
 /scratch
 /.claude/
+__pycache__/

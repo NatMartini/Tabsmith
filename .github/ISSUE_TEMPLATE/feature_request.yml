@@ -1,0 +1,54 @@
+name: Feature request
+description: Suggest a change or a new capability. / 提出改进或新功能。
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        RustPy is organised around complete jobs (data → verified model → Rust application),
+        not around a list of algorithms. Describing the job you are trying to do helps most.
+        RustPy 围绕完整任务（数据 → 经过验证的模型 → Rust 应用）组织，而不是算法列表。请描述你要完成的任务。
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem / 要解决的问题
+      description: What are you trying to do, and what stops you today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution / 建议方案
+      description: What would you like RustPy to do? Commands, configuration or API sketches are welcome.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered / 考虑过的替代方案
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area / 涉及部分
+      multiple: true
+      options:
+        - CLI workflow (rustpy)
+        - Data, splits and preprocessing
+        - Training and models
+        - Bundles and rustpy-runtime
+        - Reports and errors
+        - Installation and platforms
+        - Documentation
+        - Other
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence / 依据
+      description: |
+        Links, measurements or examples that show the need (for example a dataset shape,
+        a benchmark, or a workflow you use today).

@@ -1,0 +1,197 @@
+name: Release
+
+# Push a tag such as v0.1.0 (matching `version` in [workspace.package]) to build the
+# `rustpy` binaries and publish them, with install.sh and install.ps1, as a GitHub release.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  # Link the C runtime statically so rustpy.exe runs on machines without the
+  # Visual C++ redistributable. Applies to this target only.
+  CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: "-C target-feature=+crt-static"
+
+jobs:
+  prepare:
+    name: Check tag and configuration
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Tag must match the workspace version
+        id: version
+        shell: bash
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="${TAG#v}"
+          manifest=$(sed -n '/^\[workspace\.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)
+          if [ "$version" != "$manifest" ]; then
+            echo "::error::tag $TAG does not match version \"$manifest\" in [workspace.package] of Cargo.toml"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Repository placeholders must be filled in
+        shell: bash
+        run: |
+          # "[/]" keeps this file from containing the placeholder itself (set-repo.sh rewrites it).
+          if grep -rn --exclude-dir=.git --exclude=set-repo.sh '__OWNER__[/]__REPO__' .; then
+            echo "::error::run tools/release/set-repo.sh OWNER/REPO and commit the result before tagging a release"
+            exit 1
+          fi
+
+  build:
+    name: build (${{ matrix.target }})
+    needs: prepare
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Built on Ubuntu 22.04: runs on distributions with glibc 2.35 or newer.
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-22.04
+          # Built on Ubuntu 24.04: needs glibc 2.39 or newer. (ubuntu-22.04-arm would lower that to 2.35.)
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+          # The Intel macos-13 runner image has been retired, so the x86_64 binary is
+          # cross-compiled on Apple Silicon (Xcode builds both architectures). It cannot
+          # be executed there, so the smoke test is skipped for it.
+          - target: x86_64-apple-darwin
+            os: macos-14
+            cross: true
+          - target: aarch64-apple-darwin
+            os: macos-14
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+    env:
+      TARGET: ${{ matrix.target }}
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+
+      # No build cache here on purpose: release binaries are built from a clean state.
+      - name: Install Rust (stable) for ${{ matrix.target }}
+        shell: bash
+        run: |
+          if ! command -v rustup >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+            export PATH="$HOME/.cargo/bin:$PATH"
+          fi
+          rustup toolchain install stable --profile minimal --no-self-update --target "$TARGET"
+          rustup default stable
+          rustc --version --verbose
+
+      - name: Build
+        shell: bash
+        run: cargo build --release --locked -p rustpy-cli --target "$TARGET"
+
+      - name: Smoke test
+        if: ${{ !matrix.cross }}
+        shell: bash
+        run: |
+          exe=""
+          case "$TARGET" in *windows*) exe=".exe" ;; esac
+          "target/$TARGET/release/rustpy$exe" --version
+
+      - name: Package
+        shell: bash
+        run: |
+          set -euo pipefail
+          name="rustpy-$VERSION-$TARGET"
+          exe=""
+          case "$TARGET" in *windows*) exe=".exe" ;; esac
+          mkdir -p "dist/$name"
+          cp "target/$TARGET/release/rustpy$exe" "dist/$name/"
+          cp README.md LICENSE-MIT LICENSE-APACHE "dist/$name/"
+          cd dist
+          case "$TARGET" in
+            *windows*)
+              archive="$name.zip"
+              7z a -tzip -bd "$archive" "$name" > /dev/null
+              ;;
+            *)
+              archive="$name.tar.gz"
+              # COPYFILE_DISABLE keeps macOS tar from adding AppleDouble (._*) entries.
+              COPYFILE_DISABLE=1 tar -czf "$archive" "$name"
+              ;;
+          esac
+          if command -v sha256sum > /dev/null 2>&1; then
+            sum=$(sha256sum "$archive" | cut -d ' ' -f 1)
+          else
+            sum=$(shasum -a 256 "$archive" | cut -d ' ' -f 1)
+          fi
+          printf '%s  %s\n' "$sum" "$archive" > "$archive.sha256"
+          rm -rf "$name"
+          ls -l
+          cat "$archive.sha256"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rustpy-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish the GitHub release
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ github.ref_name }}
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: rustpy-*
+          path: dist
+          merge-multiple: true
+
+      - name: Release notes from CHANGELOG.md
+        shell: bash
+        run: |
+          # The section "## [<version>] ..." up to the next "## [" heading,
+          # without the link definitions at the end of the file.
+          awk -v head="## [$VERSION]" '
+            index($0, head) == 1 { on = 1; next }
+            on && /^## \[/ { exit }
+            on && /^\[[^]]*\]: / { next }
+            on { print }
+          ' CHANGELOG.md > notes.md
+          echo "--- notes.md ---"
+          cat notes.md
+
+      - name: Create or update the release
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp install.sh install.ps1 dist/
+          ls -l dist
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            # Re-run of this workflow: replace the assets of the existing release.
+            gh release upload "$TAG" dist/* --clobber
+          else
+            args=(--verify-tag --title "RustPy $VERSION")
+            if grep -q '[^[:space:]]' notes.md; then
+              args+=(--notes-file notes.md)
+            else
+              args+=(--generate-notes)
+            fi
+            case "$VERSION" in *-*) args+=(--prerelease) ;; esac
+            gh release create "$TAG" "${args[@]}" dist/*
+          fi
