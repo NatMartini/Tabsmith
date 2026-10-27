@@ -366,6 +366,7 @@ pub fn train(
         };
 
     let started = Instant::now();
+    let mut last_checkpoint: Option<Instant> = None;
     let elapsed_before = state.elapsed_ms;
     let l2 = cfg.l2 as f32;
     while state.epoch < cfg.epochs && state.stop_reason.is_none() {
@@ -459,8 +460,11 @@ pub fn train(
         } else if state.epoch >= cfg.epochs {
             state.stop_reason = Some("epochs".into());
         }
-        if state.epoch % cfg.checkpoint_every_epochs == 0 || state.stop_reason.is_some() {
+        let due = state.epoch % cfg.checkpoint_every_epochs == 0
+            && last_checkpoint.is_none_or(|t: Instant| t.elapsed().as_secs_f64() >= cfg.checkpoint_min_interval_seconds);
+        if due || state.stop_reason.is_some() {
             save_checkpoint(&inputs.checkpoint_dir, &inputs.key, &model, &optim, &state, best.as_ref())?;
+            last_checkpoint = Some(Instant::now());
         }
         on_epoch(&state);
     }
