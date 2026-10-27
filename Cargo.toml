@@ -13,9 +13,13 @@ exclude = ["examples/predict-app"]
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
+# Minimum supported Rust version of the workspace: Burn 0.22.1 declares 1.95, the
+# highest requirement in the dependency graph. rustpy-contracts and rustpy-runtime
+# override this with their own (lower) minimum. Both are checked by the `msrv` CI job.
 rust-version = "1.95"
+authors = ["RustPy contributors"]
+# `repository` and `homepage` are inserted after `license` by tools/release/set-repo.sh OWNER/REPO.
 license = "MIT OR Apache-2.0"
-repository = "https://example.invalid/rustpy"
 
 [workspace.dependencies]
 rustpy-contracts = { path = "crates/rustpy-contracts", version = "0.1.0" }
@@ -36,8 +40,14 @@ polars = { version = "=0.55.2", default-features = false, features = ["csv", "pa
 burn = { version = "=0.22.1", default-features = false, features = ["std", "ndarray", "autodiff", "optim"] }
 
 [profile.release]
+# Distribution profile for the prebuilt `rustpy` binaries (see .github/workflows/release.yml).
+# Thin LTO with one codegen unit per crate keeps most of the size/speed gain of fat
+# LTO while bounding link time and memory for the Polars + Burn dependency graph on
+# CI runners. `strip` removes symbol tables: panics still report file:line, but
+# backtraces show no function names.
 lto = "thin"
-codegen-units = 4
+codegen-units = 1
+strip = true
 
 [profile.dev]
 # Keep debug builds small: line tables are enough for backtraces.

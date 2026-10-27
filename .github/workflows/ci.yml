@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  RUST_BACKTRACE: "1"
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust (stable)
+        shell: bash
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup default stable
+          rustc --version --verbose
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            examples/predict-app -> target
+
+      - name: Test the workspace
+        run: cargo test --workspace --locked
+
+      - name: Build examples/predict-app (an application that depends only on rustpy-runtime)
+        run: cargo build --locked --manifest-path examples/predict-app/Cargo.toml --all-targets
+
+      - name: Check that predict-app pulls in neither Burn nor Polars
+        shell: bash
+        run: |
+          deps=$(cargo tree --locked --manifest-path examples/predict-app/Cargo.toml -e normal --prefix none --format '{p}')
+          if printf '%s\n' "$deps" | grep -E '^(burn|polars)'; then
+            echo "::error::examples/predict-app depends on Burn or Polars; rustpy-runtime must stay free of them"
+            exit 1
+          fi
+
+  # The minimum Rust versions declared in the manifests: the workspace (set by Burn) and
+  # the lighter rustpy-contracts / rustpy-runtime pair that applications depend on.
+  msrv:
+    name: msrv
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Read rust-version from the manifests
+        id: msrv
+        shell: bash
+        run: |
+          workspace=$(sed -n 's/^rust-version = "\(.*\)"/\1/p' Cargo.toml)
+          runtime=$(sed -n 's/^rust-version = "\(.*\)"/\1/p' crates/rustpy-runtime/Cargo.toml)
+          test -n "$workspace" && test -n "$runtime"
+          echo "workspace=$workspace" >> "$GITHUB_OUTPUT"
+          echo "runtime=$runtime" >> "$GITHUB_OUTPUT"
+
+      - name: Install Rust ${{ steps.msrv.outputs.workspace }} and ${{ steps.msrv.outputs.runtime }}
+        run: rustup toolchain install ${{ steps.msrv.outputs.workspace }} ${{ steps.msrv.outputs.runtime }} --profile minimal --no-self-update
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check the workspace with Rust ${{ steps.msrv.outputs.workspace }}
+        run: cargo +${{ steps.msrv.outputs.workspace }} check --workspace --all-targets --locked
+
+      - name: Check rustpy-contracts, rustpy-runtime and predict-app with Rust ${{ steps.msrv.outputs.runtime }}
+        run: |
+          cargo +${{ steps.msrv.outputs.runtime }} check -p rustpy-contracts -p rustpy-runtime --all-targets --locked
+          cargo +${{ steps.msrv.outputs.runtime }} check --manifest-path examples/predict-app/Cargo.toml --all-targets --locked
+
+  # TODO: add a lint job (`cargo fmt --all --check` and
+  # `cargo clippy --workspace --all-targets --locked -- -D warnings`) once the code base
+  # has been formatted with rustfmt in one dedicated commit. It is not formatted yet, so
+  # a formatting gate now would fail every pull request.
