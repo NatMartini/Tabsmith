@@ -6,7 +6,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 
 use rustpy_contracts::config::{NanPolicy, UnknownCategoryPolicy};
-use rustpy_contracts::schema::{FieldKind, InputSchema};
+use rustpy_contracts::schema::{FieldKind, InputSchema, RawDtype};
 use rustpy_contracts::transform::{FeatureTransform, FittedTransform};
 use rustpy_contracts::{ErrorCode, Phase, Result, RustpyError};
 
@@ -174,6 +174,7 @@ pub fn apply_transform(t: &FittedTransform, table: &Table, phase: Phase) -> Resu
     let rows = table.n_rows();
     let cols = t.output_dim;
     let mut data = vec![0f32; rows * cols];
+    let tokens = MissingTokens::new(&t.missing_tokens);
     for feature in &t.features {
         let name = feature.name();
         let column = table.column(name).ok_or_else(|| {
@@ -189,22 +190,38 @@ pub fn apply_transform(t: &FittedTransform, table: &Table, phase: Phase) -> Resu
             } => {
                 for row in 0..rows {
                     let v = column.get(row);
+                    let v = tokens.numeric(v);
                     let x = coerce_numeric(v, t.nan)
                         .map_err(|e| e.into_error(name, row, v, phase))?
                         .unwrap_or(*impute);
-                    data[row * cols + offset] = ((x - mean) / std) as f32;
+                    let z = ((x - mean) / std) as f32;
+                    if !z.is_finite() {
+                        return Err(RustpyError::new(
+                            ErrorCode::InvalidValue,
+                            phase,
+                            format!("field `{name}`, row {row}: value {x} is too large to encode (out of the f32 range after scaling)"),
+                        )
+                        .field(name)
+                        .expected(format!("a value within the f32 range after standardization (training mean {mean:.4}, std {std:.4})"))
+                        .actual(x.to_string())
+                        .next("check the units / clean the value before prediction"));
+                    }
+                    data[row * cols + offset] = z;
                 }
             }
             FeatureTransform::Categorical {
                 categories,
                 missing_slot,
                 offset,
+                raw_dtype,
                 ..
             } => {
                 let index: HashMap<&str, usize> =
                     categories.iter().enumerate().map(|(i, c)| (c.as_str(), i)).collect();
                 for row in 0..rows {
                     let v = column.get(row);
+                    let v = tokens.categorical(v);
+                    check_category_type(*raw_dtype, v).map_err(|e| e.into_error(name, row, v, phase))?;
                     let slot = match coerce_category(v, t.nan).map_err(|e| e.into_error(name, row, v, phase))? {
                         Some(c) => index.get(c.as_ref()).copied(),
                         None if *missing_slot => Some(categories.len()),
@@ -220,6 +237,67 @@ pub fn apply_transform(t: &FittedTransform, table: &Table, phase: Phase) -> Resu
         }
     }
     Ok(Matrix { rows, cols, data })
+}
+
+/// The project's missing-value tokens, applied identically when fitting and when
+/// transforming (CSV reading applies them too; Parquet and application records do not).
+#[derive(Debug, Clone, Default)]
+pub struct MissingTokens {
+    text: Vec<String>,
+    numeric: Vec<f64>,
+}
+
+impl MissingTokens {
+    pub fn new(tokens: &[String]) -> Self {
+        Self {
+            text: tokens.to_vec(),
+            numeric: tokens.iter().filter_map(|s| s.trim().parse::<f64>().ok()).filter(|f| !f.is_nan()).collect(),
+        }
+    }
+
+    /// For numeric features: a token text or a number equal to a numeric token is missing.
+    pub fn numeric<'a>(&self, v: ValueRef<'a>) -> ValueRef<'a> {
+        match v {
+            ValueRef::Text(s) if self.text.iter().any(|t| t == s) => ValueRef::Null,
+            ValueRef::Int(i) if self.numeric.contains(&(i as f64)) => ValueRef::Null,
+            ValueRef::Float(f) if self.numeric.contains(&f) => ValueRef::Null,
+            other => other,
+        }
+    }
+
+    /// For categorical features (and labels): a token text is missing.
+    pub fn categorical<'a>(&self, v: ValueRef<'a>) -> ValueRef<'a> {
+        match v {
+            ValueRef::Text(s) if self.text.iter().any(|t| t == s) => ValueRef::Null,
+            other => other,
+        }
+    }
+}
+
+/// A categorical value must have the raw type seen in training (null always allowed).
+pub fn check_category_type(trained: Option<RawDtype>, v: ValueRef<'_>) -> Result<(), CoerceError> {
+    let ok = match (trained, v) {
+        (None, _) | (_, ValueRef::Null) => true,
+        (Some(RawDtype::Text), ValueRef::Text(_)) => true,
+        (Some(RawDtype::Bool), ValueRef::Bool(_)) => true,
+        (Some(RawDtype::Int), ValueRef::Int(_)) => true,
+        (Some(RawDtype::Int), ValueRef::Float(f)) => f.is_nan() || f.fract() == 0.0,
+        (Some(RawDtype::Float), ValueRef::Float(_) | ValueRef::Int(_)) => true,
+        _ => false,
+    };
+    if ok {
+        Ok(())
+    } else {
+        Err(CoerceError::TypeMismatch {
+            expected: match trained {
+                Some(RawDtype::Text) => "text",
+                Some(RawDtype::Bool) => "bool",
+                Some(RawDtype::Int) => "integer",
+                _ => "number",
+            },
+            actual: v.type_name(),
+        })
+    }
 }
 
 fn feature_kind(f: &FeatureTransform) -> FieldKind {
@@ -272,6 +350,7 @@ mod tests {
                     categories: vec!["a".into(), "b".into()],
                     missing_slot: true,
                     offset: 1,
+                    raw_dtype: Some(RawDtype::Text),
                 },
             ],
             dropped: vec![],
@@ -279,6 +358,7 @@ mod tests {
             output_names: vec!["x".into(), "c=a".into(), "c=b".into(), "c=<missing>".into()],
             nan: NanPolicy::Missing,
             unknown_category: unknown,
+            missing_tokens: vec!["".into(), "NA".into(), "-999".into()],
             fitted_on_split: "s".into(),
             fitted_rows: 3,
         }
@@ -313,6 +393,22 @@ mod tests {
         let e = apply_transform(&t, &tab, Phase::Predict).unwrap_err();
         assert_eq!(e.code, ErrorCode::UnknownCategory);
         assert_eq!(e.field.as_deref(), Some("c"));
+    }
+
+    #[test]
+    fn missing_tokens_types_and_overflow() {
+        let t = transform(UnknownCategoryPolicy::Error);
+        // "NA" text and the numeric sentinel -999 are missing values, like in the CSV reader.
+        let tab = table(vec![Value::Int(-999), Value::Float(-999.0)], vec![Value::from("NA"), Value::from("")]);
+        let m = apply_transform(&t, &tab, Phase::Predict).unwrap();
+        assert_eq!(m.row(0), &[0.0, 0.0, 0.0, 1.0]);
+        assert_eq!(m.row(1), &[0.0, 0.0, 0.0, 1.0]);
+        // A field trained as text does not accept numbers (no silent "012" vs 12 mapping).
+        let tab = table(vec![Value::Float(1.0)], vec![Value::Int(12)]);
+        assert_eq!(apply_transform(&t, &tab, Phase::Predict).unwrap_err().code, ErrorCode::SchemaTypeMismatch);
+        // Finite but huge inputs that overflow f32 after scaling are rejected.
+        let tab = table(vec![Value::Float(1e39)], vec![Value::from("a")]);
+        assert_eq!(apply_transform(&t, &tab, Phase::Predict).unwrap_err().code, ErrorCode::InvalidValue);
     }
 
     #[test]

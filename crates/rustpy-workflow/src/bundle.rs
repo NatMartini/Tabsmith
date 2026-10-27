@@ -180,7 +180,11 @@ impl Workspace {
             write_json(&tmp.join(OUTPUT_SCHEMA_FILE), &output_schema)?;
             write_json(&tmp.join(TRANSFORM_FILE), &fitted.transform)?;
             write_json(&tmp.join(MODEL_CONFIG_FILE), &model.config)?;
-            write_atomic(&tmp.join(MODEL_WEIGHTS_FILE), &model.to_safetensors()?)?;
+            // The run's verified weight file, byte for byte: a run and its bundle share
+            // the model hash used by the test-set discipline.
+            let weights = self.project.run_dir(run_id).join("model").join(MODEL_WEIGHTS_FILE);
+            let bytes = fs::read(&weights).map_err(|e| RustpyError::io(Phase::Bundle, &weights, e))?;
+            write_atomic(&tmp.join(MODEL_WEIGHTS_FILE), &bytes)?;
             let evaluation = BundleEvaluation {
                 status: if test_eval.is_some() { "evaluated".into() } else { "unevaluated-candidate".into() },
                 test: test_eval.clone(),

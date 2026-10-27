@@ -7,6 +7,7 @@
 pub mod bundle;
 pub mod data;
 pub mod device;
+pub mod exposure;
 pub mod fit;
 pub mod metrics;
 pub mod project;

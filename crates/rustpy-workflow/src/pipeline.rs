@@ -23,10 +23,12 @@ use crate::data::{plan_columns, snapshot_source, load_snapshot, FeaturePlan};
 use crate::device::{environment, estimate_peak_mb, plan_device, receipt, ENGINE};
 use crate::fit::{fit_transform, transform_id, FittedArtifacts};
 use crate::metrics::binary_metrics;
+use crate::exposure::{ExposureCheck, RowKeys};
 use crate::project::{append_jsonl, read_json, write_json, ConfigRequest, Project};
 use crate::split::{labels, make_split};
 use crate::train::{
-    latest_checkpoint, model_config, train, ResumeKey, RunControl, StartFrom, TrainInputs, TrainOutcome, TrainState,
+    latest_checkpoint, list_checkpoints, model_config, platform_fingerprint, train, verify_checkpoint, ResumeKey,
+    RunControl, StartFrom, TrainInputs, TrainOutcome, TrainState,
 };
 
 /// All stages before training, either computed or reused from cache (R1).
@@ -198,7 +200,7 @@ impl Workspace {
             write_json(&split_path, &split)?;
         }
         let t1 = Instant::now();
-        let tid = transform_id(&split.split_id, &cfg.preprocess, &features, cfg.selection.threshold);
+        let tid = transform_id(&split.split_id, &cfg.preprocess, &features, cfg.selection.threshold, &cfg.data.null_values);
         let tdir = self.project.dir("transforms").join(&tid);
         let fitted = if tdir.join("fitted.json").is_file() && !no_cache {
             reused.push("transform".to_string());
@@ -214,6 +216,8 @@ impl Workspace {
                 &split.split_id,
                 cfg.selection.threshold,
                 cfg.data.id_column.as_deref(),
+                &cfg.data.null_values,
+                Some(cfg.data.csv_delimiter.as_str()),
             )?;
             write_json(&tdir.join("fitted.json"), &fa)?;
             fa
@@ -335,7 +339,13 @@ impl Workspace {
     /// Marks runs whose process died as `interrupted`.
     fn refresh_status(&self, run: &mut RunRecord) -> Result<()> {
         if run.status == RunStatus::Running {
-            let alive = run.pid.is_some_and(pid_alive);
+            let lock_path = self.project.run_dir(&run.run_id).join("process.lock");
+            let alive = match fs::OpenOptions::new().read(true).write(true).open(&lock_path) {
+                // Someone still holds the training lock.
+                Ok(f) => matches!(f.try_lock(), Err(fs::TryLockError::WouldBlock)),
+                // Records from before lock files existed: fall back to the pid.
+                Err(_) => run.pid.is_some_and(pid_alive),
+            };
             if !alive {
                 run.status = RunStatus::Interrupted;
                 run.finished_at = Some(now_rfc3339());
@@ -369,7 +379,7 @@ impl Workspace {
                     .collect()
             })
             .unwrap_or_default();
-        ids.sort();
+        ids.sort_by_key(|id| id_number(id));
         ids
     }
 
@@ -387,7 +397,7 @@ impl Workspace {
                     .collect()
             })
             .unwrap_or_default();
-        names.sort();
+        names.sort_by_key(|n| id_number(n.trim_end_matches(".json")));
         match names.pop() {
             Some(n) => Ok(Some(read_json(&dir.join(n), Phase::Compare)?)),
             None => Ok(None),
@@ -515,6 +525,13 @@ impl Workspace {
             stop_reason: None,
         };
         self.save_run(&run)?;
+        // Liveness: this process holds an exclusive OS lock on the file while it
+        // trains; the lock disappears with the process however it ends.
+        let lock_path = run_dir.join("process.lock");
+        let _process_lock = fs::File::create(&lock_path).map_err(|e| RustpyError::io(Phase::Train, &lock_path, e))?;
+        _process_lock
+            .try_lock()
+            .map_err(|e| RustpyError::internal(Phase::Train, format!("cannot lock {}: {e}", lock_path.display())))?;
         run.status = RunStatus::Running;
         run.started_at = Some(now_rfc3339());
         run.pid = Some(std::process::id());
@@ -537,6 +554,17 @@ impl Workspace {
             engine: ENGINE.to_string(),
             rustpy_version: RUSTPY_VERSION.to_string(),
             n_train: train_data.x.rows,
+            platform: platform_fingerprint(),
+        };
+        // R2: continue from a private copy of the checkpoint, so this run can itself
+        // be resumed even if it dies before writing its own first checkpoint.
+        let start = match start {
+            StartFrom::Checkpoint(src) => {
+                let dst = run_dir.join("checkpoints").join(src.file_name().unwrap_or_default());
+                copy_dir(&src, &dst).map_err(|e| RustpyError::io(Phase::Resume, &dst, e))?;
+                StartFrom::Checkpoint(dst)
+            }
+            other => other,
         };
         let inputs = TrainInputs {
             candidate,
@@ -574,7 +602,10 @@ impl Workspace {
             }
         };
         let outcome = train(&inputs, control, start, &mut on_epoch);
-        let mut run: RunRecord = read_json(&run_path, Phase::Train)?;
+        let mut run: RunRecord = match read_json(&run_path, Phase::Train) {
+            Ok(r) => r,
+            Err(_) => run.clone(),
+        };
         run.timings.train_ms = ms(t0);
         run.pid = None;
         run.finished_at = Some(now_rfc3339());
@@ -590,30 +621,50 @@ impl Workspace {
                 run.history = state.history.clone();
                 run.stop_reason = state.stop_reason.clone();
                 run.engine_parity_max_abs_diff = Some(parity_max_abs_diff);
-                let model_dir = run_dir.join("model");
-                crate::project::write_atomic(&model_dir.join("model.safetensors"), &best.to_safetensors()?)?;
-                write_json(&model_dir.join("model.config.json"), &best.config)?;
-                for name in ["model.safetensors", "model.config.json"] {
-                    let path = model_dir.join(name);
-                    let (sha, bytes) = sha256_file(&path).map_err(|e| RustpyError::io(Phase::Train, &path, e))?;
-                    run.artifacts.push(ArtifactRef {
-                        name: name.to_string(),
-                        path: self.project.rel(&path),
-                        sha256: sha,
-                        bytes,
-                    });
+                // Any failure while publishing results marks the run failed with the real
+                // error (never leaves it "running").
+                let published = (|| -> Result<Vec<ArtifactRef>> {
+                    let model_dir = run_dir.join("model");
+                    crate::project::write_atomic(&model_dir.join("model.safetensors"), &best.to_safetensors()?)?;
+                    write_json(&model_dir.join("model.config.json"), &best.config)?;
+                    let mut artifacts = Vec::new();
+                    for name in ["model.safetensors", "model.config.json"] {
+                        let path = model_dir.join(name);
+                        let (sha, bytes) = sha256_file(&path).map_err(|e| RustpyError::io(Phase::Train, &path, e))?;
+                        artifacts.push(ArtifactRef {
+                            name: name.to_string(),
+                            path: self.project.rel(&path),
+                            sha256: sha,
+                            bytes,
+                        });
+                    }
+                    Ok(artifacts)
+                })();
+                match published {
+                    Ok(artifacts) => {
+                        run.artifacts = artifacts;
+                        let p_train = probs(&best, &train_data.x);
+                        let p_valid = probs(&best, &valid_data.x);
+                        run.metrics = Some(RunMetrics {
+                            train: binary_metrics(&p_train, &train_data.y, cfg.selection.threshold),
+                            valid: binary_metrics(&p_valid, &valid_data.y, cfg.selection.threshold),
+                            best_epoch: state.best_epoch,
+                        });
+                        run.latency = Some(measure_latency(&p.fitted, &best, &p.table, &valid_data.rows));
+                        run.timings.eval_ms = ms(t1);
+                        run.status = RunStatus::Completed;
+                        self.event(&run_id, "completed", serde_json::json!({"steps": state.step, "best_epoch": state.best_epoch}));
+                    }
+                    Err(e) => {
+                        let mut e = e.run(run_id.clone());
+                        if let Some(ck) = latest_checkpoint(&run_dir.join("checkpoints")) {
+                            e = e.retained(format!("checkpoint {}", self.project.rel(&ck)));
+                        }
+                        run.status = RunStatus::Failed;
+                        run.error = Some(e.clone());
+                        self.event(&run_id, "failed", serde_json::to_value(&e).unwrap_or_default());
+                    }
                 }
-                let p_train = probs(&best, &train_data.x);
-                let p_valid = probs(&best, &valid_data.x);
-                run.metrics = Some(RunMetrics {
-                    train: binary_metrics(&p_train, &train_data.y, cfg.selection.threshold),
-                    valid: binary_metrics(&p_valid, &valid_data.y, cfg.selection.threshold),
-                    best_epoch: state.best_epoch,
-                });
-                run.latency = Some(measure_latency(&p.fitted, &best, &p.table, &valid_data.rows));
-                run.timings.eval_ms = ms(t1);
-                run.status = RunStatus::Completed;
-                self.event(&run_id, "completed", serde_json::json!({"steps": state.step, "best_epoch": state.best_epoch}));
             }
             Ok(TrainOutcome::Cancelled { state, checkpoint }) => {
                 run.steps_done = state.step;
@@ -676,16 +727,35 @@ impl Workspace {
                 "start a new run with `rustpy run`, or continue training from its weights with `rustpy resume {run_id} --warm-start`"
             )));
         }
-        let ck_root = self.project.run_dir(run_id).join("checkpoints");
-        let Some(ck) = latest_checkpoint(&ck_root) else {
-            return Err(RustpyError::new(
-                ErrorCode::CheckpointMissing,
-                Phase::Resume,
-                format!("run {run_id} has no checkpoint to continue from"),
-            )
-            .run(run_id)
-            .next("start again with `rustpy run` (R0); checkpoints are written at the end of every epoch"));
-        };
+        // An exact resume continues with the run's recorded configuration. Flags that
+        // would change it are refused instead of being silently ignored.
+        if req.profile.is_some() || !req.overrides.is_empty() || !req.override_tables.is_empty() {
+            let recorded: ResolvedConfig =
+                read_json(&self.project.run_dir(run_id).join("resolved.json"), Phase::Resume)?;
+            let requested = self.project.resolve_config(req)?;
+            let old: std::collections::BTreeMap<String, String> =
+                recorded.effective_values().into_iter().map(|(k, v, _)| (k, v)).collect();
+            let changed: Vec<String> = requested
+                .effective_values()
+                .into_iter()
+                .filter(|(k, v, _)| old.get(k) != Some(v))
+                .map(|(k, v, _)| format!("{k} = {v} (run used {})", old.get(&k).map(String::as_str).unwrap_or("unset")))
+                .collect();
+            if !changed.is_empty() {
+                return Err(RustpyError::new(
+                    ErrorCode::ResumeIncompatible,
+                    Phase::Resume,
+                    format!(
+                        "an exact resume continues with run {run_id}'s recorded configuration, but the requested settings differ: {}",
+                        changed.join("; ")
+                    ),
+                )
+                .run(run_id)
+                .next(format!(
+                    "drop --set/--profile to continue exactly, or start a new training with these settings (`rustpy run`, or `rustpy resume {run_id} --warm-start`)"
+                )));
+            }
+        }
         let p = self.prepare_for_run(&parent)?;
         let cfg = &p.resolved.config;
         if cfg.train.for_candidate(parent.candidate) != &parent.train_config {
@@ -696,16 +766,8 @@ impl Workspace {
             .pop()
             .map(|(_, plan)| plan)
             .expect("one candidate");
-        let state: TrainState = read_json(&ck.join("state.json"), Phase::Resume)?;
-        let from_step = state.step;
         let train_data = self.split_data(&p, SplitName::Train)?;
         let valid_data = self.split_data(&p, SplitName::Valid)?;
-        let lineage = Lineage {
-            level: ResumeLevel::ExactResume,
-            parent_run_id: run_id.to_string(),
-            from_step: Some(from_step),
-        };
-        // Validate compatibility before allocating a run id.
         let key = ResumeKey {
             snapshot_id: p.snapshot.snapshot_id.clone(),
             split_id: p.split.split_id.clone(),
@@ -718,19 +780,20 @@ impl Workspace {
             engine: ENGINE.to_string(),
             rustpy_version: RUSTPY_VERSION.to_string(),
             n_train: train_data.x.rows,
+            platform: platform_fingerprint(),
         };
-        let saved: ResumeKey = read_json(&ck.join("key.json"), Phase::Resume)?;
-        let diffs = saved.differences(&key);
-        if !diffs.is_empty() {
-            return Err(RustpyError::new(
-                ErrorCode::ResumeIncompatible,
-                Phase::Resume,
-                format!("cannot continue run {run_id} exactly (R2): {}", diffs.join("; ")),
-            )
-            .run(run_id)
-            .retained(format!("run {run_id} and its checkpoints are unchanged"))
-            .next(format!("start a new run (`rustpy run`), or `rustpy resume {run_id} --warm-start` for a new training from its weights")));
+        // Newest checkpoint that verifies; damaged ones are skipped (and reported).
+        let (ck, skipped) = self.resumable_checkpoint(&parent, &key)?;
+        for s in &skipped {
+            progress(Progress::Stage(format!("skipped checkpoint {s}")));
         }
+        let state: TrainState = read_json(&ck.join("state.json"), Phase::Resume)?;
+        let from_step = state.step;
+        let lineage = Lineage {
+            level: ResumeLevel::ExactResume,
+            parent_run_id: run_id.to_string(),
+            from_step: Some(from_step),
+        };
         // Copy the checkpoint into the new run so the parent stays immutable.
         let run = self.execute_run(
             &p,
@@ -747,6 +810,78 @@ impl Workspace {
         Ok(run)
     }
 
+    /// Newest verified, compatible checkpoint of `run` or, if it has none (a resumed
+    /// child that crashed before its first checkpoint), of its R2 ancestors.
+    fn resumable_checkpoint(&self, run: &RunRecord, key: &ResumeKey) -> Result<(PathBuf, Vec<String>)> {
+        let mut skipped = Vec::new();
+        let mut cur = Some(run.clone());
+        while let Some(r) = cur.take() {
+            let root = self.project.run_dir(&r.run_id).join("checkpoints");
+            for ck in list_checkpoints(&root).into_iter().rev() {
+                match verify_checkpoint(&ck) {
+                    Ok(()) => {
+                        let saved: ResumeKey = read_json(&ck.join("key.json"), Phase::Resume)?;
+                        let diffs = saved.differences(key);
+                        if !diffs.is_empty() {
+                            return Err(RustpyError::new(
+                                ErrorCode::ResumeIncompatible,
+                                Phase::Resume,
+                                format!("cannot continue run {} exactly (R2): {}", run.run_id, diffs.join("; ")),
+                            )
+                            .run(run.run_id.clone())
+                            .retained(format!("run {} and its checkpoints are unchanged", run.run_id))
+                            .next(format!(
+                                "start a new run (`rustpy run`), or `rustpy resume {} --warm-start` for a new training from its last weights",
+                                run.run_id
+                            )));
+                        }
+                        return Ok((ck, skipped));
+                    }
+                    Err(e) => skipped.push(format!("{} ({})", self.project.rel(&ck), e.message)),
+                }
+            }
+            cur = match &r.lineage {
+                Some(l) if l.level == ResumeLevel::ExactResume => self.load_run(&l.parent_run_id).ok(),
+                _ => None,
+            };
+        }
+        let mut e = RustpyError::new(
+            ErrorCode::CheckpointMissing,
+            Phase::Resume,
+            format!("run {} has no valid checkpoint to continue from", run.run_id),
+        )
+        .run(run.run_id.clone())
+        .next("start again with `rustpy run` (R0)");
+        if !skipped.is_empty() {
+            e.code = ErrorCode::CheckpointCorrupt;
+            e = e.actual(format!("damaged: {}", skipped.join("; ")));
+        }
+        Err(e)
+    }
+
+    /// Kept weights of a run: its final model, or the best weights of its newest
+    /// valid checkpoint when it did not complete.
+    fn warm_start_weights(&self, parent: &RunRecord) -> Result<DenseModel> {
+        if parent.status == RunStatus::Completed {
+            return self.run_weights(parent).map_err(|e| e.in_phase(Phase::Resume));
+        }
+        let root = self.project.run_dir(&parent.run_id).join("checkpoints");
+        for ck in list_checkpoints(&root).into_iter().rev() {
+            if verify_checkpoint(&ck).is_ok() && ck.join("best.safetensors").is_file() {
+                let key: ResumeKey = read_json(&ck.join("key.json"), Phase::Resume)?;
+                let bytes = fs::read(ck.join("best.safetensors")).map_err(|e| RustpyError::io(Phase::Resume, &ck, e))?;
+                return DenseModel::from_safetensors(key.model_config, &bytes).map_err(|e| e.in_phase(Phase::Resume));
+            }
+        }
+        Err(RustpyError::new(
+            ErrorCode::CheckpointMissing,
+            Phase::Resume,
+            format!("run {} has no weights to warm-start from (no completed epoch)", parent.run_id),
+        )
+        .run(parent.run_id.clone())
+        .next("start a new run with `rustpy run`"))
+    }
+
     fn warm_start(
         &self,
         parent: &RunRecord,
@@ -754,10 +889,7 @@ impl Workspace {
         control: &RunControl,
         progress: &mut dyn FnMut(Progress),
     ) -> Result<RunRecord> {
-        let weights = self.run_weights(parent).map_err(|e| {
-            e.in_phase(Phase::Resume)
-                .next(format!("warm start needs a completed run; run {} is {}", parent.run_id, parent.status.as_str()))
-        })?;
+        let weights = self.warm_start_weights(parent)?;
         let resolved = self.resolve(req)?;
         let p = self.prepare(resolved, false)?;
         let parent_fitted: FittedArtifacts = read_json(
@@ -772,6 +904,12 @@ impl Workspace {
             )
             .run(parent.run_id.clone())
             .next("train from scratch with `rustpy run`"));
+        }
+        if p.split.split_id != parent.split_id {
+            progress(Progress::Stage(format!(
+                "note: warm start uses split {} (parent {} used {}); evaluations check that the parent's training rows are not evaluated",
+                p.split.split_id, parent.run_id, parent.split_id
+            )));
         }
         let cfg = &p.resolved.config;
         if model_config(parent.candidate, p.fitted.transform.output_dim, cfg.train.for_candidate(parent.candidate))
@@ -860,119 +998,241 @@ impl Workspace {
     // Evaluation
     // -----------------------------------------------------------------------
 
-    fn ledger_path(&self) -> PathBuf {
-        self.project.dir("evaluations").join("ledger.jsonl")
-    }
-
-    fn ledger(&self) -> Vec<LedgerEntry> {
-        fs::read_to_string(self.ledger_path())
-            .map(|s| s.lines().filter_map(|l| serde_json::from_str(l).ok()).collect())
-            .unwrap_or_default()
-    }
-
     pub fn evaluations(&self) -> Vec<EvaluationRecord> {
         let mut v: Vec<EvaluationRecord> = fs::read_dir(self.project.dir("evaluations"))
             .map(|it| {
                 it.flatten()
-                    .filter(|e| e.file_name().to_string_lossy().starts_with("eval-"))
-                    .filter(|e| e.file_name().to_string_lossy().ends_with(".json"))
-                    .filter_map(|e| read_json(&e.path(), Phase::Evaluate).ok())
+                    .map(|e| e.file_name().to_string_lossy().to_string())
+                    .filter(|n| n.starts_with("eval-") && n.ends_with(".json") && !n.ends_with(".rows.json"))
+                    .filter_map(|n| read_json(&self.project.dir("evaluations").join(n), Phase::Evaluate).ok())
                     .collect()
             })
             .unwrap_or_default();
-        v.sort_by(|a, b| a.evaluation_id.cmp(&b.evaluation_id));
+        v.sort_by_key(|e: &EvaluationRecord| id_number(&e.evaluation_id));
         v
     }
 
-    fn check_test_use(&self, split_id: &str, subject: &str, allow_reuse: bool) -> Result<(Option<String>, u32)> {
-        let uses: Vec<LedgerEntry> = self.ledger().into_iter().filter(|e| e.split_id == split_id).collect();
-        if let Some(prev) = uses.iter().find(|e| e.subject == subject) {
-            return Ok((Some(prev.evaluation_id.clone()), prev.use_index));
-        }
-        if !uses.is_empty() && !allow_reuse {
-            let prev = &uses[0];
-            return Err(RustpyError::new(
-                ErrorCode::TestSetReuse,
-                Phase::Evaluate,
-                format!(
-                    "the test rows of split {split_id} were already used to evaluate {} ({}); evaluating another model on them would turn the test set into a selection set",
-                    prev.subject, prev.evaluation_id
-                ),
-            )
-            .field("--split test")
-            .retained(format!("evaluation {}", prev.evaluation_id))
-            .next("compare candidates on the validation split (`--split valid`); if you accept a biased estimate, pass --allow-test-reuse (recorded in reports and bundles)"));
-        }
-        Ok((None, uses.len() as u32 + 1))
+    fn evaluation_rows(&self, evaluation_id: &str) -> Option<RowKeys> {
+        read_json(&self.project.dir("evaluations").join(format!("{evaluation_id}.rows.json")), Phase::Evaluate).ok()
     }
 
-    fn save_evaluation(&self, mut rec: EvaluationRecord, record_test_use: bool) -> Result<EvaluationRecord> {
+    /// Rows a run's weights were trained or selected on: training rows (and
+    /// validation rows when `include_valid`), plus those of runs it was
+    /// warm-started from. Returns `(run_id, rows)` per source; sources whose
+    /// snapshot can no longer be loaded are returned as `None`.
+    pub fn run_exposure(&self, run: &RunRecord, include_valid: bool) -> Vec<(String, Option<RowKeys>)> {
+        let mut out = Vec::new();
+        let mut cur = Some(run.clone());
+        let mut guard = 0;
+        while let Some(r) = cur.take() {
+            guard += 1;
+            if guard > 64 {
+                break;
+            }
+            let keys = (|| -> Result<RowKeys> {
+                let (snapshot, table) = load_snapshot(&self.project, &r.snapshot_id)?;
+                let split: SplitManifest =
+                    read_json(&self.project.dir("splits").join(format!("{}.json", r.split_id)), Phase::Evaluate)?;
+                let mut rows = split.rows(SplitName::Train);
+                if include_valid || r.run_id != run.run_id {
+                    // Ancestors' validation rows selected their weights, too.
+                    rows.extend(split.rows(SplitName::Valid));
+                }
+                Ok(RowKeys::of(&snapshot, &table, &rows))
+            })()
+            .ok();
+            out.push((r.run_id.clone(), keys));
+            cur = match &r.lineage {
+                Some(l) if l.level == ResumeLevel::WarmStart => self.load_run(&l.parent_run_id).ok(),
+                _ => None,
+            };
+        }
+        out
+    }
+
+    /// Verifies that the evaluated rows were not seen by the model.
+    fn check_unseen(&self, exposure: &[(String, Option<RowKeys>)], evaluated: &RowKeys, subject: &str) -> Result<ExposureCheck> {
+        let mut check = ExposureCheck::default();
+        for (source, keys) in exposure {
+            match keys.as_ref().and_then(|k| k.overlap(evaluated)) {
+                Some(n) => check.overlapping_rows += n,
+                None => check.unverifiable.push(source.clone()),
+            }
+        }
+        if check.overlapping_rows > 0 {
+            let sources: Vec<&str> = exposure.iter().map(|(s, _)| s.as_str()).collect();
+            return Err(RustpyError::new(
+                ErrorCode::LeakageDetected,
+                Phase::Evaluate,
+                format!(
+                    "{} of the {} evaluated rows were used to train or select {subject} (training/validation rows of {})",
+                    check.overlapping_rows,
+                    evaluated.len(),
+                    sources.join(" <- ")
+                ),
+            )
+            .expected("evaluation rows the model has never seen")
+            .actual(format!("{} overlapping rows", check.overlapping_rows))
+            .next("evaluate on a split the model never saw; declare data.id_column so rows keep their split across data versions and re-splits, and do not change data.seed after evaluating"));
+        }
+        Ok(check)
+    }
+
+    /// Test-set discipline: rows of a test split may be used to evaluate one model.
+    /// Returns an existing evaluation when the same model was already evaluated on
+    /// the same rows, or the use index (1 = first use).
+    ///
+    /// Reuse that is refused: another model trained on the *same data snapshot*
+    /// (a competing candidate) evaluated on overlapping test rows. Overlap with
+    /// models of an earlier data generation (the standing hold-out across releases)
+    /// is allowed and noted.
+    fn check_test_reuse(
+        &self,
+        model_sha: &str,
+        model_snapshot: &str,
+        rows: &RowKeys,
+        allow_reuse: bool,
+    ) -> Result<(Option<EvaluationRecord>, u32, Vec<String>)> {
+        let mut other_models: Vec<(String, String, usize)> = Vec::new();
+        let mut earlier_generations: Vec<String> = Vec::new();
+        let mut unverifiable = 0usize;
+        for prev in self.evaluations().into_iter().filter(|e| e.protocol.split == SplitName::Test) {
+            let Some(prev_rows) = self.evaluation_rows(&prev.evaluation_id) else {
+                unverifiable += 1;
+                continue;
+            };
+            let overlap = prev_rows.overlap(rows);
+            let same_model = prev.model_sha256.as_deref() == Some(model_sha);
+            match overlap {
+                Some(n) if same_model && n == rows.len() && n == prev_rows.len() => {
+                    return Ok((Some(prev), 0, vec![]));
+                }
+                Some(n) if n > 0 && !same_model => {
+                    let subject = match &prev.subject {
+                        EvaluationSubject::Run { run_id } => run_id.clone(),
+                        EvaluationSubject::Bundle { bundle_id, .. } => bundle_id.clone(),
+                    };
+                    let label = format!("{subject} ({})", prev.evaluation_id);
+                    let same_generation = prev.model_snapshot_id.as_deref().is_none_or(|s| s == model_snapshot);
+                    if !same_generation {
+                        earlier_generations.push(label);
+                    } else if !other_models.iter().any(|(m, _, _)| Some(m.as_str()) == prev.model_sha256.as_deref()) {
+                        other_models.push((prev.model_sha256.clone().unwrap_or_default(), label, n));
+                    }
+                }
+                None => unverifiable += 1,
+                _ => {}
+            }
+        }
+        let mut notes = Vec::new();
+        if !other_models.is_empty() {
+            let (_, first, n) = &other_models[0];
+            if !allow_reuse {
+                return Err(RustpyError::new(
+                    ErrorCode::TestSetReuse,
+                    Phase::Evaluate,
+                    format!(
+                        "{n} of these {} test rows were already used to evaluate another model, {first}; evaluating more models on them would turn the test set into a selection set",
+                        rows.len()
+                    ),
+                )
+                .field("--split test")
+                .retained(format!("evaluation {first}"))
+                .next("compare candidates on the validation split (`--split valid`); if you accept a biased estimate, pass --allow-test-reuse (recorded in reports and bundles)"));
+            }
+            notes.push(format!(
+                "test rows reused (use #{}): already used for {}; this is no longer an unbiased estimate",
+                other_models.len() + 1,
+                other_models.iter().map(|(_, s, _)| s.as_str()).collect::<Vec<_>>().join(", ")
+            ));
+        }
+        if !earlier_generations.is_empty() {
+            notes.push(format!(
+                "some of these test rows were used before to evaluate models of an earlier data version ({}); kept as the standing hold-out",
+                earlier_generations.join(", ")
+            ));
+        }
+        if unverifiable > 0 {
+            notes.push(format!(
+                "{unverifiable} earlier test evaluation(s) could not be matched row by row (different data version without data.id_column)"
+            ));
+        }
+        Ok((None, other_models.len() as u32 + 1, notes))
+    }
+
+    fn save_evaluation(&self, mut rec: EvaluationRecord, rows: &RowKeys) -> Result<EvaluationRecord> {
         let id = self.project.allocate_id("evaluations", "eval")?;
         rec.evaluation_id = id.clone();
         let dir = self.project.dir("evaluations");
+        // Rows first: a published record always has its row list.
+        write_json(&dir.join(format!("{id}.rows.json")), rows)?;
         write_json(&dir.join(format!("{id}.json")), &rec)?;
         let _ = fs::remove_file(dir.join(format!("{id}.lock")));
-        if record_test_use {
-            let subject = match &rec.subject {
-                EvaluationSubject::Run { run_id } => run_id.clone(),
-                EvaluationSubject::Bundle { bundle_id, .. } => bundle_id.clone(),
-            };
-            append_jsonl(
-                &self.ledger_path(),
-                &LedgerEntry {
-                    split_id: rec.protocol.split_id.clone(),
-                    subject,
-                    evaluation_id: id,
-                    use_index: rec.test_use_index.unwrap_or(1),
-                    at: rec.created_at.clone(),
-                },
-            )?;
-        }
         Ok(rec)
     }
 
-    /// Evaluates a completed run on one split of its own snapshot. The test split
-    /// may be used once per split; later uses need `allow_test_reuse` and are recorded.
+    fn run_model_sha(run: &RunRecord) -> String {
+        run.artifacts
+            .iter()
+            .find(|a| a.name == "model.safetensors")
+            .map(|a| a.sha256.clone())
+            .unwrap_or_default()
+    }
+
+    /// Evaluates a completed run on one split of its own snapshot. Test rows may be
+    /// used for one model; later uses need `allow_test_reuse` and are recorded.
     pub fn evaluate_run(&self, run_id: &str, split: SplitName, allow_test_reuse: bool) -> Result<EvaluationRecord> {
         let run = self.load_run(run_id)?;
         let model = self.run_weights(&run)?;
+        let model_sha = Self::run_model_sha(&run);
+        let p = self.prepare_for_run(&run)?;
+        let data = self.split_data(&p, split)?;
+        let rows = RowKeys::of(&p.snapshot, &p.table, &data.rows);
+        let mut notes = Vec::new();
         let mut test_index = None;
         if split == SplitName::Test {
-            let (existing, idx) = self.check_test_use(&run.split_id, run_id, allow_test_reuse)?;
-            if let Some(eid) = existing {
-                let mut rec: EvaluationRecord =
-                    read_json(&self.project.dir("evaluations").join(format!("{eid}.json")), Phase::Evaluate)?;
+            let (existing, idx, n) = self.check_test_reuse(&model_sha, &run.snapshot_id, &rows, allow_test_reuse)?;
+            if let Some(mut rec) = existing {
                 rec.notes.push("existing evaluation returned; the test set was not used again".into());
                 return Ok(rec);
             }
             test_index = Some(idx);
+            notes.extend(n);
         }
-        let p = self.prepare_for_run(&run)?;
-        let data = self.split_data(&p, split)?;
-        let pr = probs(&model, &data.x);
-        let metrics = binary_metrics(&pr, &data.y, run.threshold);
-        let mut notes = Vec::new();
-        if test_index.is_some_and(|i| i > 1) {
+        let exposure = self.run_exposure(&run, split == SplitName::Test);
+        // Evaluating a run on its own validation split is its selection metric, not a held-out estimate.
+        let check = self.check_unseen(&exposure, &rows, &format!("run {run_id}"))?;
+        let verified = check.unverifiable.is_empty();
+        if !verified {
             notes.push(format!(
-                "test split reused (use #{}): this is no longer an unbiased estimate",
-                test_index.unwrap_or(0)
+                "rows could not be matched with those seen by {} (add data.id_column): unseen rows not verified",
+                check.unverifiable.join(", ")
             ));
         }
+        if split == SplitName::Valid {
+            notes.push("validation rows selected this run's weights (early stopping): not a held-out estimate".into());
+        }
+        let pr = probs(&model, &data.x);
         let rec = EvaluationRecord {
             evaluation_id: String::new(),
             created_at: now_rfc3339(),
             subject: EvaluationSubject::Run { run_id: run_id.to_string() },
             protocol: self.protocol(&p, split),
-            metrics,
+            metrics: binary_metrics(&pr, &data.y, run.threshold),
             test_use_index: test_index,
             latency: Some(measure_latency(&p.fitted, &model, &p.table, &data.rows)),
+            model_sha256: Some(model_sha),
+            model_snapshot_id: Some(run.snapshot_id.clone()),
+            unseen_rows_verified: if split == SplitName::Valid { None } else { verified.then_some(true) },
             notes,
         };
-        self.save_evaluation(rec, split == SplitName::Test)
+        self.save_evaluation(rec, &rows)
     }
 
     /// Evaluates a bundle (its frozen transform and weights) on a split of the
-    /// *current* data snapshot — e.g. old vs new model on the same new data.
+    /// *current* data snapshot — e.g. old vs new model on the same new data. Rows
+    /// the bundle's source run trained or selected on are refused when they can be
+    /// matched (id column, or the same data version).
     pub fn evaluate_bundle(
         &self,
         bundle_dir: &Path,
@@ -994,20 +1254,93 @@ impl Workspace {
             .expected(format!("{} with labels {:?}/{:?}", out.target, out.negative_label, out.positive_label))
             .actual(format!("{} with labels {:?}/{:?}", t.name, t.negative_label, t.positive_label)));
         }
+        let model_sha = predictor
+            .manifest()
+            .files
+            .iter()
+            .find(|f| f.path == rustpy_contracts::manifest::MODEL_WEIGHTS_FILE)
+            .map(|f| f.sha256.clone())
+            .unwrap_or_default();
+        let model_snapshot = predictor.manifest().provenance.snapshot_id.clone();
+        let mut split_rows = p.split.rows(split);
+        let mut notes = vec![format!(
+            "bundle built from snapshot {} evaluated on snapshot {}",
+            model_snapshot, p.snapshot.snapshot_id
+        )];
+        // Rows the bundle's source run trained or selected on are excluded (when they
+        // can be matched), so an old model is never scored on its own training rows.
+        let source_run = predictor.manifest().provenance.run_id.clone();
+        let verified = match self.load_run(&source_run) {
+            Ok(run) => {
+                let exposure = self.run_exposure(&run, true);
+                let mut seen: std::collections::BTreeSet<usize> = Default::default();
+                let mut unverifiable = Vec::new();
+                for (src, keys) in &exposure {
+                    let Some(keys) = keys else {
+                        unverifiable.push(src.clone());
+                        continue;
+                    };
+                    let mut matched = false;
+                    for &r in &split_rows {
+                        match keys.contains_row(&p.snapshot, &p.table, r) {
+                            Some(true) => {
+                                seen.insert(r);
+                                matched = true;
+                            }
+                            Some(false) => matched = true,
+                            None => {}
+                        }
+                    }
+                    if !matched {
+                        unverifiable.push(src.clone());
+                    }
+                }
+                if !seen.is_empty() {
+                    let before = split_rows.len();
+                    split_rows.retain(|r| !seen.contains(r));
+                    if split_rows.is_empty() {
+                        return Err(RustpyError::new(
+                            ErrorCode::LeakageDetected,
+                            Phase::Evaluate,
+                            format!("all {before} rows of this split were used to train or select bundle {}", predictor.bundle_id()),
+                        )
+                        .next("evaluate on data the bundle never saw (e.g. the test split, or new rows)"));
+                    }
+                    notes.push(format!(
+                        "{} of {before} rows were used to train/select the bundle (run {source_run}) and are excluded; evaluated on {} unseen rows",
+                        seen.len(),
+                        split_rows.len()
+                    ));
+                }
+                if !unverifiable.is_empty() {
+                    notes.push(format!(
+                        "rows could not be matched with those seen by {} (add data.id_column): unseen rows not verified",
+                        unverifiable.join(", ")
+                    ));
+                }
+                unverifiable.is_empty()
+            }
+            Err(_) => {
+                notes.push(format!(
+                    "source run {source_run} is not in this project: cannot verify that the evaluated rows are unseen by the bundle"
+                ));
+                false
+            }
+        };
+        let rows = RowKeys::of(&p.snapshot, &p.table, &split_rows);
         let mut test_index = None;
         if split == SplitName::Test {
-            let (existing, idx) = self.check_test_use(&p.split.split_id, predictor.bundle_id(), allow_test_reuse)?;
-            if let Some(eid) = existing {
-                return read_json(&self.project.dir("evaluations").join(format!("{eid}.json")), Phase::Evaluate);
+            let (existing, idx, n) = self.check_test_reuse(&model_sha, &model_snapshot, &rows, allow_test_reuse)?;
+            if let Some(rec) = existing {
+                return Ok(rec);
             }
             test_index = Some(idx);
+            notes.extend(n);
         }
-        let rows = p.split.rows(split);
         let names: Vec<&str> = predictor.input_schema().fields.iter().map(|f| f.name.as_str()).collect();
-        let sub = p.table.take(&rows).select(&names);
-        let y = labels(&p.table.take(&rows), t);
-        let pr = predictor.probabilities(&sub).map_err(|e| e.in_phase(Phase::Evaluate))?;
-        let metrics = binary_metrics(&pr, &y, out.threshold);
+        let sub = p.table.take(&split_rows);
+        let y = labels(&sub, t);
+        let pr = predictor.probabilities(&sub.select(&names)).map_err(|e| e.in_phase(Phase::Evaluate))?;
         let mut protocol = self.protocol(&p, split);
         protocol.threshold = format!("{}", out.threshold);
         let rec = EvaluationRecord {
@@ -1018,15 +1351,15 @@ impl Workspace {
                 path: self.project.rel(bundle_dir),
             },
             protocol,
-            metrics,
+            metrics: binary_metrics(&pr, &y, out.threshold),
             test_use_index: test_index,
             latency: None,
-            notes: vec![format!(
-                "bundle built from snapshot {} evaluated on snapshot {}",
-                predictor.manifest().provenance.snapshot_id, p.snapshot.snapshot_id
-            )],
+            model_sha256: Some(model_sha),
+            model_snapshot_id: Some(model_snapshot),
+            unseen_rows_verified: verified.then_some(true),
+            notes,
         };
-        self.save_evaluation(rec, split == SplitName::Test)
+        self.save_evaluation(rec, &rows)
     }
 
     // -----------------------------------------------------------------------
@@ -1046,8 +1379,34 @@ impl Workspace {
             run_ids.to_vec()
         };
         let runs: Vec<RunRecord> = ids.iter().map(|id| self.load_run(id)).collect::<Result<_>>()?;
-        let cfg = self.project.resolve_config(&ConfigRequest::default())?.config;
-        self.compare_records(&runs, &cfg)
+        // Use the selection settings the runs were trained with (profile/--set
+        // included), not whatever rustpy.toml says now.
+        let recorded: Vec<(String, ProjectConfig)> = runs
+            .iter()
+            .filter_map(|r| {
+                read_json::<ResolvedConfig>(&self.project.run_dir(&r.run_id).join("resolved.json"), Phase::Compare)
+                    .ok()
+                    .map(|c| (r.run_id.clone(), c.config))
+            })
+            .collect();
+        let cfg = match recorded.first() {
+            Some((_, c)) => c.clone(),
+            None => self.project.resolve_config(&ConfigRequest::default())?.config,
+        };
+        let mut cmp = self.compare_records(&runs, &cfg)?;
+        let differing: Vec<&str> = recorded
+            .iter()
+            .filter(|(_, c)| c.selection != cfg.selection)
+            .map(|(id, _)| id.as_str())
+            .collect();
+        if !differing.is_empty() {
+            cmp.notes.push(format!(
+                "runs {} were trained with different selection settings; ranking uses those of {}",
+                differing.join(", "),
+                recorded[0].0
+            ));
+        }
+        Ok(cmp)
     }
 
     fn compare_records(&self, runs: &[RunRecord], cfg: &ProjectConfig) -> Result<Comparison> {
@@ -1161,14 +1520,22 @@ impl Workspace {
     }
 }
 
-/// One use of a test split.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LedgerEntry {
-    pub split_id: String,
-    pub subject: String,
-    pub evaluation_id: String,
-    pub use_index: u32,
-    pub at: String,
+fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
+    fs::create_dir_all(to)?;
+    for e in fs::read_dir(from)? {
+        let e = e?;
+        if e.file_type()?.is_dir() {
+            copy_dir(&e.path(), &to.join(e.file_name()))?;
+        } else {
+            fs::copy(e.path(), to.join(e.file_name()))?;
+        }
+    }
+    Ok(())
+}
+
+/// Numeric suffix of an id like `eval-012` / `run-1000` (for ordering).
+pub fn id_number(id: &str) -> u64 {
+    id.rsplit('-').next().and_then(|n| n.parse().ok()).unwrap_or(0)
 }
 
 fn probs(model: &DenseModel, x: &Matrix) -> Vec<f64> {
@@ -1206,7 +1573,7 @@ fn measure_latency(fitted: &FittedArtifacts, model: &DenseModel, table: &Table, 
 
 #[cfg(target_os = "linux")]
 fn pid_alive(pid: u32) -> bool {
-    pid == std::process::id() || Path::new(&format!("/proc/{pid}")).exists()
+    Path::new(&format!("/proc/{pid}")).exists()
 }
 
 #[cfg(not(target_os = "linux"))]

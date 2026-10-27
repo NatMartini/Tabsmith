@@ -161,7 +161,7 @@ pub fn dispatch(cli: Cli) -> Result<u8> {
             print!("{}", t.render());
             Ok(0)
         }
-        Command::Run { config, candidates, no_cache, simulate_crash_after_steps } => {
+        Command::Run { config, candidates, no_cache, simulate_crash_after_steps, simulate_cancel_after_steps } => {
             let ws = workspace(&cli.project)?;
             let candidates = match candidates {
                 Some(list) => Some(
@@ -181,7 +181,11 @@ pub fn dispatch(cli: Cli) -> Result<u8> {
             let opts = RunOptions {
                 candidates,
                 no_cache,
-                control: RunControl { cancel, crash_after_steps: simulate_crash_after_steps },
+                control: RunControl {
+                    cancel,
+                    crash_after_steps: simulate_crash_after_steps,
+                    cancel_after_steps: simulate_cancel_after_steps,
+                },
             };
             let mut progress = progress_printer(json);
             let result = ws.run(&config_request(&config), &opts, &mut progress)?;
@@ -266,10 +270,14 @@ pub fn dispatch(cli: Cli) -> Result<u8> {
             }
             Ok(0)
         }
-        Command::Resume { run, warm_start, config, simulate_crash_after_steps } => {
+        Command::Resume { run, warm_start, config, simulate_crash_after_steps, simulate_cancel_after_steps } => {
             let ws = workspace(&cli.project)?;
             let cancel = install_cancel_handler();
-            let control = RunControl { cancel, crash_after_steps: simulate_crash_after_steps };
+            let control = RunControl {
+                cancel,
+                crash_after_steps: simulate_crash_after_steps,
+                cancel_after_steps: simulate_cancel_after_steps,
+            };
             let mut progress = progress_printer(json);
             let r = ws.resume(&run, warm_start, &config_request(&config), &control, &mut progress)?;
             if json {
@@ -638,7 +646,7 @@ fn predict_file(bundle: &Path, input: &Path, output: Option<&Path>, json: bool) 
             (predictor.predict(&records)?, ids)
         }
         _ => {
-            let table = rustpy_workflow::data::read_for_prediction(input, predictor.input_schema())?;
+            let table = rustpy_workflow::data::read_for_prediction(input, predictor.input_schema(), &predictor.bundle().transform)?;
             let ids = match id_field.as_ref().and_then(|f| table.column(f)) {
                 Some(col) => (0..table.n_rows())
                     .map(|i| rustpy_runtime::coerce_category(col.get(i), rustpy_contracts::config::NanPolicy::Missing).ok().flatten().map(|c| c.into_owned()))

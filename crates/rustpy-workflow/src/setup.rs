@@ -212,7 +212,7 @@ impl Workspace {
             snapshot: snap.snapshot,
             target: features.target.clone(),
             columns: features.columns.clone(),
-            warnings: features.warnings.clone(),
+            warnings: features.warnings.iter().chain(&split.warnings).cloned().collect(),
             split: format!("{} (seed {})", split.strategy, split.seed),
             split_counts: [
                 ("train".into(), split.train.rows, split.train.positives),
@@ -257,6 +257,7 @@ impl Workspace {
             })
             .collect();
         let mut warnings = p.features.warnings.clone();
+        warnings.extend(p.split.warnings.iter().cloned());
         warnings.extend(p.snapshot.limitations.iter().cloned());
         for d in &p.fitted.transform.dropped {
             warnings.push(format!("feature `{}` dropped: {}", d.name, d.reason));

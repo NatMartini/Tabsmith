@@ -25,5 +25,5 @@ pub mod value;
 pub use bundle::{Bundle, Device, LoadOptions};
 pub use predictor::{CheckReport, Prediction, Predictor, PredictorHandle, UpdateReport};
 pub use rustpy_contracts::{ErrorCode, Phase, RustpyError};
-pub use transform::{apply_transform, coerce_category, coerce_numeric, CoerceError, Matrix};
+pub use transform::{apply_transform, check_category_type, coerce_category, coerce_numeric, CoerceError, Matrix, MissingTokens};
 pub use value::{Column, ColumnData, Record, Table, Value, ValueRef};

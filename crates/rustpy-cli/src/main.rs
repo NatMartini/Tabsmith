@@ -87,6 +87,9 @@ pub enum Command {
         /// Test hook: abort the process after N optimizer steps to simulate a crash.
         #[arg(long, hide = true)]
         simulate_crash_after_steps: Option<u64>,
+        /// Test hook: request a clean cancel (like Ctrl-C) after N optimizer steps.
+        #[arg(long, hide = true)]
+        simulate_cancel_after_steps: Option<u64>,
     },
     /// List runs and their status.
     Runs,
@@ -107,6 +110,8 @@ pub enum Command {
         config: ConfigArgs,
         #[arg(long, hide = true)]
         simulate_crash_after_steps: Option<u64>,
+        #[arg(long, hide = true)]
+        simulate_cancel_after_steps: Option<u64>,
     },
     /// Evaluate a run (or a bundle on the current data) on a split.
     Evaluate {

@@ -89,7 +89,9 @@ impl Workspace {
                     .collect()
             })
             .unwrap_or_default();
-        group_files.sort();
+        group_files.sort_by_key(|p| {
+            crate::pipeline::id_number(p.file_stem().and_then(|s| s.to_str()).unwrap_or_default())
+        });
         let mut groups = Vec::new();
         for gf in group_files {
             let g: RunGroup = read_json(&gf, Phase::Report)?;

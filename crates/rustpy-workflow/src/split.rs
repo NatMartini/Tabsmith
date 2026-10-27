@@ -11,8 +11,39 @@ use rustpy_runtime::{coerce_category, Table};
 use crate::data::TargetInfo;
 use crate::rng::SplitMix64;
 
-/// Version of the split algorithm; part of the split id.
+/// Version of the positional stratified split algorithm; part of the split id.
 pub const SPLIT_ALGORITHM: &str = "rustpy.split.v1";
+/// Version of the stable, key-hashed assignment (grouped splits, or any split with
+/// an id column): a row/group keeps its split when the data grows or is re-ordered.
+pub const SPLIT_ALGORITHM_STABLE: &str = "rustpy.split.v2-stable-hash";
+
+fn key_text(v: rustpy_runtime::ValueRef<'_>) -> Option<String> {
+    coerce_category(v, NanPolicy::Missing).ok().flatten().map(|c| c.into_owned())
+}
+
+/// Deterministic value in [0, 1) from (seed, domain, key): FNV-1a + SplitMix64 finaliser.
+pub fn stable_unit(seed: u64, domain: &str, key: &str) -> f64 {
+    let mut h = 0xcbf2_9ce4_8422_2325u64;
+    for b in domain.as_bytes().iter().chain([0u8].iter()).chain(key.as_bytes()) {
+        h ^= u64::from(*b);
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    let mut z = h ^ seed.wrapping_mul(0x9e37_79b9_7f4a_7c15);
+    z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    z ^= z >> 31;
+    (z >> 11) as f64 / (1u64 << 53) as f64
+}
+
+fn by_hash(u: f64, fractions: &[f64; 3]) -> u8 {
+    if u < fractions[2] {
+        SPLIT_TEST
+    } else if u < fractions[2] + fractions[1] {
+        SPLIT_VALID
+    } else {
+        SPLIT_TRAIN
+    }
+}
 
 /// Binary label per row (true = positive).
 pub fn labels(table: &Table, target: &TargetInfo) -> Vec<bool> {
@@ -65,8 +96,18 @@ pub fn make_split(
     let fractions = [cfg.train_fraction, cfg.valid_fraction, cfg.test_fraction];
     let mut assignment = vec![SPLIT_TRAIN; n];
     let mut group_counts = None;
-    match cfg.split {
-        SplitStrategy::Stratified => {
+    let mut warnings = Vec::new();
+    let id_column = cfg.id_column.as_deref().and_then(|c| table.column(c));
+    match (cfg.split, id_column) {
+        (SplitStrategy::Stratified, Some(ids)) => {
+            // Stable assignment: each row's split depends only on (seed, id), so a row
+            // keeps its split when the file grows or is re-ordered (data updates).
+            for (i, slot) in assignment.iter_mut().enumerate() {
+                let key = key_text(ids.get(i)).unwrap_or_default();
+                *slot = by_hash(stable_unit(cfg.seed, "row", &key), &fractions);
+            }
+        }
+        (SplitStrategy::Stratified, None) => {
             for class in [false, true] {
                 let mut idx: Vec<usize> = (0..n).filter(|&i| y[i] == class).collect();
                 let label = if class { &target.positive_label } else { &target.negative_label };
@@ -89,7 +130,7 @@ pub fn make_split(
                 }
             }
         }
-        SplitStrategy::Group => {
+        (SplitStrategy::Group, _) => {
             let gname = cfg.group_column.as_deref().ok_or_else(|| {
                 RustpyError::new(ErrorCode::ConfigInvalid, Phase::Split, "split = \"group\" needs data.group_column")
                     .field("data.group_column")
@@ -101,65 +142,72 @@ pub fn make_split(
             })?;
             let mut rows_by_group: BTreeMap<String, Vec<usize>> = BTreeMap::new();
             for i in 0..n {
-                let key = coerce_category(col.get(i), NanPolicy::Missing)
-                    .ok()
-                    .flatten()
-                    .ok_or_else(|| {
-                        RustpyError::new(
-                            ErrorCode::DataUnsupported,
-                            Phase::Split,
-                            format!("group column `{gname}` is missing or invalid in row {i}"),
-                        )
-                        .field("data.group_column")
-                        .next("every row needs a group id for a grouped split")
-                    })?;
-                rows_by_group.entry(key.into_owned()).or_default().push(i);
+                let key = key_text(col.get(i)).ok_or_else(|| {
+                    RustpyError::new(
+                        ErrorCode::DataUnsupported,
+                        Phase::Split,
+                        format!("group column `{gname}` is missing or invalid in row {i}"),
+                    )
+                    .field("data.group_column")
+                    .next("every row needs a group id for a grouped split")
+                })?;
+                rows_by_group.entry(key).or_default().push(i);
             }
-            let mut groups: Vec<(String, Vec<usize>)> = rows_by_group.into_iter().collect();
-            if groups.len() < 3 {
+            if rows_by_group.len() < 3 {
                 return Err(RustpyError::new(
                     ErrorCode::SplitDegenerate,
                     Phase::Split,
-                    format!("only {} groups in `{gname}`; a grouped split needs at least 3", groups.len()),
+                    format!("only {} groups in `{gname}`; a grouped split needs at least 3", rows_by_group.len()),
                 )
                 .field("data.group_column"));
             }
-            SplitMix64::derive(cfg.seed, "group").shuffle(&mut groups);
-            let test_target = (n as f64 * cfg.test_fraction).round() as usize;
-            let valid_target = (n as f64 * cfg.valid_fraction).round() as usize;
-            let (mut test_rows, mut valid_rows) = (0usize, 0usize);
+            // Stable assignment by group key: a group keeps its split across data versions.
             let mut counts = [0usize; 3];
-            for (_, rows) in &groups {
-                let code = if test_rows < test_target.max(1) {
-                    test_rows += rows.len();
-                    counts[2] += 1;
-                    SPLIT_TEST
-                } else if valid_rows < valid_target.max(1) {
-                    valid_rows += rows.len();
-                    counts[1] += 1;
-                    SPLIT_VALID
-                } else {
-                    counts[0] += 1;
-                    SPLIT_TRAIN
-                };
+            for (key, rows) in &rows_by_group {
+                let code = by_hash(stable_unit(cfg.seed, "group", key), &fractions);
+                counts[(code - SPLIT_TRAIN) as usize] += 1;
                 for &i in rows {
                     assignment[i] = code;
                 }
             }
             group_counts = Some(counts);
-            // Leakage check by construction: verify no group spans two splits.
-            let mut seen: BTreeMap<&str, u8> = BTreeMap::new();
-            for (g, rows) in &groups {
-                for &i in rows {
-                    if let Some(prev) = seen.insert(g.as_str(), assignment[i]) {
-                        if prev != assignment[i] {
-                            return Err(RustpyError::internal(Phase::Split, format!("group {g} spans splits")));
-                        }
-                    }
-                }
+        }
+        (SplitStrategy::Time, _) => unreachable!("refused above"),
+    }
+    // Hash-based assignment only approximates the fractions; check how far off it is.
+    if cfg.split == SplitStrategy::Group || id_column.is_some() {
+        let actual: Vec<f64> = [SPLIT_TRAIN, SPLIT_VALID, SPLIT_TEST]
+            .iter()
+            .map(|c| assignment.iter().filter(|a| *a == c).count() as f64 / n.max(1) as f64)
+            .collect();
+        let names = ["train", "valid", "test"];
+        let shown = format!(
+            "train {:.1}% / valid {:.1}% / test {:.1}% (configured {:.0}% / {:.0}% / {:.0}%)",
+            actual[0] * 100.0,
+            actual[1] * 100.0,
+            actual[2] * 100.0,
+            fractions[0] * 100.0,
+            fractions[1] * 100.0,
+            fractions[2] * 100.0
+        );
+        if actual[0] < fractions[0] * 0.5 || actual[1] == 0.0 || actual[2] == 0.0 {
+            return Err(RustpyError::new(
+                ErrorCode::SplitDegenerate,
+                Phase::Split,
+                format!("the split is far from the configured fractions: {shown}"),
+            )
+            .field("data.split")
+            .next("with few or very unequal groups a grouped split cannot match the fractions; add groups/rows or try another data.seed"));
+        }
+        for k in 0..3 {
+            if (actual[k] - fractions[k]).abs() > 0.05 {
+                warnings.push(format!(
+                    "the {} split differs from its configured fraction by more than 5 points: {shown}",
+                    names[k]
+                ));
+                break;
             }
         }
-        SplitStrategy::Time => unreachable!("refused above"),
     }
     let counts = |code: u8, g: Option<usize>| {
         let rows: Vec<usize> = (0..n).filter(|&i| assignment[i] == code).collect();
@@ -189,6 +237,11 @@ pub fn make_split(
         }
     }
     let assignment = String::from_utf8(assignment).expect("ascii digits");
+    let algorithm = if cfg.split == SplitStrategy::Group || id_column.is_some() {
+        SPLIT_ALGORITHM_STABLE
+    } else {
+        SPLIT_ALGORITHM
+    };
     let identity = canonical_hash(&(
         snapshot_id,
         cfg.split,
@@ -197,7 +250,8 @@ pub fn make_split(
         &target.name,
         &target.positive_label,
         &cfg.group_column,
-        SPLIT_ALGORITHM,
+        &cfg.id_column,
+        algorithm,
     ));
     let manifest = SplitManifest {
         split_id: format!("sp-{}", short(&identity)),
@@ -212,7 +266,8 @@ pub fn make_split(
         train,
         valid,
         test,
-        algorithm: SPLIT_ALGORITHM.to_string(),
+        algorithm: algorithm.to_string(),
+        warnings,
     };
     debug_assert!(manifest.rows(SplitName::Train).len() == manifest.train.rows);
     Ok(manifest)

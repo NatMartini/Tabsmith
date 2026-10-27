@@ -3,8 +3,9 @@
 use rustpy_contracts::evaluation::{BinaryMetrics, ConfusionMatrix};
 use rustpy_contracts::METRICS_VERSION;
 
-/// Probability clipping used by log loss.
-pub const LOG_LOSS_EPS: f64 = 1e-15;
+/// Probability clipping used by log loss: machine epsilon of f64, as in
+/// scikit-learn >= 1.5 (`eps="auto"` for float64 inputs).
+pub const LOG_LOSS_EPS: f64 = f64::EPSILON;
 
 /// Computes metrics for probabilities `p` (of the positive class) and labels `y`.
 pub fn binary_metrics(p: &[f64], y: &[bool], threshold: f64) -> BinaryMetrics {
