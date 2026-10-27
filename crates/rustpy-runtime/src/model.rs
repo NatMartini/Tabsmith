@@ -121,11 +121,7 @@ impl DenseModel {
             for l in &self.layers {
                 for o in 0..l.out_dim {
                     let w = &l.weight[o * l.in_dim..(o + 1) * l.in_dim];
-                    let mut acc = 0f32;
-                    for (wi, xi) in w.iter().zip(&cur[..l.in_dim]) {
-                        acc += wi * xi;
-                    }
-                    let v = acc + l.bias[o];
+                    let v = dot(w, &cur[..l.in_dim]) + l.bias[o];
                     next[o] = match l.activation {
                         Activation::Identity => v,
                         Activation::Relu => v.max(0.0),
@@ -137,6 +133,24 @@ impl DenseModel {
         }
         out
     }
+}
+
+/// Dot product with eight independent accumulators (vectorisable). The summation
+/// order is fixed, so results are deterministic for a given input.
+fn dot(a: &[f32], b: &[f32]) -> f32 {
+    let mut acc = [0f32; 8];
+    let chunks = a.len() / 8;
+    for c in 0..chunks {
+        let (x, y) = (&a[c * 8..c * 8 + 8], &b[c * 8..c * 8 + 8]);
+        for k in 0..8 {
+            acc[k] += x[k] * y[k];
+        }
+    }
+    let mut tail = 0f32;
+    for i in chunks * 8..a.len() {
+        tail += a[i] * b[i];
+    }
+    ((acc[0] + acc[1]) + (acc[2] + acc[3])) + ((acc[4] + acc[5]) + (acc[6] + acc[7])) + tail
 }
 
 /// Numerically stable logistic function.

@@ -320,6 +320,10 @@ pub struct CandidateTrainConfig {
     /// Stop when validation loss has not improved for this many epochs (0 disables).
     pub early_stopping_patience: usize,
     pub checkpoint_every_epochs: usize,
+    /// Minimum wall-clock seconds between epoch checkpoints (0 = every eligible epoch).
+    /// A checkpoint is always written when training stops or is cancelled. Placement
+    /// does not change results, only how much work a crash can lose.
+    pub checkpoint_min_interval_seconds: f64,
 }
 
 impl Default for CandidateTrainConfig {
@@ -341,6 +345,7 @@ impl CandidateTrainConfig {
             class_weight: ClassWeight::Balanced,
             early_stopping_patience: 10,
             checkpoint_every_epochs: 1,
+            checkpoint_min_interval_seconds: 2.0,
         }
     }
 
@@ -354,6 +359,7 @@ impl CandidateTrainConfig {
             class_weight: ClassWeight::Balanced,
             early_stopping_patience: 8,
             checkpoint_every_epochs: 1,
+            checkpoint_min_interval_seconds: 2.0,
         }
     }
 }
@@ -845,6 +851,12 @@ impl ProjectConfig {
             }
             if !(c.l2.is_finite() && c.l2 >= 0.0) {
                 return Err(config_invalid("l2 must be >= 0", format!("{name}.l2")));
+            }
+            if !(c.checkpoint_min_interval_seconds.is_finite() && c.checkpoint_min_interval_seconds >= 0.0) {
+                return Err(config_invalid(
+                    "checkpoint_min_interval_seconds must be >= 0",
+                    format!("{name}.checkpoint_min_interval_seconds"),
+                ));
             }
             if c.checkpoint_every_epochs == 0 {
                 return Err(config_invalid(

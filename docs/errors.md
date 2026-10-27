@@ -1,0 +1,57 @@
+# Errors
+
+[中文](#中文)
+
+Every failure, in the CLI and the SDK, is one `RustpyError`:
+
+| Field | Meaning |
+|---|---|
+| `code` | Stable code (below); never reused for another meaning |
+| `phase` | Stage: config, data, split, fit, train, resume, evaluate, compare, bundle, load, predict, device, report |
+| `message` | What happened |
+| `run_id`, `field` | Where (run, column, config key, file) |
+| `expected`, `actual` | The contract and what was found |
+| `retained_artifacts` | What is still valid (checkpoint, previous bundle, evaluation) |
+| `next_action` | The concrete next step, usually a command |
+| `diagnostic_id` | Stable short id of this error content, for logs and reports |
+
+Human output goes to stderr; with `--json` the CLI prints `{"ok": false, "error": {...}}`
+on stdout. Example:
+
+```text
+error[E_DEVICE_UNSUPPORTED]: device `cuda` is not available: no cuda backend is compiled into this build and it is not certified for tabular-binary@0.1
+  phase:    device
+  field:    execution.candidate_device
+  expected: cpu or auto-certified
+  actual:   requested cuda; detected: Intel(R) Xeon(R) Processor @ 2.10GHz (cpu)
+  next:     use candidate_device = "cpu" (or "auto-certified"); RustPy never falls back silently
+  diagnostic: d-…
+```
+
+| Exit | Codes |
+|---|---|
+| 2 | `E_CONFIG_NOT_FOUND`, `E_CONFIG_UNKNOWN_FIELD`, `E_CONFIG_INVALID` |
+| 3 | `E_DATA_SOURCE_NOT_FOUND`, `E_DATA_SOURCE_CHANGED`, `E_DATA_READ_FAILED`, `E_DATA_UNSUPPORTED`, `E_SCHEMA_MISSING_COLUMN`, `E_SCHEMA_EXTRA_COLUMN`, `E_SCHEMA_TYPE_MISMATCH`, `E_INVALID_VALUE`, `E_UNKNOWN_CATEGORY`, `E_CARDINALITY_BUDGET`, `E_TARGET_INVALID`, `E_SPLIT_UNSUPPORTED`, `E_SPLIT_DEGENERATE`, `E_LEAKAGE_DETECTED` |
+| 4 | `E_BUNDLE_NOT_FOUND`, `E_BUNDLE_MISSING_FILE`, `E_BUNDLE_CORRUPT`, `E_BUNDLE_INCOMPATIBLE`, `E_BUNDLE_EXISTS`, `E_PREDICTOR_UPDATE_FAILED` |
+| 5 | `E_DEVICE_UNSUPPORTED`, `E_RESOURCE_BUDGET_EXCEEDED` |
+| 6 | `E_RUN_NOT_FOUND`, `E_RUN_STATE_INVALID`, `E_RESUME_INCOMPATIBLE`, `E_CHECKPOINT_MISSING`, `E_CHECKPOINT_CORRUPT`, `E_TRAINING_DIVERGED`, `E_INTERRUPTED` |
+| 7 | `E_NOT_COMPARABLE`, `E_TEST_SET_REUSE`, `E_EVALUATION_MISSING` |
+| 130 | `E_CANCELLED` (Ctrl-C; a checkpoint is written at the next step boundary) |
+| 1 | `E_IO`, `E_INTERNAL` |
+
+Run states: `planned`, `running`, `completed`, `failed`, `cancelled` (Ctrl-C),
+`interrupted` (the process died; detected the next time the run is listed or
+resumed). `rustpy resume <run>` continues `cancelled`/`interrupted`/`failed`
+runs exactly from the last checkpoint (R2) as a new run linked to its parent;
+`--warm-start` starts a new training from a completed run's weights and is
+labelled as such, never as a resume.
+
+---
+
+## 中文
+
+CLI 和 SDK 中的每个失败都是同一种 `RustpyError`，字段含义见上表：错误代码（稳定、不复用）、阶段、消息、位置（Run、列、配置键、文件）、期望值与实际值、仍然有效的产物（检查点、旧模型包、评估记录）、下一步操作（通常是一条命令）、诊断 id。
+
+人类可读输出写到 stderr；使用 `--json` 时，CLI 在 stdout 输出 `{"ok": false, "error": {...}}`。退出码按错误类别划分（见上表）：2 配置，3 数据/schema，4 模型包，5 设备与资源，6 Run/续训，7 评估纪律，130 用户取消，1 I/O 与内部错误。
+
+Run 状态：`planned`、`running`、`completed`、`failed`、`cancelled`（Ctrl-C）、`interrupted`（进程意外结束，在下一次列出或恢复时检测到）。`rustpy resume <run>` 从最近的检查点精确继续 `cancelled`/`interrupted`/`failed` 的 Run（R2），生成一个与父 Run 关联的新 Run；`--warm-start` 用已完成 Run 的权重开始新训练，并明确标注为 warm start，绝不冒充续训。
