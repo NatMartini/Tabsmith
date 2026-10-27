@@ -1,10 +1,16 @@
 [package]
 name = "rustpy-cli"
-description = "The `rustpy` command-line tool."
+description = "The `rustpy` command-line tool: CSV/Parquet to a trained, verified tabular binary classifier bundle."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+authors.workspace = true
+readme = "README.md"
+keywords = ["machine-learning", "cli", "tabular", "classification", "training"]
+categories = ["command-line-utilities", "science"]
+# The CLI integration tests stay in the repository; the package ships the sources only.
+include = ["/src/**/*.rs", "/README.md", "/LICENSE-MIT", "/LICENSE-APACHE"]
 
 [[bin]]
 name = "rustpy"
@@ -21,3 +27,14 @@ ctrlc.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+
+# `cargo binstall rustpy-cli` downloads the archives built by .github/workflows/release.yml
+# instead of compiling. Archive layout: rustpy-<version>-<target>/rustpy[.exe].
+[package.metadata.binstall]
+pkg-url = "https://github.com/__OWNER__/__REPO__/releases/download/v{ version }/rustpy-{ version }-{ target }.tar.gz"
+bin-dir = "rustpy-{ version }-{ target }/{ bin }{ binary-ext }"
+pkg-fmt = "tgz"
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-url = "https://github.com/__OWNER__/__REPO__/releases/download/v{ version }/rustpy-{ version }-{ target }.zip"
+pkg-fmt = "zip"

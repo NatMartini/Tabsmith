@@ -2,3 +2,4 @@
 examples/predict-app/target
 *.tmp
 /scratch
+__pycache__/
