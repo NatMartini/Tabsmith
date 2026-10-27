@@ -1,0 +1,23 @@
+{
+  "det_1": [
+    {
+      "model.safetensors": "eafebd8fe7cb56a16b617a0147d018b651564fb01818f967dc284d3e5f0bbbf2",
+      "model.config.json": "99841cae81e693cde6525a72d097251ad9acd0116f719c24c7d9624b4a080b3d"
+    },
+    {
+      "model.safetensors": "4bbeb062f359e3916ff48fe43ba52fc0a65c32559f7e7ab70a783beba65c1917",
+      "model.config.json": "d3a20d8ebd411d11de6de0c08b3090c522514208bfebcadf19f1c8d918954823"
+    }
+  ],
+  "det_2": [
+    {
+      "model.safetensors": "eafebd8fe7cb56a16b617a0147d018b651564fb01818f967dc284d3e5f0bbbf2",
+      "model.config.json": "99841cae81e693cde6525a72d097251ad9acd0116f719c24c7d9624b4a080b3d"
+    },
+    {
+      "model.safetensors": "4bbeb062f359e3916ff48fe43ba52fc0a65c32559f7e7ab70a783beba65c1917",
+      "model.config.json": "d3a20d8ebd411d11de6de0c08b3090c522514208bfebcadf19f1c8d918954823"
+    }
+  ],
+  "identical": true
+}

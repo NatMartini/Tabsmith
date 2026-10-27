@@ -1,0 +1,23 @@
+{
+  "direct": {
+    "median_seconds": 0.199954953,
+    "median_peak_rss_mb": 40.859375,
+    "runs": 5,
+    "time_vs_direct": 0.0
+  },
+  "rustpy": {
+    "median_seconds": 0.218410708,
+    "median_peak_rss_mb": 41.38671875,
+    "runs": 5,
+    "time_vs_direct": 0.09229956409231832
+  },
+  "rustpy-final-checkpoint-only": {
+    "median_seconds": 0.214870144,
+    "median_peak_rss_mb": 41.13671875,
+    "runs": 5,
+    "time_vs_direct": 0.07459275589937508
+  },
+  "steps": 1740,
+  "train_rows": 7356,
+  "features": 35
+}

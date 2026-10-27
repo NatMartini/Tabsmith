@@ -1,0 +1,146 @@
+{
+  "machine": {
+    "cpu": "AMD Ryzen 9 9950X3D2 16-Core Processor",
+    "logical_cpus": 32,
+    "os": "Linux 6.6.87.2-microsoft-standard-WSL2"
+  },
+  "rustpy": {
+    "run_wall_seconds": 0.37829694100003053,
+    "run_peak_rss_mb": 43.57421875,
+    "candidates": {
+      "linear": {
+        "run_id": "run-001",
+        "train_seconds": 0.148866995,
+        "data_seconds": 0.032854683,
+        "fit_transform_seconds": 0.006886784,
+        "best_epoch": 29,
+        "epochs": 39,
+        "test": {
+          "balanced_accuracy": 0.752767027863777,
+          "roc_auc": 0.8201818885448916,
+          "log_loss": 0.5126654119158343
+        },
+        "app_single_record_us": {
+          "iterations": 20000,
+          "p50": 2.47,
+          "p95": 2.63,
+          "p99": 4.32
+        },
+        "app_batch_rows_per_second": 825062.5624314528,
+        "app_load_ms": 0.341794,
+        "cold_start_seconds": 0.000994929999933447,
+        "cold_start_peak_rss_mb": 12.0,
+        "cli_predict_csv_seconds": 0.0992133099999819,
+        "cli_predict_peak_rss_mb": 52.55078125,
+        "bundle_bytes": 16898
+      },
+      "small-mlp": {
+        "run_id": "run-002",
+        "train_seconds": 0.140104935,
+        "data_seconds": 0.032854683,
+        "fit_transform_seconds": 0.006886784,
+        "best_epoch": 5,
+        "epochs": 13,
+        "test": {
+          "balanced_accuracy": 0.7729150541795666,
+          "roc_auc": 0.8250241873065015,
+          "log_loss": 0.48529166462397244
+        },
+        "app_single_record_us": {
+          "iterations": 20000,
+          "p50": 2.79,
+          "p95": 4.651,
+          "p99": 5.2700000000000005
+        },
+        "app_batch_rows_per_second": 685759.9612463331,
+        "app_load_ms": 0.304713,
+        "cold_start_seconds": 0.0009000359999618013,
+        "cold_start_peak_rss_mb": 12.0,
+        "cli_predict_csv_seconds": 0.09862422399999105,
+        "cli_predict_peak_rss_mb": 52.80078125,
+        "bundle_bytes": 24167
+      }
+    },
+    "cli_binary_bytes": 28730320,
+    "app_binary_bytes": 1603416
+  },
+  "python": {
+    "versions": {
+      "python": "3.14.4",
+      "scikit-learn": "1.9.1",
+      "numpy": "2.5.4",
+      "pandas": "3.1.0"
+    },
+    "rows": 10000,
+    "train_rows": 7356,
+    "test_rows": 1386,
+    "read_csv_seconds": 0.008265605000019605,
+    "candidates": {
+      "linear": {
+        "fit_seconds": 0.03480431299999509,
+        "test": {
+          "balanced_accuracy": 0.7515963622291022,
+          "roc_auc": 0.8209268575851393,
+          "log_loss": 0.5194914860883824
+        },
+        "iterations": 25,
+        "batch": {
+          "rows": 10000,
+          "seconds": 0.012414637999995648,
+          "rows_per_second": 805500.7322809981
+        },
+        "single_record_us": {
+          "p50": 2003.9609999003005,
+          "p95": 2348.3659999783413,
+          "p99": 2587.8349999857164,
+          "iterations": 2000
+        },
+        "model_file_bytes": 6602,
+        "cold_start_seconds": 0.6374198370000386,
+        "cold_start_peak_rss_mb": 160.421875
+      },
+      "small-mlp": {
+        "fit_seconds": 0.1464358139999149,
+        "test": {
+          "balanced_accuracy": 0.7313564241486068,
+          "roc_auc": 0.7928357198142416,
+          "log_loss": 0.5293774560434565
+        },
+        "iterations": 13,
+        "batch": {
+          "rows": 10000,
+          "seconds": 0.028293544400003156,
+          "rows_per_second": 353437.51417722285
+        },
+        "single_record_us": {
+          "p50": 2069.8540000694265,
+          "p95": 3139.3170000910686,
+          "p99": 3397.2779999658087,
+          "iterations": 2000
+        },
+        "model_file_bytes": 68170,
+        "cold_start_seconds": 0.6388244419999864,
+        "cold_start_peak_rss_mb": 160.984375
+      }
+    },
+    "peak_rss_mb": 242.01171875,
+    "process_wall_seconds": 10.145337490999964,
+    "process_peak_rss_mb": 242.01171875,
+    "environment_bytes": 354192489,
+    "site_packages_bytes": {
+      "cloudpickle": 116960,
+      "dateutil": 683875,
+      "joblib": 1945701,
+      "narwhals": 5288776,
+      "numpy": 41015459,
+      "numpy.libs": 27463459,
+      "pandas": 78500373,
+      "pip": 11346333,
+      "scikit_learn.libs": 253289,
+      "scipy": 108008315,
+      "scipy.libs": 31202973,
+      "sklearn": 46248271,
+      "tzdata": 518378
+    }
+  }
+}

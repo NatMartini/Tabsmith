@@ -1,0 +1,11 @@
+{
+  "parent": "run-001",
+  "parent_status": "interrupted",
+  "parent_steps": 116,
+  "resumed_from_step": 58,
+  "resumed_run": "run-002",
+  "resumed_model_sha256": "4bbeb062f359e3916ff48fe43ba52fc0a65c32559f7e7ab70a783beba65c1917",
+  "uninterrupted_model_sha256": "4bbeb062f359e3916ff48fe43ba52fc0a65c32559f7e7ab70a783beba65c1917",
+  "bitwise_identical_weights": true,
+  "identical_history": true
+}

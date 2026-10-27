@@ -94,7 +94,7 @@ pub enum Command {
     },
     /// The whole workflow in one command: bind FILE (if given), train every
     /// candidate, pick one on validation, test it once, build its bundle — and
-    /// score the previously shipped bundle on the same new test rows.
+    /// score the previously shipped bundle and the new model on the same unseen test rows.
     /// Creates rustpy.toml in the current directory if there is no project yet.
     Train {
         /// CSV/Parquet file. Omit to retrain on the bound file (e.g. after new data arrived).
@@ -170,7 +170,7 @@ pub enum Command {
     Bundle(BundleCommand),
     /// Predict a CSV/Parquet/JSON/JSONL file with a bundle.
     Predict {
-        /// Bundle directory (default: the project's most recently built bundle).
+        /// Bundle directory (default: the project's newest evaluated bundle, or its newest bundle when none was evaluated).
         #[arg(long)]
         bundle: Option<std::path::PathBuf>,
         #[arg(long)]
@@ -186,7 +186,7 @@ pub enum Command {
     },
     /// Serve a bundle over HTTP: POST /predict, GET /schema, GET /health.
     Serve {
-        /// Bundle directory (default: the project's most recently built bundle).
+        /// Bundle directory (default: the project's newest evaluated bundle, or its newest bundle when none was evaluated).
         #[arg(long)]
         bundle: Option<std::path::PathBuf>,
         /// Address to bind (use 0.0.0.0 to accept connections from other machines).

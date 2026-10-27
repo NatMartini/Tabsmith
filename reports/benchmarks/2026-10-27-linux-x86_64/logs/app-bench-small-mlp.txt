@@ -1,0 +1,4 @@
+$ <repo>/examples/predict-app/target/release/bench <work>/bench/bundles/run-002 <work>/records.jsonl 20000
+{"batch":{"rows":2000,"rows_per_second":685759.9612463331,"seconds":0.0029164724},"bundle_id":"b-7638a01eb5f9ed49","load_ms":0.304713,"single_record_us":{"iterations":20000,"p50":2.79,"p95":4.651,"p99":5.2700000000000005}}
+
+--- stderr ---

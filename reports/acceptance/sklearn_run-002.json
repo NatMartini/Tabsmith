@@ -1,0 +1,58 @@
+{
+  "reference": {
+    "scikit-learn": "1.9.1",
+    "numpy": "2.5.4",
+    "pandas": "3.1.0"
+  },
+  "run_id": "run-002",
+  "candidate": "small-mlp",
+  "preprocessing": {
+    "columns_rustpy": 35,
+    "columns_sklearn": 35,
+    "only_in_rustpy": [],
+    "only_in_sklearn": [],
+    "max_abs_diff": 2.2605928728935965e-07,
+    "worst_column": "current_mean",
+    "pass": true,
+    "tolerance": 1e-05,
+    "note": "RustPy matrices are f32; sklearn is f64"
+  },
+  "metrics": {
+    "sklearn": {
+      "accuracy": 0.7917329093799682,
+      "balanced_accuracy": 0.7665301441677588,
+      "precision": 0.36176470588235293,
+      "recall": 0.7321428571428571,
+      "f1": 0.484251968503937,
+      "roc_auc": 0.8427151594582787,
+      "log_loss": 0.4617083604977828,
+      "brier": 0.14939479053729257
+    },
+    "rustpy": {
+      "accuracy": 0.7917329093799682,
+      "balanced_accuracy": 0.7665301441677588,
+      "precision": 0.36176470588235293,
+      "recall": 0.7321428571428571,
+      "f1": 0.48425196850393704,
+      "roc_auc": 0.8427151594582787,
+      "log_loss": 0.4617083604977828,
+      "brier": 0.14939479053729252
+    },
+    "abs_diff": {
+      "accuracy": 0.0,
+      "balanced_accuracy": 0.0,
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 5.551115123125783e-17,
+      "roc_auc": 0.0,
+      "log_loss": 0.0,
+      "brier": 5.551115123125783e-17
+    },
+    "confusion_matrix_equal": true,
+    "pass": true,
+    "tolerance": 1e-09
+  },
+  "linear_objective": {
+    "skipped": "not a linear run"
+  }
+}

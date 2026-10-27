@@ -14,25 +14,29 @@
 </div>
 
 ```console
-$ rustpy train customers.csv --target churned
-· data customers.csv: 2000 rows × 10 columns, target `churned` (positive "yes": 412 rows, negative "no": 1588 rows)
-· run-001: training linear … completed (19 epochs; weights of best epoch 9 kept)
-· run-002: training small-mlp … completed (23 epochs; weights of best epoch 15 kept)
+$ rustpy sample-data machines.csv
+$ rustpy train machines.csv --target defect --group device_id
+· data machines.csv: 10000 rows × 25 columns, target `defect` (positive "1": 1289 rows, negative "0": 8711 rows)
+· run-001: training linear (up to 1740 steps)
+· run-001: completed (early stopping after epoch 39; weights of best epoch 29 kept)
+· run-002: training small-mlp (up to 3480 steps)
+· run-002: completed (early stopping after epoch 13; weights of best epoch 5 kept)
 
 comparison on the validation split (metric: balanced_accuracy)
   run      candidate  balanced_accuracy  AUC     F1      params  p95 latency  train time
-  run-001  linear     0.7861             0.8653  0.6012  13      9 µs         61 ms
-  run-002  small-mlp  0.8043             0.8790  0.6230  1121    11 µs        240 ms
+  run-001  linear     0.7644             0.8385  0.4602  36      1 µs         147 ms
+  run-002  small-mlp  0.7665             0.8427  0.4843  1697    1 µs         133 ms
 
 chosen on validation: run-002 (small-mlp)
-test split (300 rows, used once): balanced accuracy 0.7967  AUC 0.8712  F1 0.6154
-bundle: bundles/run-002 (b-3f9c2a51d0e4b7a1, evaluated; self-check passed)
+test split (1386 rows, used once): balanced accuracy 0.7729  AUC 0.8250  F1 0.4624  precision 0.3325  recall 0.7588
+bundle: bundles/run-002 (b-5472199517c4e8d7, evaluated; self-check passed)
 
-$ rustpy predict --input new_customers.csv --keep customer_id   # CSV of predictions
-$ rustpy serve                                                  # HTTP API on :8080
+$ rustpy predict --input new.csv --keep unit_id   # CSV of predictions
+$ rustpy serve                                    # HTTP API on :8080
 ```
 
-*(Illustrative output; your numbers depend on your data.)*
+*(Real output of the Quick start below, abridged: progress lines and some table
+columns are left out. Full output in the [acceptance report](reports/implementation-acceptance.md#one-command-rustpy-train).)*
 
 RustPy turns a CSV or Parquet file into a **tested, self-contained model bundle**
 that any Rust program can load with a small dependency, `rustpy-runtime`.
@@ -50,8 +54,8 @@ lead scoring, …). See [status](#status) for what is not done yet.
 
 - **One command, safe defaults.** `rustpy train data.csv --target y` does split → preprocess → train two models → compare on validation → test once → bundle. Every step is recorded and reproducible.
 - **Ship without Python.** Your application depends on `rustpy-runtime` only (no Burn, no Polars, no Python). The example app is a 1.6 MB binary.
-- **Fast where it matters in production.** Single-record prediction in microseconds, a few milliseconds from process start to first prediction, a few MB of memory ([numbers below](#rustpy-vs-python)).
-- **Same quality as scikit-learn.** Preprocessing reproduces scikit-learn's to 2e-7; the linear model lands within 0.15 % of scikit-learn's optimum of the same objective; metrics match to 1e-12.
+- **Fast where it matters in production.** Single-record prediction in microseconds, about a millisecond from process start to first prediction, about 12 MB of memory ([numbers below](#rustpy-vs-python)).
+- **Same quality as scikit-learn.** Preprocessing matches scikit-learn's to about 2e-7, the linear model lands within about 0.1 % of scikit-learn's optimum of the same objective, and metrics match to 1e-12 ([measured](reports/implementation-acceptance.md#reference-check-against-scikit-learn); CI guards 1e-5, 1 % and 1e-12 with [frozen goldens](fixtures/reference/)).
 - **Mistakes are hard to make.** No train/test leakage by construction, one use of the test set per data version, entity-aware splits, refusal instead of silent fallback, integrity-checked bundles, and errors that say what to do next.
 - **Updates you can trust.** New data → new runs; the old bundle is scored on the same unseen rows; applications swap bundles only after the new one passes its self-check, and can roll back.
 
@@ -73,7 +77,12 @@ cargo install rustpy-cli          # builds the `rustpy` binary
 cargo binstall rustpy-cli         # or download the prebuilt one
 ```
 
-From source: `git clone … && cargo install --path crates/rustpy-cli`.
+From source:
+
+```sh
+git clone https://github.com/__OWNER__/__REPO__ rustpy && cd rustpy
+cargo install --path crates/rustpy-cli --locked
+```
 
 ## Quick start
 
@@ -102,18 +111,26 @@ rustpy-runtime = "0.1"
 use rustpy_runtime::{LoadOptions, Predictor, Record};
 
 fn main() -> Result<(), rustpy_runtime::RustpyError> {
+    // The bundle `rustpy train` printed (Quick start: the machine-defect sample data).
     let model = Predictor::load("bundles/run-002", LoadOptions::cpu())?;
-    let p = model.predict_one(
-        &Record::new()
-            .with("plan", "pro")
-            .with("tenure_months", 18)
-            .with("monthly_fee", 42.5)
-            .with("support_calls", None::<f64>), // missing values are imputed as in training
-    )?;
+    let reading = Record::new()
+        .with("line", "B")
+        .with("shift", "night")
+        .with("supplier", "S3")
+        .with("hours_in_service", 12_000)
+        .with("temp_mean", 71.4)
+        .with("vibration_rms", 1.42)
+        .with("calibration_offset", None::<f64>) // missing values are imputed as in training
+        /* … every other input field of the bundle … */;
+    let p = model.predict_one(&reading)?;
     println!("{} (p = {:.3})", p.label, p.probability);
     Ok(())
 }
 ```
+
+Every input field of the bundle is required (`None` marks a missing value); the
+bundle's `input.schema.json` lists them, and `examples/input.json` holds complete
+records.
 
 Or predict from your own `#[derive(Serialize)]` struct with `predict_serialize`.
 Errors carry a code, the field, what was expected and what to do next; `{:?}` prints
@@ -125,9 +142,9 @@ See [examples/predict-app](examples/predict-app).
 ### Serve it over HTTP
 
 ```sh
-rustpy serve --port 8080
-curl -s localhost:8080/predict -d '{"plan":"pro","tenure_months":18,"monthly_fee":42.5,"support_calls":null}'
-# {"bundle_id":"b-…","predictions":[{"label":"no","probability":0.1234,"is_positive":false}]}
+rustpy serve --port 8080              # the newest evaluated bundle, or --bundle <dir>
+curl -s localhost:8080/predict --data-binary @bundles/run-002/examples/input.json
+# {"bundle_id":"b-…","predictions":[{"is_positive":false,"label":"0","probability":0.2474},…]}
 ```
 
 Endpoints: `POST /predict` (one record, an array, or `{"records": [...]}`),
@@ -139,14 +156,22 @@ Append to (or replace) the file and run `rustpy train` again:
 
 ```console
 $ rustpy train
-· new data version: customers.csv is now snapshot s-…, while run-001, run-002 used snapshot s-…
+· new data version: machines.csv is now snapshot s-dc9fc115c6c7, while run-001, run-002, … used snapshot s-0a8635d0d212. …
 …
-chosen on validation: run-004 (small-mlp)
-test split (420 rows, used once): balanced accuracy 0.8120 …
-previous bundle bundles/run-002 (run-002) on the same test rows (390 rows it never saw): balanced accuracy 0.7710 …
-  → the new model is better by 0.0410 balanced accuracy
-bundle: bundles/run-004 (…)
+chosen on validation: run-006 (small-mlp)
+test split (1844 rows, used once): balanced accuracy 0.7567  AUC 0.8282  F1 0.4688  precision 0.3355  recall 0.7778
+previous bundle bundles/run-002 (run-002) on the 1844 test rows it never saw: balanced accuracy 0.7737  AUC 0.8334  F1 0.4936  …
+new model run-006 on the same 1844 rows: balanced accuracy 0.7567  AUC 0.8282  F1 0.4688  …
+  → about the same: the difference (-0.0170) is below the ±0.023 resolution of 1844 rows
+  `rustpy predict` uses the newest evaluated bundle; to keep serving the previous one pass --bundle bundles/run-002
+bundle: bundles/run-006 (b-c9e177f6b39cdb5e, evaluated; self-check passed)
 ```
+
+*(Abridged output of the [acceptance run](reports/implementation-acceptance.md#one-command-rustpy-train),
+after 3,000 rows from a shifted distribution were appended; your run ids may differ.)*
+Here the shipped model is still slightly better on the same unseen rows, and the
+difference is within the noise, so you can keep serving it. Run `rustpy train`
+again on unchanged data and it keeps the existing bundle instead of building a copy.
 
 `predict` warns about categories the model has never seen (a new month, product or code).
 
@@ -155,15 +180,39 @@ bundle: bundles/run-004 (…)
 The same task done with the standard Python stack (pandas + scikit-learn
 `ColumnTransformer` + `LogisticRegression` / `MLPClassifier`), on the same rows, split,
 features and training settings, same machine. Reproduce with
-[`tools/bench/bench.py`](tools/bench/bench.py); full results in
-[reports/benchmarks](reports/benchmarks/).
+[`tools/bench/bench.py`](tools/bench/bench.py); full results and logs in
+[reports/benchmarks](reports/benchmarks/2026-10-27-linux-x86_64/).
 
 <!-- BENCH:START -->
+Machine: AMD Ryzen 9 9950X3D2 16-Core Processor, 32 logical CPUs, Linux 6.6.87.2-microsoft-standard-WSL2. Data: 10000 rows (synthetic equipment-defect sample), same split, features and settings on both sides. Python 3.14.4, scikit-learn 1.9.1, pandas 3.1.0, numpy 2.5.4.
+
+| | RustPy linear | scikit-learn LogisticRegression | RustPy small-mlp | scikit-learn MLPClassifier |
+|---|---|---|---|---|
+| Test balanced accuracy | 0.7528 | 0.7516 | 0.7729 | 0.7314 |
+| Test ROC AUC | 0.8202 | 0.8209 | 0.8250 | 0.7928 |
+| Epochs / solver iterations | 39 | 25 | 13 | 13 |
+| Training time | 0.15 s | 0.03 s | 0.14 s | 0.15 s |
+| Single-record prediction in an app (p50) | 2.5 µs | 2004.0 µs | 2.8 µs | 2069.9 µs |
+| Single-record prediction (p99) | 4.3 µs | 2587.8 µs | 5.3 µs | 3397.3 µs |
+| Batch prediction in process | 825,063 rows/s | 805,501 rows/s | 685,760 rows/s | 353,438 rows/s |
+| Cold start: new process, load model, predict 1 record | 1 ms | 637 ms | 1 ms | 639 ms |
+| Peak memory of that process | 12 MB | 160 MB | 12 MB | 161 MB |
+| Model artifact | 0.0 MB | 0.0 MB | 0.0 MB | 0.1 MB |
+
+| Deployment footprint | RustPy | Python |
+|---|---|---|
+| What the application ships | 1.6 MB binary (depends on rustpy-runtime only) | 354.2 MB environment (Python + numpy + scipy + scikit-learn + pandas + joblib) |
+| Training tool | 28.7 MB `rustpy` binary | the same environment |
+| Train both candidates from the CSV | 0.38 s for the whole `rustpy run` process (read, profile, split, preprocess, train, validate, checkpoints), peak 44 MB | 0.19 s for read_csv + both fits (imports and process start not included) |
 <!-- BENCH:END -->
 
-What the table says: for training, RustPy and scikit-learn are on par in speed and
-quality. The difference is in **shipping the model**: no interpreter to start, no
-DataFrame per request, no 500 MB environment to deploy.
+What the table says: quality is on par (the small MLP did better than
+`MLPClassifier` here), and training takes a fraction of a second on both sides,
+with scikit-learn's lbfgs fitting the linear model faster than RustPy's minibatch
+Adam. The difference is in **shipping the model**: single-record prediction in an
+application takes about 2.5 µs instead of 2 ms, a new process predicts after 1 ms
+instead of 0.64 s, in 12 MB instead of 160 MB, and the application is a 1.6 MB
+binary instead of a 354 MB Python environment.
 
 ### What you would otherwise write yourself
 
@@ -192,27 +241,28 @@ Every step has a step-by-step command too (`rustpy plan`, `run`, `compare`,
 
 ## Status
 
-RustPy 0.1 is young. What is solid and tested (90+ automated tests, including
-process-level ones): the CPU workflow above, exact resume, bundles and the runtime,
-reference checks against scikit-learn.
+RustPy 0.1 is young. What is solid and tested (89 automated tests and a doctest,
+including process-level ones that drive the real binary): the CPU workflow above,
+exact resume, bundles and the runtime, and reference checks against scikit-learn.
+The [acceptance report](reports/implementation-acceptance.md) has measured
+evidence for each of these.
 
 Not done yet, by design or for lack of hardware:
 
 - **GPU**: no CUDA or other GPU backend is compiled in. `auto-certified` selects the CPU and says so; asking for `cuda` is an error, never a silent fallback.
-- **Platforms**: tested on Linux x86_64. macOS and Windows builds are produced by CI; the CPU path is marked "not certified" there until the full test suite has run on them.
+- **Platforms**: certified on Linux x86_64, where the acceptance run above was made. The full test suite also passes on Windows x86_64 and runs in CI on macOS (Apple Silicon); both are reported as "not certified" by design in 0.1. The Linux arm64 and macOS Intel binaries are built but not tested.
 - **Tasks**: binary classification only. Regression and multi-class are next; time-based splits are refused rather than faked.
 - **Users**: no formal user study yet — feedback and issues are very welcome.
 
-See the [implementation backlog](docs/implementation-backlog.md) for the full,
-honest status of every planned item, and the [acceptance report](reports/implementation-acceptance.md)
-for measured evidence.
+The [implementation backlog](docs/implementation-backlog.md) lists the status of
+every planned item.
 
 ## Documentation
 
 [Architecture](docs/architecture.md) · [Configuration](docs/configuration.md) ·
 [Bundle format](docs/bundle-format.md) · [Errors](docs/errors.md) ·
 [Extension walkthrough (LLM task)](docs/extension-walkthrough-llm.md) ·
-[Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md)
+[Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md) · [Reports](reports/)
 
 ## License
 
