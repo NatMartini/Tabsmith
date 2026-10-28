@@ -6,8 +6,6 @@ edition.workspace = true
 # The floor of tabsmith-runtime, which depends on this crate; checked by the `msrv` CI job.
 rust-version = "1.88"
 license.workspace = true
-repository.workspace = true
-homepage.workspace = true
 authors.workspace = true
 readme = "README.md"
 keywords = ["machine-learning", "no-std", "embedded", "inference", "tabular"]

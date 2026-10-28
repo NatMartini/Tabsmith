@@ -1,6 +1,6 @@
 # tabsmith-macros
 
-Compiles a [Tabsmith](https://github.com/NatMartini/Tabsmith) model bundle into Rust code
+Compiles a [Tabsmith](https://github.com/__OWNER__/__REPO__) model bundle into Rust code
 while your crate builds. You get a typed interface, and inference that runs without the
 standard library: on a server, in WebAssembly, or on a microcontroller.
 

@@ -14,16 +14,16 @@ binaries are CPU-only. GPU training of the networks (Vulkan, CUDA) needs a build
 
 Prebuilt binaries for Linux (x86_64, aarch64), macOS (x86_64, arm64) and Windows
 (x86_64) are attached to each
-[GitHub release](https://github.com/NatMartini/Tabsmith/releases):
+[GitHub release](https://github.com/__OWNER__/__REPO__/releases):
 
 ```sh
 # Linux / macOS
-curl -fsSL https://github.com/NatMartini/Tabsmith/releases/latest/download/install.sh | sh
+curl -fsSL https://github.com/__OWNER__/__REPO__/releases/latest/download/install.sh | sh
 ```
 
 ```powershell
 # Windows (PowerShell)
-irm https://github.com/NatMartini/Tabsmith/releases/latest/download/install.ps1 | iex
+irm https://github.com/__OWNER__/__REPO__/releases/latest/download/install.ps1 | iex
 ```
 
 With [cargo-binstall](https://github.com/cargo-bins/cargo-binstall):
@@ -77,7 +77,7 @@ tabsmith report                                  # offline HTML/JSON report in .
 `tabsmith --help` lists every command; `--json` gives machine-readable output.
 
 Documentation, limitations and the source are in the
-[repository](https://github.com/NatMartini/Tabsmith).
+[repository](https://github.com/__OWNER__/__REPO__).
 
 ## 中文
 

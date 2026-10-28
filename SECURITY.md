@@ -15,7 +15,7 @@ Tabsmith is pre-1.0. Security fixes are made on the latest release only.
 
 Please **do not open a public issue** for a security problem. Report it privately
 through GitHub's private vulnerability reporting:
-[Report a vulnerability](https://github.com/NatMartini/Tabsmith/security/advisories/new)
+[Report a vulnerability](https://github.com/__OWNER__/__REPO__/security/advisories/new)
 (the "Security" tab of the repository).
 
 Include the Tabsmith version (`tabsmith --version`), your platform, what an attacker
@@ -97,7 +97,7 @@ Tabsmith 尚未到 1.0，只在最新版本上修复安全问题（目前为 0.1
 ### 报告漏洞
 
 请**不要在公开 issue 中报告安全问题**。请通过 GitHub 的私密漏洞报告功能提交：
-[Report a vulnerability](https://github.com/NatMartini/Tabsmith/security/advisories/new)（仓库的 “Security” 标签页）。
+[Report a vulnerability](https://github.com/__OWNER__/__REPO__/security/advisories/new)（仓库的 “Security” 标签页）。
 
 请附上 Tabsmith 版本（`tabsmith --version`）、平台、攻击者能控制什么（数据文件、bundle、配置等）、复现步骤和预期影响；
 最好附一个能触发问题的最小 bundle 或数据文件。

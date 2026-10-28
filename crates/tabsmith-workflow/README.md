@@ -18,7 +18,7 @@ certified (`tools/gpu_certify.py` in the repository). Minimum supported Rust ver
 1.95 (set by Burn 0.22.1).
 
 Documentation and the source are in the
-[repository](https://github.com/NatMartini/Tabsmith).
+[repository](https://github.com/__OWNER__/__REPO__).
 
 ## 中文
 

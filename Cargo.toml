@@ -22,8 +22,6 @@ rust-version = "1.95"
 authors = ["Tabsmith contributors"]
 # `repository` and `homepage` are inserted after `license` by tools/release/set-repo.sh OWNER/REPO.
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/NatMartini/Tabsmith"
-homepage = "https://github.com/NatMartini/Tabsmith"
 
 [workspace.dependencies]
 tabsmith-contracts = { path = "crates/tabsmith-contracts", version = "0.1.0" }

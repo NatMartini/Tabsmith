@@ -5,8 +5,6 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-repository.workspace = true
-homepage.workspace = true
 authors.workspace = true
 readme = "README.md"
 keywords = ["machine-learning", "cli", "tabular", "classification", "training"]
@@ -41,12 +39,12 @@ tempfile.workspace = true
 # `cargo binstall tabsmith-cli` downloads the archives built by .github/workflows/release.yml
 # instead of compiling. Archive layout: tabsmith-<version>-<target>/tabsmith[.exe].
 [package.metadata.binstall]
-pkg-url = "https://github.com/NatMartini/Tabsmith/releases/download/v{ version }/tabsmith-{ version }-{ target }.tar.gz"
+pkg-url = "https://github.com/__OWNER__/__REPO__/releases/download/v{ version }/tabsmith-{ version }-{ target }.tar.gz"
 bin-dir = "tabsmith-{ version }-{ target }/{ bin }{ binary-ext }"
 pkg-fmt = "tgz"
 
 [package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
-pkg-url = "https://github.com/NatMartini/Tabsmith/releases/download/v{ version }/tabsmith-{ version }-{ target }.zip"
+pkg-url = "https://github.com/__OWNER__/__REPO__/releases/download/v{ version }/tabsmith-{ version }-{ target }.zip"
 pkg-fmt = "zip"
 
 [lints]

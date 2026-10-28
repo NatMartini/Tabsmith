@@ -6,8 +6,6 @@ edition.workspace = true
 # The floor of tabsmith-runtime, which loads and verifies the bundle at expansion time.
 rust-version = "1.88"
 license.workspace = true
-repository.workspace = true
-homepage.workspace = true
 authors.workspace = true
 readme = "README.md"
 keywords = ["machine-learning", "proc-macro", "no-std", "embedded", "tabular"]

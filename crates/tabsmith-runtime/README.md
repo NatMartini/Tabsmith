@@ -48,7 +48,7 @@ a previous bundle.
 Minimum supported Rust version: 1.88.
 
 The bundle format, error codes and a complete example application are documented
-in the [repository](https://github.com/NatMartini/Tabsmith)
+in the [repository](https://github.com/__OWNER__/__REPO__)
 (`docs/bundle-format.md`, `examples/predict-app`).
 
 ## 中文

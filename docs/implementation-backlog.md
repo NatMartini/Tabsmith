@@ -62,7 +62,7 @@ GPU certifications in [reports/gpu/](../reports/gpu/) and the fuzzing run in
 
 | ID | Task | Status | Evidence / gap |
 |---|---|---|---|
-| P3-01 | Install and runtime-only distribution | In progress | Linux x86_64 clean release build timed (see the acceptance report). The full test suite passes on Windows 11 x86_64 (run locally). CI (Linux, macOS, Windows), a release workflow with prebuilt binaries for five targets, `install.sh`, `install.ps1` and cargo-binstall metadata exist. The repository is public at https://github.com/NatMartini/Tabsmith since 2026-10-28; the first CI runs there are pending, and there is no release tag yet. Linux arm64 and macOS Intel binaries are built but never tested; no clean-runner download timing. |
+| P3-01 | Install and runtime-only distribution | In progress | Linux x86_64 clean release build timed (see the acceptance report). The full test suite passes on Windows 11 x86_64 (run locally). CI (Linux, macOS, Windows), a release workflow with prebuilt binaries for five targets, `install.sh`, `install.ps1` and cargo-binstall metadata exist but have not run on GitHub yet (no public repository and no release tag so far). Linux arm64 and macOS Intel binaries are built but never tested; no clean-runner download timing. |
 | P3-02 | Local report and diagnostics | Accepted | `tabsmith report` writes HTML + JSON: data issues, quality, resources, configuration differences between runs, and non-comparable runs flagged. |
 | P3-03 | Independent user trials | Waiting on external conditions | No participants. No pass rate is claimed. |
 | P3-04 | Upstream and bundle upgrade drill | In progress | Bundle-side rules exist and are tested (strict versions, `min_runtime_version`, unknown fields rejected). No real dependency upgrade (e.g. a new Burn release) was rehearsed. |
@@ -148,7 +148,7 @@ generalised.
 
 | ID | 任务 | 状态 | 证据 / 缺口 |
 |---|---|---|---|
-| P3-01 | 安装与仅运行时分发 | 进行中 | 已计时 Linux x86_64 清洁 release 构建（见验收报告）。完整测试套件在 Windows 11 x86_64 上通过（本地运行）。CI（Linux、macOS、Windows）、为五个目标平台构建预编译二进制的发布流程、`install.sh`、`install.ps1` 和 cargo-binstall 元数据均已就绪。仓库自 2026-10-28 起公开在 https://github.com/NatMartini/Tabsmith ；那里的 CI 还在等待首次运行，也还没有发布标签。Linux arm64 和 macOS Intel 二进制只构建、从未测试；没有在清洁 runner 上计时下载。 |
+| P3-01 | 安装与仅运行时分发 | 进行中 | 已计时 Linux x86_64 清洁 release 构建（见验收报告）。完整测试套件在 Windows 11 x86_64 上通过（本地运行）。CI（Linux、macOS、Windows）、为五个目标平台构建预编译二进制的发布流程、`install.sh`、`install.ps1` 和 cargo-binstall 元数据均已就绪，但尚未在 GitHub 上运行（目前还没有公开仓库和发布标签）。Linux arm64 和 macOS Intel 二进制只构建、从未测试；没有在清洁 runner 上计时下载。 |
 | P3-02 | 本地报告与诊断 | 已验收 | `tabsmith report` 生成 HTML + JSON：数据问题、质量、资源、运行之间的配置差异，并标出不可比的运行。 |
 | P3-03 | 用户独立任务试验 | 等待外部条件 | 没有参与者。不声称任何通过率。 |
 | P3-04 | 上游与模型包升级演练 | 进行中 | 模型包侧规则已实现并测试（严格版本号、`min_runtime_version`、拒绝未知字段）。未演练真实的依赖升级（例如新版 Burn）。 |

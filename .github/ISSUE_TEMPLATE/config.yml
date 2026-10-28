@@ -1,5 +1,5 @@
 blank_issues_enabled: false
 contact_links:
   - name: Report a security vulnerability / 报告安全漏洞
-    url: https://github.com/NatMartini/Tabsmith/security/advisories/new
+    url: https://github.com/__OWNER__/__REPO__/security/advisories/new
     about: Please report security problems privately, not as a public issue. See SECURITY.md.
