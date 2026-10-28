@@ -2020,7 +2020,7 @@ dependencies = [
  "serde_bytes",
  "serde_json",
  "spin",
- "toml 1.1.8+spec-1.1.0",
+ "toml",
  "turso",
  "wasm-bindgen",
  "wasm-bindgen-futures",
@@ -2233,7 +2233,7 @@ dependencies = [
  "serde_json",
  "smallvec",
  "thiserror 2.0.21",
- "toml 1.1.8+spec-1.1.0",
+ "toml",
  "wasm-bindgen-futures",
 ]
 
@@ -5230,7 +5230,7 @@ dependencies = [
  "combine",
  "downcast-rs",
  "dyn-clone",
- "hashbrown 0.17.1",
+ "hashbrown 0.13.2",
  "hi_sparse_bitset 0.10.0",
  "indexmap",
  "inventory",
@@ -7429,7 +7429,7 @@ dependencies = [
  "serde_json",
  "sha2 0.11.1",
  "thiserror 2.0.21",
- "toml 0.9.12+spec-1.1.0",
+ "toml",
 ]
 
 [[package]]
@@ -7480,7 +7480,7 @@ dependencies = [
  "tabsmith-contracts",
  "tabsmith-runtime",
  "tempfile",
- "toml 0.9.12+spec-1.1.0",
+ "toml",
  "toml_edit 0.23.10+spec-1.0.0",
  "wgpu",
 ]
@@ -7738,21 +7738,6 @@ dependencies = [
  "libc",
  "pin-project-lite",
  "tokio",
-]
-
-[[package]]
-name = "toml"
-version = "0.9.12+spec-1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf92845e79fc2e2def6a5d828f0801e29a2f8acc037becc5ab08595c7d5e9863"
-dependencies = [
- "indexmap",
- "serde_core",
- "serde_spanned",
- "toml_datetime 0.7.5+spec-1.1.0",
- "toml_parser",
- "toml_writer",
- "winnow 0.7.15",
 ]
 
 [[package]]
