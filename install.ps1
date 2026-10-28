@@ -1,6 +1,6 @@
 # Install the prebuilt `tabsmith` command-line tool from a GitHub release (Windows x86_64).
 #
-#   irm https://github.com/__OWNER__/__REPO__/releases/latest/download/install.ps1 | iex
+#   irm https://github.com/NatMartini/Tabsmith/releases/latest/download/install.ps1 | iex
 #
 # Environment variables:
 #   TABSMITH_VERSION         release to install, e.g. 0.1.0 (default: the latest release)
@@ -19,7 +19,7 @@
     $ProgressPreference = 'SilentlyContinue'   # the progress bar makes downloads very slow in Windows PowerShell
 
     # The GitHub repository that publishes the releases (filled in by tools/release/set-repo.sh).
-    $TabsmithRepo = if ($env:TABSMITH_REPO) { $env:TABSMITH_REPO } else { '__OWNER__/__REPO__' }
+    $TabsmithRepo = if ($env:TABSMITH_REPO) { $env:TABSMITH_REPO } else { 'NatMartini/Tabsmith' }
 
     $FromSource = 'Install from source instead: cargo install tabsmith-cli --locked (needs Rust, https://rustup.rs)'
 

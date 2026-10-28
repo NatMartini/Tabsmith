@@ -1,6 +1,6 @@
 # tabsmith-embedded
 
-The arithmetic of [Tabsmith](https://github.com/__OWNER__/__REPO__) models in `no_std`
+The arithmetic of [Tabsmith](https://github.com/NatMartini/Tabsmith) models in `no_std`
 Rust:
 - dot products and dense layers;
 - tree-ensemble traversal;

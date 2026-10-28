@@ -12,7 +12,7 @@ You normally use it through one of those crates.
 Minimum supported Rust version: 1.88.
 
 Documentation and the source are in the
-[repository](https://github.com/__OWNER__/__REPO__).
+[repository](https://github.com/NatMartini/Tabsmith).
 
 ## 中文
 

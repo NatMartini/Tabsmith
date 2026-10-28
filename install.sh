@@ -1,7 +1,7 @@
 #!/bin/sh
 # Install the prebuilt `tabsmith` command-line tool from a GitHub release.
 #
-#   curl -fsSL https://github.com/__OWNER__/__REPO__/releases/latest/download/install.sh | sh
+#   curl -fsSL https://github.com/NatMartini/Tabsmith/releases/latest/download/install.sh | sh
 #
 # Environment variables:
 #   TABSMITH_VERSION      release to install, e.g. 0.1.0 (default: the latest release)
@@ -15,7 +15,7 @@
 set -eu
 
 # The GitHub repository that publishes the releases (filled in by tools/release/set-repo.sh).
-TABSMITH_REPO="${TABSMITH_REPO:-__OWNER__/__REPO__}"
+TABSMITH_REPO="${TABSMITH_REPO:-NatMartini/Tabsmith}"
 
 FROM_SOURCE="Install from source instead: cargo install tabsmith-cli --locked (needs Rust, https://rustup.rs)"
 

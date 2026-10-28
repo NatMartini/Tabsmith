@@ -111,7 +111,7 @@ system with its evidence.
 - The Kani proofs show that prediction never panics, for the two models of
   `examples/embedded-predict`; they say nothing about numerical accuracy. Kani does not
   run on Windows.
-- The CI workflow has not run on GitHub yet, and nothing has been run on macOS.
+- macOS is checked only by CI's Apple Silicon runners; nobody has run Tabsmith on a Mac by hand.
 
-[Unreleased]: https://github.com/__OWNER__/__REPO__/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/__OWNER__/__REPO__/releases/tag/v0.1.0
+[Unreleased]: https://github.com/NatMartini/Tabsmith/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/NatMartini/Tabsmith/releases/tag/v0.1.0
