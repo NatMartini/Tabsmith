@@ -21,12 +21,12 @@ body:
     attributes:
       label: Steps to reproduce / 复现步骤
       description: |
-        The exact commands, ideally starting from `rustpy init --sample-data` or a small
+        The exact commands, ideally starting from `tabsmith init --sample-data` or a small
         data file you can share. For library use, a minimal Rust snippet.
       placeholder: |
-        rustpy init demo --sample-data
+        tabsmith init demo --sample-data
         cd demo
-        rustpy run
+        tabsmith run
         ...
     validations:
       required: true
@@ -41,8 +41,8 @@ body:
   - type: textarea
     id: doctor
     attributes:
-      label: rustpy --version and rustpy doctor
-      description: Paste the output of `rustpy --version` and `rustpy doctor`.
+      label: tabsmith --version and tabsmith doctor
+      description: Paste the output of `tabsmith --version` and `tabsmith doctor`.
       render: text
     validations:
       required: true
@@ -64,11 +64,11 @@ body:
   - type: dropdown
     id: install
     attributes:
-      label: How was rustpy installed? / 安装方式
+      label: How was tabsmith installed? / 安装方式
       options:
         - install.sh / install.ps1 (prebuilt binary)
         - cargo binstall
-        - cargo install rustpy-cli
+        - cargo install tabsmith-cli
         - Built from a git checkout
         - Using the crates as a library
     validations:

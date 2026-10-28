@@ -1,0 +1,159 @@
+{
+  "fields": [
+    {
+      "name": "line",
+      "kind": "categorical",
+      "raw_dtype": "text",
+      "required": true,
+      "nullable": true
+    },
+    {
+      "name": "shift",
+      "kind": "categorical",
+      "raw_dtype": "text",
+      "required": true,
+      "nullable": true
+    },
+    {
+      "name": "supplier",
+      "kind": "categorical",
+      "raw_dtype": "text",
+      "required": true,
+      "nullable": true
+    },
+    {
+      "name": "device_type",
+      "kind": "categorical",
+      "raw_dtype": "text",
+      "required": true,
+      "nullable": true
+    },
+    {
+      "name": "firmware",
+      "kind": "categorical",
+      "raw_dtype": "text",
+      "required": true,
+      "nullable": true
+    },
+    {
+      "name": "hours_in_service",
+      "kind": "numeric",
+      "raw_dtype": "int",
+      "required": true,
+      "nullable": true
+    },
+    {
+      "name": "cycles",
+      "kind": "numeric",
+      "raw_dtype": "int",
+      "required": true,
+      "nullable": true
+    },
+    {
+      "name": "temp_mean",
+      "kind": "numeric",
+      "raw_dtype": "float",
+      "required": true,
+      "nullable": true
+    },
+    {
+      "name": "temp_std",
+      "kind": "numeric",
+      "raw_dtype": "float",
+      "required": true,
+      "nullable": true
+    },
+    {
+      "name": "temp_max",
+      "kind": "numeric",
+      "raw_dtype": "float",
+      "required": true,
+      "nullable": true
+    },
+    {
+      "name": "vibration_rms",
+      "kind": "numeric",
+      "raw_dtype": "float",
+      "required": true,
+      "nullable": true
+    },
+    {
+      "name": "vibration_peak",
+      "kind": "numeric",
+      "raw_dtype": "float",
+      "required": true,
+      "nullable": true
+    },
+    {
+      "name": "pressure_mean",
+      "kind": "numeric",
+      "raw_dtype": "float",
+      "required": true,
+      "nullable": true
+    },
+    {
+      "name": "pressure_std",
+      "kind": "numeric",
+      "raw_dtype": "float",
+      "required": true,
+      "nullable": true
+    },
+    {
+      "name": "current_mean",
+      "kind": "numeric",
+      "raw_dtype": "float",
+      "required": true,
+      "nullable": true
+    },
+    {
+      "name": "current_std",
+      "kind": "numeric",
+      "raw_dtype": "float",
+      "required": true,
+      "nullable": true
+    },
+    {
+      "name": "humidity",
+      "kind": "numeric",
+      "raw_dtype": "float",
+      "required": true,
+      "nullable": true
+    },
+    {
+      "name": "voltage_drop",
+      "kind": "numeric",
+      "raw_dtype": "float",
+      "required": true,
+      "nullable": true
+    },
+    {
+      "name": "ambient_noise_db",
+      "kind": "numeric",
+      "raw_dtype": "float",
+      "required": true,
+      "nullable": true
+    },
+    {
+      "name": "calibration_offset",
+      "kind": "numeric",
+      "raw_dtype": "float",
+      "required": false,
+      "nullable": true,
+      "note": "not used by the model: zero variance in the training rows (constant 0)"
+    },
+    {
+      "name": "maintenance_flag",
+      "kind": "categorical",
+      "raw_dtype": "bool",
+      "required": true,
+      "nullable": true
+    }
+  ],
+  "missing_column": "error",
+  "extra_columns": "ignore",
+  "unknown_category": "ignore",
+  "nan": "missing",
+  "infinite": "error",
+  "csv_delimiter": ",",
+  "passthrough_id": "unit_id"
+}

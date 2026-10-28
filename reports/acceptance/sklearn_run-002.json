@@ -7,15 +7,15 @@
   "run_id": "run-002",
   "candidate": "small-mlp",
   "preprocessing": {
-    "columns_rustpy": 35,
+    "columns_tabsmith": 35,
     "columns_sklearn": 35,
-    "only_in_rustpy": [],
+    "only_in_tabsmith": [],
     "only_in_sklearn": [],
     "max_abs_diff": 2.2605928728935965e-07,
     "worst_column": "current_mean",
     "pass": true,
     "tolerance": 1e-05,
-    "note": "RustPy matrices are f32; sklearn is f64"
+    "note": "Tabsmith matrices are f32; sklearn is f64"
   },
   "metrics": {
     "sklearn": {
@@ -25,18 +25,18 @@
       "recall": 0.7321428571428571,
       "f1": 0.484251968503937,
       "roc_auc": 0.8427151594582787,
-      "log_loss": 0.4617083604977828,
-      "brier": 0.14939479053729257
+      "log_loss": 0.46170835374412955,
+      "brier": 0.14939478836307274
     },
-    "rustpy": {
+    "tabsmith": {
       "accuracy": 0.7917329093799682,
       "balanced_accuracy": 0.7665301441677588,
       "precision": 0.36176470588235293,
       "recall": 0.7321428571428571,
       "f1": 0.48425196850393704,
       "roc_auc": 0.8427151594582787,
-      "log_loss": 0.4617083604977828,
-      "brier": 0.14939479053729252
+      "log_loss": 0.4617083537441293,
+      "brier": 0.149394788363073
     },
     "abs_diff": {
       "accuracy": 0.0,
@@ -45,8 +45,8 @@
       "recall": 0.0,
       "f1": 5.551115123125783e-17,
       "roc_auc": 0.0,
-      "log_loss": 0.0,
-      "brier": 5.551115123125783e-17
+      "log_loss": 2.7755575615628914e-16,
+      "brier": 2.498001805406602e-16
     },
     "confusion_matrix_equal": true,
     "pass": true,

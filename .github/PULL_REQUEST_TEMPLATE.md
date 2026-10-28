@@ -10,7 +10,7 @@ memory, link the test or the reproducible command that shows them. -->
 ## Checklist
 
 - [ ] `cargo test --workspace` passes
-- [ ] `cargo build --manifest-path examples/predict-app/Cargo.toml --all-targets` passes (when `rustpy-runtime` or `rustpy-contracts` changed)
+- [ ] `cargo build --manifest-path examples/predict-app/Cargo.toml --all-targets` passes (when `tabsmith-runtime` or `tabsmith-contracts` changed)
 - [ ] New behaviour and fixed bugs are covered by tests
 - [ ] Every claim in code, docs and this description is backed by a test, a reproducible command or a report
 - [ ] Nothing describes GPU support as working; unavailable devices are still errors, never a silent CPU fallback

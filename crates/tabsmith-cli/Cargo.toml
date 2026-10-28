@@ -1,0 +1,51 @@
+[package]
+name = "tabsmith-cli"
+description = "The `tabsmith` command-line tool: CSV/Parquet to a trained, verified tabular binary classifier bundle."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+readme = "README.md"
+keywords = ["machine-learning", "cli", "tabular", "classification", "training"]
+categories = ["command-line-utilities", "science"]
+# The CLI integration tests stay in the repository; the package ships the sources only.
+include = ["/src/**/*.rs", "/README.md", "/LICENSE-MIT", "/LICENSE-APACHE"]
+
+[[bin]]
+name = "tabsmith"
+path = "src/main.rs"
+
+[features]
+# GPU training: `cargo install tabsmith-cli --features gpu` (or just `vulkan` / `cuda`).
+# CUDA kernels are compiled at run time, so a CUDA build also needs NVRTC from the CUDA toolkit.
+vulkan = ["tabsmith-workflow/vulkan"]
+cuda = ["tabsmith-workflow/cuda"]
+gpu = ["vulkan", "cuda"]
+
+[dependencies]
+tabsmith-contracts.workspace = true
+tabsmith-runtime.workspace = true
+tabsmith-workflow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+clap.workspace = true
+ctrlc.workspace = true
+tiny_http.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+# `cargo binstall tabsmith-cli` downloads the archives built by .github/workflows/release.yml
+# instead of compiling. Archive layout: tabsmith-<version>-<target>/tabsmith[.exe].
+[package.metadata.binstall]
+pkg-url = "https://github.com/__OWNER__/__REPO__/releases/download/v{ version }/tabsmith-{ version }-{ target }.tar.gz"
+bin-dir = "tabsmith-{ version }-{ target }/{ bin }{ binary-ext }"
+pkg-fmt = "tgz"
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-url = "https://github.com/__OWNER__/__REPO__/releases/download/v{ version }/tabsmith-{ version }-{ target }.zip"
+pkg-fmt = "zip"
+
+[lints]
+workspace = true

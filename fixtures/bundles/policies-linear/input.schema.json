@@ -1,0 +1,52 @@
+{
+  "fields": [
+    {
+      "name": "zone",
+      "kind": "categorical",
+      "raw_dtype": "text",
+      "required": true,
+      "nullable": false
+    },
+    {
+      "name": "grade",
+      "kind": "categorical",
+      "raw_dtype": "text",
+      "required": true,
+      "nullable": false
+    },
+    {
+      "name": "flag",
+      "kind": "categorical",
+      "raw_dtype": "bool",
+      "required": true,
+      "nullable": false
+    },
+    {
+      "name": "mode",
+      "kind": "categorical",
+      "raw_dtype": "text",
+      "required": true,
+      "nullable": true
+    },
+    {
+      "name": "temp",
+      "kind": "numeric",
+      "raw_dtype": "float",
+      "required": true,
+      "nullable": true
+    },
+    {
+      "name": "load",
+      "kind": "numeric",
+      "raw_dtype": "float",
+      "required": true,
+      "nullable": true
+    }
+  ],
+  "missing_column": "error",
+  "extra_columns": "ignore",
+  "unknown_category": "error",
+  "nan": "error",
+  "infinite": "error",
+  "csv_delimiter": ","
+}

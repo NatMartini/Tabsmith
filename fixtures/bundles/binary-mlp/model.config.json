@@ -1,0 +1,24 @@
+{
+  "format": "tabsmith.dense.v1",
+  "family": "small-mlp",
+  "input_dim": 35,
+  "layers": [
+    {
+      "in_dim": 35,
+      "out_dim": 32,
+      "activation": "relu"
+    },
+    {
+      "in_dim": 32,
+      "out_dim": 16,
+      "activation": "relu"
+    },
+    {
+      "in_dim": 16,
+      "out_dim": 1,
+      "activation": "identity"
+    }
+  ],
+  "output": "logit",
+  "precision": "fp32"
+}

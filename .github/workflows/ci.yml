@@ -46,7 +46,7 @@ jobs:
       - name: Test the workspace
         run: cargo test --workspace --locked
 
-      - name: Build examples/predict-app (an application that depends only on rustpy-runtime)
+      - name: Build examples/predict-app (an application that depends only on tabsmith-runtime)
         run: cargo build --locked --manifest-path examples/predict-app/Cargo.toml --all-targets
 
       - name: Check that predict-app pulls in neither Burn nor Polars
@@ -54,12 +54,12 @@ jobs:
         run: |
           deps=$(cargo tree --locked --manifest-path examples/predict-app/Cargo.toml -e normal --prefix none --format '{p}')
           if printf '%s\n' "$deps" | grep -E '^(burn|polars)'; then
-            echo "::error::examples/predict-app depends on Burn or Polars; rustpy-runtime must stay free of them"
+            echo "::error::examples/predict-app depends on Burn or Polars; tabsmith-runtime must stay free of them"
             exit 1
           fi
 
   # The minimum Rust versions declared in the manifests: the workspace (set by Burn) and
-  # the lighter rustpy-contracts / rustpy-runtime pair that applications depend on.
+  # the lighter tabsmith-contracts / tabsmith-runtime pair that applications depend on.
   msrv:
     name: msrv
     runs-on: ubuntu-latest
@@ -72,7 +72,7 @@ jobs:
         shell: bash
         run: |
           workspace=$(sed -n 's/^rust-version = "\(.*\)"/\1/p' Cargo.toml)
-          runtime=$(sed -n 's/^rust-version = "\(.*\)"/\1/p' crates/rustpy-runtime/Cargo.toml)
+          runtime=$(sed -n 's/^rust-version = "\(.*\)"/\1/p' crates/tabsmith-runtime/Cargo.toml)
           test -n "$workspace" && test -n "$runtime"
           echo "workspace=$workspace" >> "$GITHUB_OUTPUT"
           echo "runtime=$runtime" >> "$GITHUB_OUTPUT"
@@ -85,10 +85,108 @@ jobs:
       - name: Check the workspace with Rust ${{ steps.msrv.outputs.workspace }}
         run: cargo +${{ steps.msrv.outputs.workspace }} check --workspace --all-targets --locked
 
-      - name: Check rustpy-contracts, rustpy-runtime and predict-app with Rust ${{ steps.msrv.outputs.runtime }}
+      - name: Check tabsmith-contracts, tabsmith-runtime and predict-app with Rust ${{ steps.msrv.outputs.runtime }}
         run: |
-          cargo +${{ steps.msrv.outputs.runtime }} check -p rustpy-contracts -p rustpy-runtime --all-targets --locked
+          cargo +${{ steps.msrv.outputs.runtime }} check -p tabsmith-contracts -p tabsmith-embedded -p tabsmith-macros -p tabsmith-runtime --all-targets --locked
           cargo +${{ steps.msrv.outputs.runtime }} check --manifest-path examples/predict-app/Cargo.toml --all-targets --locked
+
+  # Models compiled into Rust code (tabsmith-macros) build without the standard library:
+  # examples/embedded-predict is a no_std library for a Cortex-M4F and for WebAssembly.
+  embedded:
+    name: embedded
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust (stable) with the thumbv7em-none-eabihf and wasm32 targets
+        run: |
+          rustup toolchain install stable --profile minimal --target thumbv7em-none-eabihf,wasm32-unknown-unknown --component rustfmt,clippy --no-self-update
+          rustup default stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: examples/embedded-predict -> target
+
+      - name: Build for a Cortex-M4F and for WebAssembly (no_std)
+        run: |
+          cargo build --locked --release --manifest-path examples/embedded-predict/Cargo.toml --target thumbv7em-none-eabihf
+          cargo build --locked --release --manifest-path examples/embedded-predict/Cargo.toml --target wasm32-unknown-unknown
+
+      - name: Test, format and lint examples/embedded-predict
+        run: |
+          cargo test --locked --manifest-path examples/embedded-predict/Cargo.toml
+          cargo fmt --manifest-path examples/embedded-predict/Cargo.toml --check
+          cargo clippy --locked --manifest-path examples/embedded-predict/Cargo.toml --all-targets -- -D warnings
+          cargo clippy --locked --manifest-path examples/embedded-predict/Cargo.toml --target thumbv7em-none-eabihf -- -D warnings
+
+  # Kani, a bit-precise model checker, runs the proofs at the end of
+  # examples/embedded-predict/src/lib.rs: prediction never panics, for every possible
+  # input, stage by stage. The check settings are in that crate's Cargo.toml. With Kani
+  # 0.68 on Linux, each of the six proofs takes between 1 s and 7 min.
+  kani:
+    name: kani
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Prove that the compiled models never panic
+        uses: model-checking/kani-github-action@v1
+        with:
+          kani-version: "0.68.0"
+          working-directory: examples/embedded-predict
+
+  # RustSec advisories for every lockfile. The exceptions, each with its reason, are in
+  # .cargo/audit.toml; any other advisory fails the job.
+  audit:
+    name: audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install cargo-audit
+        run: cargo install --locked cargo-audit
+
+      - name: Audit every Cargo.lock
+        run: |
+          for lock in Cargo.lock examples/predict-app/Cargo.lock examples/wasm-predict/Cargo.lock \
+                      examples/embedded-predict/Cargo.lock fuzz/Cargo.lock; do
+            echo "== $lock"
+            cargo audit --file "$lock"
+          done
+
+  # tabsmith-runtime compiles to WebAssembly unchanged; examples/wasm-predict is the
+  # demo page that runs it in a browser.
+  wasm:
+    name: wasm
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust (stable) with the wasm32-unknown-unknown target
+        run: |
+          rustup toolchain install stable --profile minimal --target wasm32-unknown-unknown --component rustfmt,clippy --no-self-update
+          rustup default stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            examples/wasm-predict -> target
+
+      - name: Build tabsmith-runtime and examples/wasm-predict for wasm32
+        run: |
+          cargo build --locked -p tabsmith-runtime --target wasm32-unknown-unknown
+          cargo build --locked --release --manifest-path examples/wasm-predict/Cargo.toml --target wasm32-unknown-unknown
+
+      - name: Test, format and lint examples/wasm-predict
+        run: |
+          cargo test --locked --manifest-path examples/wasm-predict/Cargo.toml
+          cargo fmt --manifest-path examples/wasm-predict/Cargo.toml --check
+          cargo clippy --locked --manifest-path examples/wasm-predict/Cargo.toml --all-targets --target wasm32-unknown-unknown -- -D warnings
 
   # Formatting, lints and library docs; warnings fail the build.
   lint:
@@ -119,7 +217,18 @@ jobs:
           cargo clippy --workspace --all-targets --locked -- -D warnings
           cargo clippy --manifest-path examples/predict-app/Cargo.toml --all-targets --locked -- -D warnings
 
+      # The runners have no GPU: the GPU training code is compiled and linted here,
+      # and certified on real hardware with tools/gpu_certify.py (reports/gpu/).
+      - name: clippy (GPU features)
+        run: cargo clippy --workspace --all-targets --locked --features tabsmith-cli/gpu -- -D warnings
+
+      # The fuzz target builds with cargo-fuzz on nightly (fuzz/README.md); here it is type-checked.
+      - name: fuzz target compiles
+        run: |
+          cargo fmt --manifest-path fuzz/Cargo.toml --check
+          cargo check --manifest-path fuzz/Cargo.toml --locked
+
       - name: rustdoc (library crates)
         env:
           RUSTDOCFLAGS: -D warnings
-        run: cargo doc --no-deps --locked -p rustpy-contracts -p rustpy-runtime -p rustpy-workflow
+        run: cargo doc --no-deps --locked -p tabsmith-contracts -p tabsmith-embedded -p tabsmith-macros -p tabsmith-runtime -p tabsmith-workflow

@@ -5,9 +5,9 @@ body:
   - type: markdown
     attributes:
       value: |
-        RustPy is organised around complete jobs (data → verified model → Rust application),
+        Tabsmith is organised around complete jobs (data → verified model → Rust application),
         not around a list of algorithms. Describing the job you are trying to do helps most.
-        RustPy 围绕完整任务（数据 → 经过验证的模型 → Rust 应用）组织，而不是算法列表。请描述你要完成的任务。
+        Tabsmith 围绕完整任务（数据 → 经过验证的模型 → Rust 应用）组织，而不是算法列表。请描述你要完成的任务。
 
   - type: textarea
     id: problem
@@ -21,7 +21,7 @@ body:
     id: proposal
     attributes:
       label: Proposed solution / 建议方案
-      description: What would you like RustPy to do? Commands, configuration or API sketches are welcome.
+      description: What would you like Tabsmith to do? Commands, configuration or API sketches are welcome.
     validations:
       required: true
 
@@ -36,10 +36,10 @@ body:
       label: Area / 涉及部分
       multiple: true
       options:
-        - CLI workflow (rustpy)
+        - CLI workflow (tabsmith)
         - Data, splits and preprocessing
         - Training and models
-        - Bundles and rustpy-runtime
+        - Bundles and tabsmith-runtime
         - Reports and errors
         - Installation and platforms
         - Documentation

@@ -1,0 +1,14 @@
+{
+  "format": "tabsmith.dense.v1",
+  "family": "linear",
+  "input_dim": 15,
+  "layers": [
+    {
+      "in_dim": 15,
+      "out_dim": 1,
+      "activation": "identity"
+    }
+  ],
+  "output": "logit",
+  "precision": "fp32"
+}

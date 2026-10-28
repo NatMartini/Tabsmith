@@ -1,21 +1,21 @@
 {
   "direct": {
-    "median_seconds": 0.199954953,
-    "median_peak_rss_mb": 40.859375,
+    "median_seconds": 0.118017248,
+    "median_peak_rss_mb": 40.40625,
     "runs": 5,
     "time_vs_direct": 0.0
   },
-  "rustpy": {
-    "median_seconds": 0.218410708,
-    "median_peak_rss_mb": 41.38671875,
+  "tabsmith": {
+    "median_seconds": 0.139237854,
+    "median_peak_rss_mb": 41.05859375,
     "runs": 5,
-    "time_vs_direct": 0.09229956409231832
+    "time_vs_direct": 0.17980936142486548
   },
-  "rustpy-final-checkpoint-only": {
-    "median_seconds": 0.214870144,
-    "median_peak_rss_mb": 41.13671875,
+  "tabsmith-final-checkpoint-only": {
+    "median_seconds": 0.133084162,
+    "median_peak_rss_mb": 40.40625,
     "runs": 5,
-    "time_vs_direct": 0.07459275589937508
+    "time_vs_direct": 0.12766705083650143
   },
   "steps": 1740,
   "train_rows": 7356,

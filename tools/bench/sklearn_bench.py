@@ -1,9 +1,9 @@
 """The scikit-learn side of tools/bench/bench.py.
 
-Trains the Python equivalent of RustPy's two candidates on exactly the same
+Trains the Python equivalent of Tabsmith's three candidates on exactly the same
 rows, features and settings, and measures what a Python user would measure.
 
-    python sklearn_bench.py <rustpy-project> <linear-run> <mlp-run> <records.jsonl> <out-dir>
+    python sklearn_bench.py <tabsmith-project> <linear-run> <mlp-run> <gbdt-run> <records.jsonl> <out-dir>
 
 Writes <out-dir>/sklearn.json and <out-dir>/sklearn_<candidate>.joblib.
 """
@@ -21,6 +21,7 @@ import pandas as pd
 import sklearn
 from sklearn import metrics as M
 from sklearn.compose import ColumnTransformer
+from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.neural_network import MLPClassifier
@@ -34,17 +35,18 @@ def load_json(path):
 
 
 def run_dir(project, run_id):
-    return os.path.join(project, ".rustpy", "runs", run_id)
+    return os.path.join(project, ".tabsmith", "runs", run_id)
 
 
 def main():
     warnings.filterwarnings("ignore", message=".*Stochastic Optimizer: Maximum iterations.*")
-    project, linear_run, mlp_run, records_path, out_dir = sys.argv[1:6]
+    project, linear_run, mlp_run, gbdt_run, records_path, out_dir = sys.argv[1:7]
     os.makedirs(out_dir, exist_ok=True)
     runs = {"linear": load_json(os.path.join(run_dir(project, linear_run), "run.json")),
-            "small-mlp": load_json(os.path.join(run_dir(project, mlp_run), "run.json"))}
+            "small-mlp": load_json(os.path.join(run_dir(project, mlp_run), "run.json")),
+            "gbdt": load_json(os.path.join(run_dir(project, gbdt_run), "run.json"))}
     ref = runs["linear"]
-    state = os.path.join(project, ".rustpy")
+    state = os.path.join(project, ".tabsmith")
     fitted = load_json(os.path.join(state, "transforms", ref["transform_id"], "fitted.json"))
     split = load_json(os.path.join(state, "splits", ref["split_id"] + ".json"))
     data_csv = os.path.join(state, "snapshots", ref["snapshot_id"], "data.csv")
@@ -83,10 +85,18 @@ def main():
         cfg = run["train_config"]
         l2 = cfg["l2"]
         if cand == "linear":
-            # Same objective as RustPy's linear candidate: balanced class weights, C = 1 / (n * l2).
+            # Same objective as Tabsmith's linear candidate: balanced class weights, C = 1 / (n * l2).
             model = LogisticRegression(C=1.0 / (n_tr * l2), solver="lbfgs", max_iter=1000)
+        elif cand == "gbdt":
+            # The same tree limits and as many boosting rounds as Tabsmith's run trained,
+            # on the same (one-hot, standardised) features. scikit-learn uses every core.
+            t = cfg["trees"]
+            model = HistGradientBoostingClassifier(
+                learning_rate=cfg["learning_rate"], max_iter=len(run["history"]), max_leaf_nodes=t["max_leaves"],
+                max_depth=t["max_depth"], min_samples_leaf=t["min_samples_leaf"], max_bins=min(t["max_bins"], 255),
+                l2_regularization=l2, early_stopping=False, random_state=7)
         else:
-            # Same amount of work as RustPy: as many epochs as its run actually trained
+            # Same amount of work as Tabsmith: as many epochs as its run actually trained
             # (it stops early on the validation split and keeps the best epoch).
             epochs = len(run["history"])
             model = MLPClassifier(hidden_layer_sizes=tuple(cfg["hidden"]), activation="relu", solver="adam",

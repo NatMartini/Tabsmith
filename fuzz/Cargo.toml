@@ -1,0 +1,26 @@
+[package]
+name = "tabsmith-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+description = "libFuzzer targets for the bundle loader (cargo fuzz, nightly)."
+
+[package.metadata]
+cargo-fuzz = true
+
+# Standalone (not a workspace member): cargo-fuzz builds it with nightly and sanitizers.
+[workspace]
+
+[dependencies]
+libfuzzer-sys = "0.4.13"
+tabsmith-runtime = { path = "../crates/tabsmith-runtime" }
+
+[[bin]]
+name = "bundle_from_memory"
+path = "fuzz_targets/bundle_from_memory.rs"
+test = false
+doc = false
+bench = false
+
+# No `unsafe_code = "forbid"` here, unlike the rest of the repository: the
+# `fuzz_target!` macro expands to the `unsafe extern "C"` entry point libFuzzer calls.

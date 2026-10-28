@@ -2,7 +2,7 @@
 //! instance before it replaces the active one; on failure the old one keeps serving.
 //!
 //!     cargo run --release --bin hot_swap -- <old-bundle> <new-bundle> [<broken-bundle>]
-use rustpy_runtime::{LoadOptions, PredictorHandle};
+use tabsmith_runtime::{LoadOptions, PredictorHandle};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args().skip(1);

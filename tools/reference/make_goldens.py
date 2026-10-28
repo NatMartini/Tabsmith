@@ -1,10 +1,10 @@
-"""Generate frozen scikit-learn reference values ("goldens") for RustPy tests.
+"""Generate frozen scikit-learn reference values ("goldens") for Tabsmith tests.
 
 Usage:
     python make_goldens.py <export-dir> <out-goldens.json>
 
 <export-dir> comes from
-    cargo run -p rustpy-workflow --example export_reference -- <project> <linear-run-id> <export-dir>
+    cargo run -p tabsmith-workflow --example export_reference -- <project> <linear-run-id> <export-dir>
 on a project bound to fixtures/reference/defects_1500.csv (see tools/reference/README.md).
 
 The goldens freeze, for the fixture's split:

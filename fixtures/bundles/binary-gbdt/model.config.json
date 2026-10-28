@@ -1,0 +1,14 @@
+{
+  "format": "tabsmith.trees.v1",
+  "family": "gbdt",
+  "input_dim": 35,
+  "trees": {
+    "n_trees": 14,
+    "n_nodes": 854,
+    "max_depth": 8,
+    "base_score": 5.811113377071927e-8,
+    "n_outputs": 1
+  },
+  "output": "logit",
+  "precision": "fp32"
+}

@@ -1,8 +1,8 @@
 //! Predicting from your own typed struct (fields named like the bundle's inputs).
 //!
 //!     cargo run --release --bin typed -- <bundle-dir>
-use rustpy_runtime::{LoadOptions, Predictor};
 use serde::Serialize;
+use tabsmith_runtime::{LoadOptions, Predictor};
 
 /// One sensor reading of the synthetic equipment-defect demo dataset.
 #[derive(Serialize)]
@@ -68,7 +68,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..calm
     };
     for (name, p) in ["calm", "hot"].iter().zip(predictor.predict_serialize(&[calm, hot])?) {
-        println!("{name}: {} (p = {:.3})", p.label, p.probability);
+        match p.probability() {
+            Some(q) => println!("{name}: {} (p = {q:.3})", p.label),
+            None => println!("{name}: {}", p.label),
+        }
     }
     Ok(())
 }

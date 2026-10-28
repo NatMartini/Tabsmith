@@ -1,0 +1,117 @@
+{
+  "status": "evaluated",
+  "test": {
+    "evaluation_id": "eval-001",
+    "created_at": "2026-10-28T04:03:01Z",
+    "subject": {
+      "kind": "run",
+      "run_id": "run-001"
+    },
+    "protocol": {
+      "snapshot_id": "s-3556b17ac160",
+      "split_id": "sp-77cbe84d0b0a",
+      "split": "test",
+      "target": "failure_mode",
+      "positive_label": "bearing,none,overheat,seal",
+      "threshold": "0",
+      "metrics_version": "tabsmith.binary-metrics.v1",
+      "task": "multiclass"
+    },
+    "metrics": {
+      "task": "multiclass",
+      "metrics_version": "tabsmith.binary-metrics.v1",
+      "n": 420,
+      "class_counts": [
+        57,
+        277,
+        46,
+        40
+      ],
+      "confusion": [
+        [
+          45,
+          2,
+          4,
+          6
+        ],
+        [
+          54,
+          113,
+          51,
+          59
+        ],
+        [
+          7,
+          3,
+          29,
+          7
+        ],
+        [
+          8,
+          8,
+          9,
+          15
+        ]
+      ],
+      "accuracy": 0.48095238095238096,
+      "balanced_accuracy": 0.5507126762715925,
+      "f1": 0.43514912340750034,
+      "log_loss": 1.1049534372820993,
+      "roc_auc": 0.791817133705474
+    },
+    "test_use_index": 1,
+    "latency": {
+      "rows": 200,
+      "batch_ms": 0.0607,
+      "single_row_p50_us": 0.8999999999999999,
+      "single_row_p95_us": 1.0
+    },
+    "model_sha256": "310ad6fe3aef34f94220700b59da9077b04faf40383ce14f986f5eb91eb7c041",
+    "model_snapshot_id": "s-3556b17ac160",
+    "unseen_rows_verified": true,
+    "notes": []
+  },
+  "valid": {
+    "task": "multiclass",
+    "metrics_version": "tabsmith.binary-metrics.v1",
+    "n": 418,
+    "class_counts": [
+      71,
+      263,
+      43,
+      41
+    ],
+    "confusion": [
+      [
+        38,
+        7,
+        14,
+        12
+      ],
+      [
+        51,
+        113,
+        36,
+        63
+      ],
+      [
+        5,
+        1,
+        33,
+        4
+      ],
+      [
+        1,
+        9,
+        7,
+        24
+      ]
+    ],
+    "accuracy": 0.49760765550239233,
+    "balanced_accuracy": 0.5794191941015232,
+    "f1": 0.46561721834246245,
+    "log_loss": 1.122495352065121,
+    "roc_auc": 0.7969329152579328
+  },
+  "notes": []
+}

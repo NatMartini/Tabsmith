@@ -1,10 +1,12 @@
 [workspace]
 resolver = "3"
 members = [
-    "crates/rustpy-contracts",
-    "crates/rustpy-runtime",
-    "crates/rustpy-workflow",
-    "crates/rustpy-cli",
+    "crates/tabsmith-contracts",
+    "crates/tabsmith-embedded",
+    "crates/tabsmith-macros",
+    "crates/tabsmith-runtime",
+    "crates/tabsmith-workflow",
+    "crates/tabsmith-cli",
 ]
 # The predict-app example is a standalone package on purpose: it proves the
 # runtime-only dependency tree (no Burn, no Polars, no training CLI).
@@ -14,17 +16,19 @@ exclude = ["examples/predict-app"]
 version = "0.1.0"
 edition = "2024"
 # Minimum supported Rust version of the workspace: Burn 0.22.1 declares 1.95, the
-# highest requirement in the dependency graph. rustpy-contracts and rustpy-runtime
+# highest requirement in the dependency graph. tabsmith-contracts and tabsmith-runtime
 # override this with their own (lower) minimum. Both are checked by the `msrv` CI job.
 rust-version = "1.95"
-authors = ["RustPy contributors"]
+authors = ["Tabsmith contributors"]
 # `repository` and `homepage` are inserted after `license` by tools/release/set-repo.sh OWNER/REPO.
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
-rustpy-contracts = { path = "crates/rustpy-contracts", version = "0.1.0" }
-rustpy-runtime = { path = "crates/rustpy-runtime", version = "0.1.0" }
-rustpy-workflow = { path = "crates/rustpy-workflow", version = "0.1.0" }
+tabsmith-contracts = { path = "crates/tabsmith-contracts", version = "0.1.0" }
+tabsmith-embedded = { path = "crates/tabsmith-embedded", version = "0.1.0" }
+tabsmith-macros = { path = "crates/tabsmith-macros", version = "0.1.0" }
+tabsmith-runtime = { path = "crates/tabsmith-runtime", version = "0.1.0" }
+tabsmith-workflow = { path = "crates/tabsmith-workflow", version = "0.1.0" }
 
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = { version = "1.0.145", features = ["float_roundtrip"] }
@@ -33,22 +37,34 @@ toml_edit = "0.23.9"
 thiserror = "2.0.17"
 sha2 = "0.11.1"
 safetensors = "0.8.0"
+libm = "0.2.16"
+proc-macro2 = "1.0.107"
+quote = "1.0.47"
+syn = "2.0.119"
 clap = { version = "4.6.7", features = ["derive"] }
 ctrlc = "3.5.2"
 tiny_http = "0.12.0"
 tempfile = "3.27.0"
+proptest = "1.12.0"
 polars = { version = "=0.55.2", default-features = false, features = ["csv", "parquet", "dtype-date", "dtype-datetime", "dtype-time", "dtype-duration"] }
-burn = { version = "=0.22.1", default-features = false, features = ["std", "ndarray", "autodiff", "optim"] }
+burn = { version = "=0.22.1", default-features = false, features = ["std", "flex", "autodiff", "optim"] }
+wgpu = "30.0.1"
+cudarc = { version = "0.19.10", default-features = false, features = ["std", "driver", "fallback-dynamic-loading", "cuda-version-from-build-system", "fallback-latest"] }
 
 [workspace.lints.clippy]
-# `RustpyError` carries the code, phase, field, expected/actual values and the next
+# `TabsmithError` carries the code, phase, field, expected/actual values and the next
 # action by value, on cold paths only; boxing it would make every caller noisier.
 result_large_err = "allow"
 # Index loops read like the formulas in the numeric kernels (matrix products, gradients).
 needless_range_loop = "allow"
 
+[workspace.lints.rust]
+# Tabsmith has no unsafe code, and the compiler keeps it that way: every crate
+# inherits this table (`[lints] workspace = true`).
+unsafe_code = "forbid"
+
 [profile.release]
-# Distribution profile for the prebuilt `rustpy` binaries (see .github/workflows/release.yml).
+# Distribution profile for the prebuilt `tabsmith` binaries (see .github/workflows/release.yml).
 # Thin LTO with one codegen unit per crate keeps most of the size/speed gain of fat
 # LTO while bounding link time and memory for the Polars + Burn dependency graph on
 # CI runners. `strip` removes symbol tables: panics still report file:line, but
@@ -62,6 +78,6 @@ strip = true
 debug = "line-tables-only"
 
 [profile.dev.package."*"]
-# Dependencies (Burn, Polars, ndarray) are much faster when optimized even in dev builds.
+# Dependencies (Burn, Polars, gemm) are much faster when optimized even in dev builds.
 opt-level = 2
 debug = false

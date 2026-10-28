@@ -1,0 +1,10 @@
+$ <repo>/target/release/tabsmith bundle build --run run-001
+built bundle b-7507d3bd1833568f at bundles/run-001
+  8 files, evaluation: evaluated, self-check: passed (5 examples, max |Δp| 0.0e0)
+
+use it from Rust:
+  let predictor = Predictor::load("bundles/run-001", LoadOptions::cpu())?;
+check it on the target machine:
+  tabsmith bundle check bundles/run-001
+
+--- stderr ---

@@ -1,0 +1,48 @@
+{
+  "status": "unevaluated-candidate",
+  "valid": {
+    "task": "multiclass",
+    "metrics_version": "tabsmith.binary-metrics.v1",
+    "n": 418,
+    "class_counts": [
+      71,
+      263,
+      43,
+      41
+    ],
+    "confusion": [
+      [
+        43,
+        14,
+        9,
+        5
+      ],
+      [
+        48,
+        138,
+        23,
+        54
+      ],
+      [
+        6,
+        9,
+        26,
+        2
+      ],
+      [
+        7,
+        13,
+        6,
+        15
+      ]
+    ],
+    "accuracy": 0.5311004784688995,
+    "balanced_accuracy": 0.5252133632603807,
+    "f1": 0.46634977090461593,
+    "log_loss": 1.084925833376974,
+    "roc_auc": 0.7666302850224929
+  },
+  "notes": [
+    "no held-out test evaluation: treat as a candidate only"
+  ]
+}

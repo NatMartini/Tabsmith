@@ -6,7 +6,7 @@
       "scenario": "f01-config-typo",
       "expected_code": "E_CONFIG_UNKNOWN_FIELD",
       "code": "E_CONFIG_UNKNOWN_FIELD",
-      "message": "--set train.small-mlp.epoch=3, key `train.small-mlp.epoch`: unknown field `epoch`, expected one of `hidden`, `epochs`, `batch_size`, `learning_rate`, `l2`, `class_weight`, `early_stopping_patience`, `checkpoint_every_epochs`, `checkpoint_min_interval_seconds`",
+      "message": "--set train.small-mlp.epoch=3, key `train.small-mlp.epoch`: unknown field `epoch`, expected one of `hidden`, `epochs`, `batch_size`, `learning_rate`, `l2`, `class_weight`, `early_stopping_patience`, `checkpoint_every_epochs`, `checkpoint_min_interval_seconds`, `trees`",
       "next_action": "did you mean `epochs`? fix the spelling; docs/configuration.md lists every setting",
       "retained": [],
       "actionable": true
@@ -42,8 +42,8 @@
       "scenario": "f05-device-unavailable",
       "expected_code": "E_DEVICE_UNSUPPORTED",
       "code": "E_DEVICE_UNSUPPORTED",
-      "message": "device `cuda` is not available: no cuda backend is compiled into this build and it is not certified for tabular-binary@0.1",
-      "next_action": "set execution.candidate_device = \"cpu\" (or \"auto-certified\"); RustPy never falls back silently",
+      "message": "device `cuda` is not available: no cuda backend is compiled into this build",
+      "next_action": "install a build with GPU support (`cargo install tabsmith-cli --features cuda`), or set execution.candidate_device = \"cpu\"; Tabsmith never falls back silently",
       "retained": [],
       "actionable": true
     },
@@ -81,7 +81,7 @@
       "expected_code": "E_BUNDLE_MISSING_FILE",
       "code": "E_BUNDLE_MISSING_FILE",
       "message": "bundle file `transform.json` is missing",
-      "next_action": "the bundle is incomplete; rebuild it with `rustpy bundle build` or restore a complete copy",
+      "next_action": "the bundle is incomplete; rebuild it with `tabsmith bundle build` or restore a complete copy",
       "retained": [],
       "actionable": true
     },
@@ -90,7 +90,7 @@
       "expected_code": "E_SPLIT_UNSUPPORTED",
       "code": "E_SPLIT_UNSUPPORTED",
       "message": "a chronological (time) split is required but not implemented in tabular-binary@0.1",
-      "next_action": "RustPy will not fall back to a random split for time-dependent data; split the file by time yourself into train/test files, or remove data.time_column if rows are truly independent",
+      "next_action": "Tabsmith will not fall back to a random split for time-dependent data; split the file by time yourself into train/test files, or remove data.time_column if rows are truly independent",
       "retained": [],
       "actionable": true
     },
@@ -99,7 +99,7 @@
       "expected_code": "E_RUN_STATE_INVALID",
       "code": "E_RUN_STATE_INVALID",
       "message": "run run-001 already completed; there is nothing to resume",
-      "next_action": "start a new run with `rustpy run`, or continue training from its weights with `rustpy resume run-001 --warm-start`",
+      "next_action": "start a new run with `tabsmith run`, or continue training from its weights with `tabsmith resume run-001 --warm-start`",
       "retained": [],
       "actionable": true
     },
@@ -108,7 +108,7 @@
       "expected_code": "E_DATA_SOURCE_NOT_FOUND",
       "code": "E_DATA_SOURCE_NOT_FOUND",
       "message": "data file `<work>/defect-model/data/nope.csv` does not exist",
-      "next_action": "check data.source in rustpy.toml or bind a file with `rustpy data bind <file>`",
+      "next_action": "check data.source in tabsmith.toml or bind a file with `tabsmith data bind <file>`",
       "retained": [],
       "actionable": true
     }

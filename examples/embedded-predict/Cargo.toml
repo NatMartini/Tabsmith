@@ -1,0 +1,31 @@
+[package]
+name = "embedded-predict"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Tabsmith models compiled into no_std Rust: a library that builds for a Cortex-M microcontroller, with Kani proofs."
+
+# Standalone on purpose (not a workspace member), like predict-app.
+[workspace]
+
+[dependencies]
+tabsmith-macros = { path = "../../crates/tabsmith-macros" }
+tabsmith-embedded = { path = "../../crates/tabsmith-embedded" }
+
+[lints.rust]
+unsafe_code = "forbid"
+# Proof harnesses compile only under the Kani model checker (`cargo kani`).
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(kani)"] }
+
+# `cargo kani` settings. The proofs state that prediction never panics. Rust's own checks
+# stay on: arithmetic overflow, division by zero, shifts and indexing panic, and Kani
+# checks memory safety and loop unwinding. Kani's additional floating-point checks are
+# off. CBMC treats any division by an infinity as a possible NaN, so it flags
+# `exp(-inf)` in libm, although IEEE 754 defines that quotient as 0.
+[package.metadata.kani.flags]
+no-overflow-checks = true
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1

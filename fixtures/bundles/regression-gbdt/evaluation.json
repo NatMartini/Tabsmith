@@ -1,0 +1,15 @@
+{
+  "status": "unevaluated-candidate",
+  "valid": {
+    "task": "regression",
+    "metrics_version": "tabsmith.binary-metrics.v1",
+    "n": 404,
+    "rmse": 1840.6883992946646,
+    "mae": 1492.704668499502,
+    "r2": 0.9309553567253467,
+    "mean": 19001.013861386127
+  },
+  "notes": [
+    "no held-out test evaluation: treat as a candidate only"
+  ]
+}

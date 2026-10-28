@@ -7,15 +7,15 @@
   "run_id": "run-001",
   "candidate": "linear",
   "preprocessing": {
-    "columns_rustpy": 35,
+    "columns_tabsmith": 35,
     "columns_sklearn": 35,
-    "only_in_rustpy": [],
+    "only_in_tabsmith": [],
     "only_in_sklearn": [],
     "max_abs_diff": 2.2605928728935965e-07,
     "worst_column": "current_mean",
     "pass": true,
     "tolerance": 1e-05,
-    "note": "RustPy matrices are f32; sklearn is f64"
+    "note": "Tabsmith matrices are f32; sklearn is f64"
   },
   "metrics": {
     "sklearn": {
@@ -25,18 +25,18 @@
       "recall": 0.7738095238095238,
       "f1": 0.46017699115044247,
       "roc_auc": 0.8385321100917431,
-      "log_loss": 0.49390130399127213,
-      "brier": 0.16381599883941145
+      "log_loss": 0.49390130248696956,
+      "brier": 0.1638159985166358
     },
-    "rustpy": {
+    "tabsmith": {
       "accuracy": 0.7575516693163752,
       "balanced_accuracy": 0.7644276976845784,
       "precision": 0.327455919395466,
       "recall": 0.7738095238095238,
       "f1": 0.46017699115044247,
       "roc_auc": 0.8385321100917431,
-      "log_loss": 0.4939013039912725,
-      "brier": 0.1638159988394115
+      "log_loss": 0.49390130248696934,
+      "brier": 0.16381599851663572
     },
     "abs_diff": {
       "accuracy": 0.0,
@@ -45,8 +45,8 @@
       "recall": 0.0,
       "f1": 0.0,
       "roc_auc": 0.0,
-      "log_loss": 3.885780586188048e-16,
-      "brier": 5.551115123125783e-17
+      "log_loss": 2.220446049250313e-16,
+      "brier": 8.326672684688674e-17
     },
     "confusion_matrix_equal": true,
     "pass": true,
@@ -54,18 +54,18 @@
   },
   "linear_objective": {
     "objective_sklearn_optimum": 0.5006598985069168,
-    "objective_rustpy": 0.5011756857838956,
-    "relative_gap": 0.0010302148794360394,
+    "objective_tabsmith": 0.5011756858687199,
+    "relative_gap": 0.0010302150488609503,
     "valid_balanced_accuracy": {
       "sklearn": 0.7628167321974662,
-      "rustpy": 0.7644276976845784
+      "tabsmith": 0.7644276976845784
     },
     "valid_roc_auc": {
       "sklearn": 0.8376365224989079,
-      "rustpy": 0.8385321100917431
+      "tabsmith": 0.8385321100917431
     },
-    "valid_probability_correlation": 0.9987927250832366,
-    "valid_max_abs_probability_diff": 0.05645823770677172,
-    "note": "RustPy minimises the same objective with minibatch Adam and keeps the best-validation epoch; sklearn is the converged lbfgs optimum"
+    "valid_probability_correlation": 0.9987927250192208,
+    "valid_max_abs_probability_diff": 0.05645826563973605,
+    "note": "Tabsmith minimises the same objective with minibatch Adam and keeps the best-validation epoch; sklearn is the converged lbfgs optimum"
   }
 }

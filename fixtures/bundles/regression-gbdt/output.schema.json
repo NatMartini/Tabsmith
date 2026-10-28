@@ -1,0 +1,13 @@
+{
+  "target": "remaining_hours",
+  "task": "regression",
+  "negative_label": "",
+  "positive_label": "",
+  "probability": "",
+  "threshold": 0.5,
+  "decision": "remaining_hours = 19773.9980365297 + 7110.724755771283 * output",
+  "target_scale": {
+    "mean": 19773.9980365297,
+    "std": 7110.724755771283
+  }
+}

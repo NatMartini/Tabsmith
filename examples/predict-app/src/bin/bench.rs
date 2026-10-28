@@ -4,7 +4,7 @@
 //!     cargo run --release --bin bench -- <bundle-dir> <records.jsonl> [iterations]
 use std::time::Instant;
 
-use rustpy_runtime::{LoadOptions, Predictor, Record};
+use tabsmith_runtime::{LoadOptions, Predictor, Record};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args().skip(1);

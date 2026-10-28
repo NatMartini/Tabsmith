@@ -1,14 +1,14 @@
-# Install the prebuilt `rustpy` command-line tool from a GitHub release (Windows x86_64).
+# Install the prebuilt `tabsmith` command-line tool from a GitHub release (Windows x86_64).
 #
 #   irm https://github.com/__OWNER__/__REPO__/releases/latest/download/install.ps1 | iex
 #
 # Environment variables:
-#   RUSTPY_VERSION         release to install, e.g. 0.1.0 (default: the latest release)
-#   RUSTPY_INSTALL_DIR     directory for rustpy.exe (default: %LOCALAPPDATA%\rustpy\bin)
-#   RUSTPY_NO_MODIFY_PATH  set to 1 to leave the user PATH unchanged
+#   TABSMITH_VERSION         release to install, e.g. 0.1.0 (default: the latest release)
+#   TABSMITH_INSTALL_DIR     directory for tabsmith.exe (default: %LOCALAPPDATA%\tabsmith\bin)
+#   TABSMITH_NO_MODIFY_PATH  set to 1 to leave the user PATH unchanged
 #
 # The archive's SHA-256 is checked against the .sha256 file published with it.
-# On Linux and macOS use install.sh. Elsewhere: cargo install rustpy-cli --locked
+# On Linux and macOS use install.sh. Elsewhere: cargo install tabsmith-cli --locked
 #
 # Everything runs inside one script block so that `irm ... | iex` leaves no variables
 # or functions behind in your session.
@@ -19,15 +19,15 @@
     $ProgressPreference = 'SilentlyContinue'   # the progress bar makes downloads very slow in Windows PowerShell
 
     # The GitHub repository that publishes the releases (filled in by tools/release/set-repo.sh).
-    $RustpyRepo = if ($env:RUSTPY_REPO) { $env:RUSTPY_REPO } else { '__OWNER__/__REPO__' }
+    $TabsmithRepo = if ($env:TABSMITH_REPO) { $env:TABSMITH_REPO } else { '__OWNER__/__REPO__' }
 
-    $FromSource = 'Install from source instead: cargo install rustpy-cli --locked (needs Rust, https://rustup.rs)'
+    $FromSource = 'Install from source instead: cargo install tabsmith-cli --locked (needs Rust, https://rustup.rs)'
 
     function Write-Step([string] $Message) {
-        Write-Host "rustpy-install: $Message"
+        Write-Host "tabsmith-install: $Message"
     }
 
-    function Get-RustpyTarget {
+    function Get-TabsmithTarget {
         $arch = $null
         try { $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString() } catch { }
         if (-not $arch) {
@@ -43,19 +43,19 @@
         }
     }
 
-    function Get-RustpyTag {
-        if ($env:RUSTPY_VERSION) {
-            return 'v' + ($env:RUSTPY_VERSION -replace '^v', '')
+    function Get-TabsmithTag {
+        if ($env:TABSMITH_VERSION) {
+            return 'v' + ($env:TABSMITH_VERSION -replace '^v', '')
         }
-        $api = "https://api.github.com/repos/$RustpyRepo/releases/latest"
+        $api = "https://api.github.com/repos/$TabsmithRepo/releases/latest"
         try {
-            $release = Invoke-RestMethod -Uri $api -UseBasicParsing -UserAgent 'rustpy-install'
+            $release = Invoke-RestMethod -Uri $api -UseBasicParsing -UserAgent 'tabsmith-install'
         } catch {
-            throw "could not look up the latest release at $api ($($_.Exception.Message)). Set `$env:RUSTPY_VERSION to choose a version. $FromSource"
+            throw "could not look up the latest release at $api ($($_.Exception.Message)). Set `$env:TABSMITH_VERSION to choose a version. $FromSource"
         }
         $tagName = $null
         if ($release -and $release.PSObject.Properties['tag_name']) { $tagName = [string] $release.tag_name }
-        if (-not $tagName) { throw "no published release found for $RustpyRepo. $FromSource" }
+        if (-not $tagName) { throw "no published release found for $TabsmithRepo. $FromSource" }
         return $tagName
     }
 
@@ -70,41 +70,41 @@
         }
         Set-ItemProperty -Path 'HKCU:\Environment' -Name 'Path' -Value ((@($entries) + $Dir) -join ';') -Type ExpandString
         # Setting a variable through .NET broadcasts WM_SETTINGCHANGE, so new terminals see the new PATH.
-        [Environment]::SetEnvironmentVariable('RUSTPY_INSTALL_REFRESH', '1', 'User')
-        [Environment]::SetEnvironmentVariable('RUSTPY_INSTALL_REFRESH', $null, 'User')
+        [Environment]::SetEnvironmentVariable('TABSMITH_INSTALL_REFRESH', '1', 'User')
+        [Environment]::SetEnvironmentVariable('TABSMITH_INSTALL_REFRESH', $null, 'User')
         return $true
     }
 
-    function Install-Rustpy {
-        if ($RustpyRepo -match '__OWNER__|__REPO__') {
-            throw "this copy of install.ps1 has no GitHub repository configured (RUSTPY_REPO=$RustpyRepo)"
+    function Install-Tabsmith {
+        if ($TabsmithRepo -match '__OWNER__|__REPO__') {
+            throw "this copy of install.ps1 has no GitHub repository configured (TABSMITH_REPO=$TabsmithRepo)"
         }
         if ($PSVersionTable.PSEdition -eq 'Core' -and -not $IsWindows) {
-            throw "install.ps1 is for Windows. On Linux and macOS use: curl -fsSL https://github.com/$RustpyRepo/releases/latest/download/install.sh | sh"
+            throw "install.ps1 is for Windows. On Linux and macOS use: curl -fsSL https://github.com/$TabsmithRepo/releases/latest/download/install.sh | sh"
         }
         try {
             [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
         } catch { }
 
-        $installDir = if ($env:RUSTPY_INSTALL_DIR) {
-            $env:RUSTPY_INSTALL_DIR
+        $installDir = if ($env:TABSMITH_INSTALL_DIR) {
+            $env:TABSMITH_INSTALL_DIR
         } elseif ($env:LOCALAPPDATA) {
-            Join-Path $env:LOCALAPPDATA 'rustpy\bin'
+            Join-Path $env:LOCALAPPDATA 'tabsmith\bin'
         } else {
-            throw 'LOCALAPPDATA is not set; set RUSTPY_INSTALL_DIR to choose where to install'
+            throw 'LOCALAPPDATA is not set; set TABSMITH_INSTALL_DIR to choose where to install'
         }
 
-        $target = Get-RustpyTarget
-        $tag = Get-RustpyTag
+        $target = Get-TabsmithTarget
+        $tag = Get-TabsmithTag
         $version = $tag -replace '^v', ''
-        $name = "rustpy-$version-$target"
-        $url = "https://github.com/$RustpyRepo/releases/download/$tag/$name.zip"
+        $name = "tabsmith-$version-$target"
+        $url = "https://github.com/$TabsmithRepo/releases/download/$tag/$name.zip"
 
-        $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ('rustpy-install-' + [System.Guid]::NewGuid().ToString('N'))
+        $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ('tabsmith-install-' + [System.Guid]::NewGuid().ToString('N'))
         New-Item -ItemType Directory -Path $tmp | Out-Null
         try {
             $zip = Join-Path $tmp "$name.zip"
-            Write-Step "downloading rustpy $version for $target"
+            Write-Step "downloading tabsmith $version for $target"
             try {
                 Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
             } catch {
@@ -125,8 +125,8 @@
             Write-Step 'checksum verified (sha256)'
 
             Expand-Archive -LiteralPath $zip -DestinationPath $tmp -Force
-            $exe = Join-Path (Join-Path $tmp $name) 'rustpy.exe'
-            if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw "the archive does not contain $name\rustpy.exe" }
+            $exe = Join-Path (Join-Path $tmp $name) 'tabsmith.exe'
+            if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw "the archive does not contain $name\tabsmith.exe" }
 
             # Native stderr must not turn into a terminating error here.
             $ErrorActionPreference = 'Continue'
@@ -141,9 +141,9 @@
             if ($probeCode -ne 0) { throw "the prebuilt binary does not run on this system: $probe. $FromSource" }
 
             New-Item -ItemType Directory -Force -Path $installDir | Out-Null
-            $dest = Join-Path $installDir 'rustpy.exe'
+            $dest = Join-Path $installDir 'tabsmith.exe'
             if (Test-Path -LiteralPath $dest) {
-                # A running rustpy.exe cannot be overwritten, but it can be renamed.
+                # A running tabsmith.exe cannot be overwritten, but it can be renamed.
                 Move-Item -LiteralPath $dest -Destination "$dest.old" -Force
             }
             Copy-Item -LiteralPath $exe -Destination $dest -Force
@@ -153,19 +153,19 @@
         }
 
         Write-Step "installed $probe to $dest"
-        if ($env:RUSTPY_NO_MODIFY_PATH -eq '1') {
-            Write-Step "RUSTPY_NO_MODIFY_PATH=1: add $installDir to your PATH yourself"
+        if ($env:TABSMITH_NO_MODIFY_PATH -eq '1') {
+            Write-Step "TABSMITH_NO_MODIFY_PATH=1: add $installDir to your PATH yourself"
         } elseif (Add-UserPath $installDir) {
             $env:Path = "$env:Path;$installDir"
-            Write-Step "added $installDir to your user PATH; open a new terminal to use rustpy there"
+            Write-Step "added $installDir to your user PATH; open a new terminal to use tabsmith there"
         }
-        Write-Step "get started: rustpy --help   (to uninstall, delete $dest)"
+        Write-Step "get started: tabsmith --help   (to uninstall, delete $dest)"
     }
 
     try {
-        Install-Rustpy
+        Install-Tabsmith
     } catch {
-        Write-Host "rustpy-install: error: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "tabsmith-install: error: $($_.Exception.Message)" -ForegroundColor Red
         # Run as a script file: report failure through the exit code. Run through
         # `irm | iex`: just return, because `exit` would close the user's PowerShell window.
         if ($PSCommandPath) { exit 1 }

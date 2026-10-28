@@ -2,10 +2,11 @@
   "ok": true,
   "result": {
     "compiled_backends": [
-      "burn-ndarray (cpu)"
+      "burn-flex (cpu)"
     ],
     "devices": [
       {
+        "backend": "cpu",
         "certification": "certified",
         "kind": "cpu",
         "name": "AMD Ryzen 9 9950X3D2 16-Core Processor",
@@ -15,14 +16,14 @@
     "environment": {
       "arch": "x86_64",
       "cpu_model": "AMD Ryzen 9 9950X3D2 16-Core Processor",
-      "engine": "burn 0.22.1 / ndarray backend (CPU, single thread)",
+      "engine": "burn 0.22.1 / flex backend (CPU, single thread)",
       "logical_cpus": 32,
       "os": "linux",
-      "rustpy_version": "0.1.0"
+      "tabsmith_version": "0.1.0"
     },
     "project": {
       "found": false,
-      "hint": "create a project with `rustpy init <name>` or pass --project <dir>"
+      "hint": "create a project with `tabsmith init <name>` or pass --project <dir>"
     },
     "python_required": false
   }

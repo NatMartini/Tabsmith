@@ -1,0 +1,37 @@
+{
+  "records": [
+    {
+      "flag": false,
+      "grade": "1.0",
+      "load": 1.008782,
+      "mode": "auto",
+      "temp": 60.028445,
+      "zone": "1"
+    },
+    {
+      "flag": true,
+      "grade": "2.0",
+      "load": 1.592424,
+      "mode": "manual",
+      "temp": 75.835635,
+      "zone": "2"
+    },
+    {
+      "flag": true,
+      "grade": "3.0",
+      "load": 0.716961,
+      "mode": "service",
+      "temp": 52.12485,
+      "zone": "4"
+    },
+    {
+      "flag": false,
+      "grade": "1.0",
+      "load": null,
+      "mode": null,
+      "temp": null,
+      "zone": "1"
+    }
+  ],
+  "note": "synthetic records generated from transform statistics; no training rows"
+}

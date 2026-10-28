@@ -1,0 +1,32 @@
+{
+  "note": "GPU paths certified for the tabular-binary recipe by tools/gpu_certify.py, with the evidence in reports/gpu/. Matching is exact: backend, device name, OS, precision, and driver version (Vulkan) or compute capability (CUDA).",
+  "entries": [
+    {
+      "backend": "vulkan",
+      "device": "NVIDIA GeForce RTX 5090",
+      "os": "windows",
+      "driver": "610.88",
+      "precision": "fp32",
+      "certified_on": "2026-10-27",
+      "evidence": "reports/gpu/2026-10-27-rtx5090-windows-vulkan-fp32"
+    },
+    {
+      "backend": "cuda",
+      "device": "NVIDIA GeForce RTX 5090",
+      "os": "windows",
+      "driver": "compute capability 12.0",
+      "precision": "tf32-matmul",
+      "certified_on": "2026-10-27",
+      "evidence": "reports/gpu/2026-10-27-rtx5090-windows-cuda-tf32"
+    },
+    {
+      "backend": "vulkan",
+      "device": "AMD Radeon(TM) Graphics",
+      "os": "windows",
+      "driver": "2026.04.17 (AMD proprietary shader compiler)",
+      "precision": "fp32",
+      "certified_on": "2026-10-27",
+      "evidence": "reports/gpu/2026-10-27-radeon-igpu-windows-vulkan-fp32"
+    }
+  ]
+}
