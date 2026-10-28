@@ -40,7 +40,7 @@ safetensors = "0.8.0"
 libm = "0.2.16"
 proc-macro2 = "1.0.107"
 quote = "1.0.47"
-syn = "2.0.119"
+syn = "3.0.9"
 clap = { version = "4.6.7", features = ["derive"] }
 ctrlc = "3.5.2"
 tiny_http = "0.12.0"
