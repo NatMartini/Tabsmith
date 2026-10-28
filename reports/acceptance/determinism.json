@@ -1,22 +1,30 @@
 {
   "det_1": [
     {
-      "model.safetensors": "eafebd8fe7cb56a16b617a0147d018b651564fb01818f967dc284d3e5f0bbbf2",
-      "model.config.json": "99841cae81e693cde6525a72d097251ad9acd0116f719c24c7d9624b4a080b3d"
+      "model.safetensors": "880d1a4198a4178f4719a0706fa9e739f67fdd3b7ecd1789387b1b78d3952326",
+      "model.config.json": "9f90fa2354beadca7792852d952be9e0259e384dae726c43cf40efaffa6037d2"
     },
     {
-      "model.safetensors": "4bbeb062f359e3916ff48fe43ba52fc0a65c32559f7e7ab70a783beba65c1917",
-      "model.config.json": "d3a20d8ebd411d11de6de0c08b3090c522514208bfebcadf19f1c8d918954823"
+      "model.safetensors": "cba79c74ba76ffb102fb9252bdf4378c3126c1cbfb6220a9b3e05871a31a87cb",
+      "model.config.json": "5c22df1e0652055c0fbc87a5decbf22c825c8944b642e1ad6497c320118a7ae7"
+    },
+    {
+      "model.safetensors": "6c6d4a51b55e7ff5c5bcaa683a3fe247cc0e8e443dfcd7f3c8f6b6a2dc86b12d",
+      "model.config.json": "4494542abb6056ff74866aa1b7a376819317461f6e796cf3817a7e5fdccd670d"
     }
   ],
   "det_2": [
     {
-      "model.safetensors": "eafebd8fe7cb56a16b617a0147d018b651564fb01818f967dc284d3e5f0bbbf2",
-      "model.config.json": "99841cae81e693cde6525a72d097251ad9acd0116f719c24c7d9624b4a080b3d"
+      "model.safetensors": "880d1a4198a4178f4719a0706fa9e739f67fdd3b7ecd1789387b1b78d3952326",
+      "model.config.json": "9f90fa2354beadca7792852d952be9e0259e384dae726c43cf40efaffa6037d2"
     },
     {
-      "model.safetensors": "4bbeb062f359e3916ff48fe43ba52fc0a65c32559f7e7ab70a783beba65c1917",
-      "model.config.json": "d3a20d8ebd411d11de6de0c08b3090c522514208bfebcadf19f1c8d918954823"
+      "model.safetensors": "cba79c74ba76ffb102fb9252bdf4378c3126c1cbfb6220a9b3e05871a31a87cb",
+      "model.config.json": "5c22df1e0652055c0fbc87a5decbf22c825c8944b642e1ad6497c320118a7ae7"
+    },
+    {
+      "model.safetensors": "6c6d4a51b55e7ff5c5bcaa683a3fe247cc0e8e443dfcd7f3c8f6b6a2dc86b12d",
+      "model.config.json": "4494542abb6056ff74866aa1b7a376819317461f6e796cf3817a7e5fdccd670d"
     }
   ],
   "identical": true

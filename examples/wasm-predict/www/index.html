@@ -1,0 +1,484 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tabsmith in WebAssembly</title>
+<style>
+  :root {
+    --bg: #f6f5f2; --surface: #ffffff; --text: #1c1c1e; --muted: #626166; --line: #e2e0da;
+    --accent: #a8431b; --accent-soft: #f5e6de; --ok: #276b43; --ok-soft: #e2f1e7;
+    --err: #a8261b; --err-soft: #fbe9e7; --bar: #d9d6cf;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #141413; --surface: #1d1d1c; --text: #ecebe7; --muted: #a29f98; --line: #302f2c;
+      --accent: #e3825a; --accent-soft: #3b261b; --ok: #79c795; --ok-soft: #1b3125;
+      --err: #f0907f; --err-soft: #3a1d19; --bar: #3a3936;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 980px; margin: 0 auto; padding: 40px 16px 64px; }
+  h1 { font-size: 30px; line-height: 1.2; margin: 0 0 8px; letter-spacing: -0.01em; }
+  h1 small { font-size: 15px; font-weight: 500; color: var(--accent); margin-left: 6px; font-family: var(--mono); }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0 0 14px; }
+  .lede { color: var(--muted); max-width: 70ch; margin: 0 0 28px; }
+  code, .mono { font-family: var(--mono); font-size: 0.92em; }
+  section {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+    padding: 20px; margin-bottom: 16px;
+  }
+  [hidden] { display: none !important; }
+  .muted { color: var(--muted); }
+
+  #demos { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin-bottom: 12px; }
+  .demo {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 6px; text-align: left;
+    padding: 12px 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg);
+    color: inherit; font: inherit; cursor: pointer;
+  }
+  .demo:hover { border-color: var(--accent); }
+  .demo[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+  .demo-title { font-weight: 600; }
+  .demo-meta { font-size: 13px; color: var(--muted); }
+  .chip {
+    display: inline-block; font: 600 11px/1 var(--mono); text-transform: uppercase; letter-spacing: 0.04em;
+    padding: 4px 7px; border-radius: 999px; background: var(--accent-soft); color: var(--accent);
+  }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  button.primary, label.button, button.ghost {
+    font: inherit; font-weight: 600; border-radius: 8px; padding: 8px 14px; cursor: pointer;
+    border: 1px solid var(--accent); background: var(--accent); color: #fff;
+  }
+  label.button, button.ghost { background: transparent; color: var(--accent); }
+  label.button input { display: none; }
+
+  .status { margin-top: 12px; padding: 10px 12px; border-radius: 8px; font-size: 14px; }
+  .status.ok { background: var(--ok-soft); color: var(--ok); }
+  .status.err { background: var(--err-soft); color: var(--err); }
+  .status strong { font-weight: 600; }
+  .code { font: 600 12px var(--mono); padding: 2px 6px; border-radius: 4px; background: var(--err); color: var(--surface); margin-right: 6px; }
+
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 8px 18px; margin: 0; }
+  dt { color: var(--muted); }
+  dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+  .metrics { display: flex; flex-wrap: wrap; gap: 6px 18px; }
+  .metrics span b { font-variant-numeric: tabular-nums; }
+
+  .examples { margin-bottom: 14px; }
+  .examples button { font: inherit; font-size: 13px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--bg); color: inherit; cursor: pointer; }
+  .examples button:hover { border-color: var(--accent); }
+  #fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px 14px; margin-bottom: 16px; }
+  .field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .field label { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; }
+  .fname { font-family: var(--mono); font-weight: 600; overflow-wrap: anywhere; }
+  .ftype { color: var(--muted); white-space: nowrap; }
+  .field input, .field select, textarea {
+    font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--line); border-radius: 7px;
+    padding: 7px 9px; width: 100%; min-width: 0;
+  }
+  .field input:focus, .field select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .hint { color: var(--muted); font-size: 12px; }
+
+  #result { margin-top: 18px; border-top: 1px solid var(--line); padding-top: 18px; }
+  .answer { font-size: 26px; font-weight: 650; margin: 0 0 6px; overflow-wrap: anywhere; }
+  .answer .mono { font-size: 0.8em; color: var(--muted); font-weight: 500; }
+  .why { color: var(--muted); margin: 0 0 14px; }
+  .bars { display: grid; grid-template-columns: max-content 1fr 4.5em; gap: 6px 12px; align-items: center; max-width: 560px; }
+  .bars .name { font-family: var(--mono); font-size: 13px; }
+  .bars .val { text-align: right; font-variant-numeric: tabular-nums; font-size: 13px; }
+  .track { position: relative; height: 12px; border-radius: 6px; background: var(--bar); overflow: hidden; }
+  .fill { height: 100%; background: var(--muted); border-radius: 6px; }
+  .best .fill, .fill.hot { background: var(--accent); }
+  .best .name { font-weight: 700; }
+  .tick { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--text); }
+  .note { font-size: 13px; color: var(--muted); margin-top: 12px; }
+  .timing { font-size: 13px; color: var(--muted); margin-top: 6px; }
+
+  details { margin-top: 16px; }
+  summary { cursor: pointer; color: var(--accent); font-weight: 600; }
+  textarea { font-family: var(--mono); font-size: 13px; min-height: 180px; margin: 10px 0; resize: vertical; }
+  pre { font-family: var(--mono); font-size: 12.5px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; overflow: auto; margin: 10px 0 0; }
+  footer { color: var(--muted); font-size: 13px; margin-top: 24px; }
+  @media (max-width: 560px) {
+    h1 small { display: block; margin: 6px 0 0; }
+    dl { grid-template-columns: 1fr; gap: 2px; }
+    dd { margin-bottom: 8px; }
+    .answer { font-size: 22px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Tabsmith in WebAssembly <small>tabsmith-runtime → wasm32</small></h1>
+    <p class="lede">
+      A model bundle trained by <code>tabsmith train</code>, loaded by the same Rust runtime that serves
+      applications, compiled to WebAssembly. Hash checks, contract checks, the self-check and every
+      prediction run in this tab. Nothing is uploaded.
+    </p>
+  </header>
+
+  <section>
+    <h2>1 · Load a bundle</h2>
+    <div id="demos"></div>
+    <div class="actions">
+      <label class="button">Open a bundle folder…<input id="folder" type="file" webkitdirectory multiple></label>
+      <span class="muted" style="font-size:13px">for example <code>bundles/run-002</code> of your own project</span>
+    </div>
+    <div id="status" class="status" hidden></div>
+  </section>
+
+  <section id="about" hidden>
+    <h2>2 · What the bundle promises</h2>
+    <dl id="facts"></dl>
+  </section>
+
+  <section id="ask" hidden>
+    <h2>3 · Predict</h2>
+    <div class="examples actions" id="examples"></div>
+    <form id="fields" autocomplete="off"></form>
+    <div class="actions">
+      <button class="primary" id="go" type="button">Predict</button>
+      <span class="muted" style="font-size:13px">or change any field: the prediction follows</span>
+    </div>
+    <div id="result" hidden></div>
+    <details>
+      <summary>Edit the request as JSON (one record or an array)</summary>
+      <textarea id="json" spellcheck="false"></textarea>
+      <div class="actions"><button class="ghost" id="go-json" type="button">Predict this JSON</button></div>
+      <pre id="raw" hidden></pre>
+    </details>
+  </section>
+
+  <footer>
+    Source: <code>examples/wasm-predict</code>. The page passes the bundle's files to
+    <code>Predictor::from_memory</code>; there is no separate JavaScript implementation of anything.
+  </footer>
+</main>
+
+<script type="module">
+const $ = (sel) => document.querySelector(sel);
+const MISSING = "\u0000missing";
+let wasm = null;
+let bundle = null;
+let info = null;
+
+// Builds DOM nodes; text is always inserted as text, never parsed as HTML.
+function h(tag, attrs = {}, ...children) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v === false || v == null) continue;
+    if (k === "class") el.className = v;
+    else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+    else el.setAttribute(k, v === true ? "" : v);
+  }
+  for (const c of children.flat(Infinity)) {
+    if (c != null && c !== false) el.append(c instanceof Node ? c : String(c));
+  }
+  return el;
+}
+
+const fixed = (x, d = 4) => (x == null || Number.isNaN(x) ? "–" : Number(x).toFixed(d));
+const num = (x) => Number(x).toLocaleString("en-US", { maximumFractionDigits: 2 });
+const short = (x) => Number(x).toPrecision(4).replace(/\.?0+$/, "");
+const dur = (ms) => (ms < 1 ? `${(ms * 1000).toFixed(ms < 0.01 ? 1 : 0)} µs` : `${ms.toFixed(1)} ms`);
+
+function parseError(e) {
+  const text = String(e?.message ?? e);
+  const m = /^\[([^\]]+)\]\s*([\s\S]*?)(?:\s\(next: ([\s\S]*)\))?$/.exec(text);
+  return m ? { code: m[1], message: m[2], next: m[3] } : { code: null, message: text, next: null };
+}
+
+function errorNode(e, lead) {
+  const { code, message, next } = parseError(e);
+  return h("div", {},
+    lead && h("strong", {}, lead, " "),
+    code && h("span", { class: "code" }, code),
+    message,
+    next && h("div", {}, h("strong", {}, "Next: "), next));
+}
+
+function status(kind, ...content) {
+  const box = $("#status");
+  box.className = `status ${kind}`;
+  box.replaceChildren(...content);
+  box.hidden = false;
+}
+
+// The layout `Bundle::new` reads: a flags byte, then per file
+// [u16 LE name length][name][u32 LE data length][data].
+function pack(entries) {
+  const enc = new TextEncoder();
+  const parts = [new Uint8Array([1])];
+  for (const [name, data] of entries) {
+    const n = enc.encode(name);
+    const head = new Uint8Array(2 + n.length + 4);
+    const view = new DataView(head.buffer);
+    view.setUint16(0, n.length, true);
+    head.set(n, 2);
+    view.setUint32(2 + n.length, data.length, true);
+    parts.push(head, data);
+  }
+  const out = new Uint8Array(parts.reduce((s, p) => s + p.length, 0));
+  let at = 0;
+  for (const p of parts) { out.set(p, at); at += p.length; }
+  return out;
+}
+
+function load(bytes, source) {
+  let next;
+  const t0 = performance.now();
+  try {
+    next = new wasm.Bundle(bytes);
+  } catch (e) {
+    status("err", errorNode(e, `Refused ${source}:`));
+    if (bundle) $("#status").append(h("div", { class: "muted" }, "The previous bundle stays loaded."));
+    return false;
+  }
+  const took = performance.now() - t0;
+  bundle?.free();
+  bundle = next;
+  info = JSON.parse(bundle.describe());
+  const files = info.manifest.files.length;
+  status("ok", h("strong", {}, `✓ Verified ${source} in ${dur(took)}.`), " ",
+    `${files} files match their SHA-256 in manifest.json, every format and transform version is one this runtime implements, ` +
+    `and the model reproduced its ${info.examples.length} recorded example predictions (self-check).`);
+  renderFacts();
+  renderForm();
+  fill(info.examples[0]);
+  predictForm();
+  return true;
+}
+
+function metricsOf(m) {
+  if (!m) return [];
+  if (m.task === "regression") return [["RMSE", m.rmse, 2], ["MAE", m.mae, 2], ["R²", m.r2, 4], ["rows", m.n, 0]];
+  if (m.task === "multiclass") return [["accuracy", m.accuracy, 4], ["balanced accuracy", m.balanced_accuracy, 4], ["macro F1", m.f1, 4], ["log loss", m.log_loss, 4], ["rows", m.n, 0]];
+  return [["balanced accuracy", m.balanced_accuracy, 4], ["ROC AUC", m.roc_auc, 4], ["precision", m.precision, 4], ["recall", m.recall, 4], ["rows", m.n, 0]];
+}
+
+function metricsNode(m) {
+  return h("div", { class: "metrics" }, metricsOf(m).map(([k, v, d]) => h("span", {}, `${k} `, h("b", {}, d ? fixed(v, d) : v))));
+}
+
+function modelText(m) {
+  if (m.trees) {
+    const t = m.trees;
+    const per = t.n_outputs > 1 ? ` (${t.n_trees / t.n_outputs} rounds × ${t.n_outputs} classes)` : "";
+    return `${m.family}: ${t.n_trees} trees${per}, ${t.n_nodes} nodes, depth ≤ ${t.max_depth}, over ${m.input_dim} features`;
+  }
+  const dims = [m.input_dim, ...m.layers.map((l) => l.out_dim)].join(" → ");
+  const params = m.layers.reduce((s, l) => s + l.in_dim * l.out_dim + l.out_dim, 0);
+  return `${m.family}: dense ${dims} (${params.toLocaleString("en-US")} parameters)`;
+}
+
+function renderFacts() {
+  const o = info.output;
+  const ev = info.evaluation;
+  let task;
+  if (o.task === "multiclass") task = [h("span", { class: "chip" }, o.task), ` ${o.target} ∈ {${o.classes.join(", ")}}`];
+  else if (o.task === "regression") task = [h("span", { class: "chip" }, o.task), ` ${o.target}, learned standardised (mean ${num(o.target_scale.mean)}, sd ${num(o.target_scale.std)})`];
+  else task = [h("span", { class: "chip" }, o.task ?? "binary"), ` P(${o.target} = ${o.positive_label}), positive when ≥ ${fixed(o.threshold)}`];
+  const t = info.transform;
+  const rows = [
+    ["Bundle", [h("span", { class: "mono" }, info.manifest.bundle_id), ` · ${info.manifest.name}`]],
+    ["Task", task],
+    ["Model", modelText(info.model)],
+    ["Preprocessing", `${t.features.length} fields → ${t.output_dim} features, fitted on ${t.fitted_rows.toLocaleString("en-US")} training rows only` +
+      (t.dropped.length ? `; ${t.dropped.length} field(s) dropped` : "")],
+    ev.test
+      ? ["Test split", metricsNode(ev.test.metrics)]
+      : ["Validation", [metricsNode(ev.valid), h("div", { class: "muted" }, "not evaluated on the test split")]],
+    ["Ships", `${info.manifest.files.length} files, Tabsmith ${info.manifest.tabsmith_version}; training data: ${info.manifest.contains_training_data ? "yes" : "none"}`],
+  ];
+  $("#facts").replaceChildren(...rows.flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, v)]));
+  $("#about").hidden = false;
+}
+
+function renderForm() {
+  const feats = new Map(info.transform.features.map((f) => [f.name, f]));
+  const dropped = new Map(info.transform.dropped.map((d) => [d.name, d.reason]));
+  const fields = info.input.fields.map((f) => {
+    const t = feats.get(f.name);
+    const id = `f-${f.name}`;
+    let control;
+    let hint;
+    if (t?.kind === "categorical") {
+      control = h("select", { name: f.name, id },
+        t.categories.map((c) => h("option", { value: c }, c)),
+        f.nullable && h("option", { value: MISSING }, "(missing)"));
+      hint = `${t.categories.length} categories seen in training`;
+    } else if (t?.kind === "numeric") {
+      control = h("input", { name: f.name, id, type: "number", step: "any", placeholder: f.nullable ? "empty = missing" : "required" });
+      hint = `training mean ${short(t.mean)}, sd ${short(t.std)}`;
+    } else {
+      control = h("input", { name: f.name, id, type: "text", placeholder: "not used by the model" });
+      hint = dropped.get(f.name) ?? "not used by the model";
+    }
+    return h("div", { class: "field" },
+      h("label", { for: id }, h("span", { class: "fname" }, f.name), h("span", { class: "ftype" }, f.raw_dtype)),
+      control,
+      h("small", { class: "hint" }, hint));
+  });
+  $("#fields").replaceChildren(...fields);
+  $("#examples").replaceChildren(h("span", { class: "muted" }, "Start from:"),
+    ...info.examples.map((r, i) => h("button", { type: "button", onclick: () => { fill(r); predictForm(); } }, `example ${i + 1}`)));
+  $("#ask").hidden = false;
+}
+
+function control(name) {
+  return $("#fields").elements.namedItem(name);
+}
+
+function fill(record) {
+  for (const f of info.input.fields) {
+    const el = control(f.name);
+    const v = record[f.name];
+    if (el.tagName === "SELECT") {
+      const value = v == null ? MISSING : String(v);
+      if (![...el.options].some((o) => o.value === value)) el.append(h("option", { value }, value));
+      el.value = value;
+    } else {
+      el.value = v == null ? "" : String(v);
+    }
+  }
+}
+
+function coerce(text, dtype) {
+  if (dtype === "bool") return text === "true";
+  if (dtype === "int" || dtype === "float") {
+    const n = Number(text);
+    return Number.isFinite(n) ? n : text;
+  }
+  return text;
+}
+
+function readForm() {
+  const feats = new Set(info.transform.features.map((f) => f.name));
+  const record = {};
+  for (const f of info.input.fields) {
+    const v = control(f.name).value;
+    if (v === "" || v === MISSING) {
+      if (feats.has(f.name) || f.required) record[f.name] = null;
+    } else {
+      record[f.name] = coerce(v, f.raw_dtype);
+    }
+  }
+  return record;
+}
+
+function predictForm() {
+  const text = JSON.stringify(readForm(), null, 2);
+  $("#json").value = text;
+  predict(text);
+}
+
+function predict(text) {
+  const box = $("#result");
+  box.hidden = false;
+  let preds;
+  try {
+    preds = JSON.parse(bundle.predict(text));
+  } catch (e) {
+    box.replaceChildren(h("div", { class: "status err" }, errorNode(e, "Refused:")));
+    $("#raw").hidden = true;
+    return;
+  }
+  // Average over repeated calls: browsers coarsen the clock to 0.1 ms or more.
+  let n = 0;
+  const t0 = performance.now();
+  let took;
+  do { bundle.predict(text); n++; took = performance.now() - t0; } while (took < 40 && n < 20000);
+  box.replaceChildren(h("div", {}, answer(preds[0]),
+    preds.length > 1 && h("div", { class: "note" }, `${preds.length} records predicted; the first is shown, all of them in the JSON below.`),
+    preds[0].unseen_categories?.length > 0 && h("div", { class: "note" },
+      `Unseen categories in ${preds[0].unseen_categories.join(", ")}: encoded as no known category (unknown_category = ${info.input.unknown_category}).`),
+    h("div", { class: "timing" }, `${dur(took / n)} per call (mean of ${n}), JSON in and out included.`)));
+  const raw = $("#raw");
+  raw.textContent = JSON.stringify(preds.length > 1 ? preds : preds[0], null, 2);
+  raw.hidden = false;
+}
+
+function bar(p, cls, threshold) {
+  return h("div", { class: "track" },
+    h("div", { class: `fill ${cls ?? ""}`, style: `width:${(p * 100).toFixed(2)}%` }),
+    threshold != null && h("div", { class: "tick", style: `left:calc(${(threshold * 100).toFixed(2)}% - 1px)`, title: `threshold ${fixed(threshold)}` }));
+}
+
+function answer(p) {
+  const o = info.output;
+  if (o.task === "regression") {
+    return [h("p", { class: "answer" }, h("span", { class: "mono" }, `${o.target} ≈ `), num(p.value)),
+      h("p", { class: "why" }, `The model predicts the standardised target; the runtime maps it back with sd ${num(o.target_scale.std)} and mean ${num(o.target_scale.mean)}.`)];
+  }
+  if (o.task === "multiclass") {
+    const best = Math.max(...p.probabilities);
+    return [h("p", { class: "answer" }, h("span", { class: "mono" }, `${o.target} = `), p.label),
+      h("p", { class: "why" }, `The most probable of ${o.classes.length} classes (softmax over ${o.classes.length} model outputs).`),
+      h("div", { class: "bars" }, o.classes.map((c, i) => {
+        const q = p.probabilities[i];
+        const cls = q === best ? "best" : "";
+        return [h("span", { class: `name ${cls}` }, c), h("div", { class: cls }, bar(q)), h("span", { class: "val" }, fixed(q, 3))];
+      }))];
+  }
+  return [h("p", { class: "answer" }, h("span", { class: "mono" }, `${o.target} = `), p.label),
+    h("p", { class: "why" }, `P(${o.target} = ${o.positive_label}) = ${fixed(p.probability)}, ${p.is_positive ? "at or above" : "below"} the decision threshold ${fixed(o.threshold)}, fixed before evaluation.`),
+    h("div", { class: "bars" }, h("span", { class: "name" }, `P(${o.positive_label})`), bar(p.probability, p.is_positive ? "hot" : "", o.threshold), h("span", { class: "val" }, fixed(p.probability, 3)))];
+}
+
+async function loadDemo(demo, button) {
+  for (const b of document.querySelectorAll(".demo")) b.setAttribute("aria-pressed", String(b === button));
+  const response = await fetch(`bundles/${demo.file}`);
+  if (!response.ok) { status("err", `Could not fetch bundles/${demo.file} (${response.status}).`); return; }
+  load(new Uint8Array(await response.arrayBuffer()), `“${demo.title}”`);
+}
+
+$("#folder").addEventListener("change", async (event) => {
+  const picked = [...event.target.files].filter((f) => !f.webkitRelativePath.split("/").some((part) => part.startsWith(".")));
+  if (!picked.length) return;
+  const root = picked[0].webkitRelativePath.split("/")[0];
+  const entries = await Promise.all(picked.map(async (f) => [f.webkitRelativePath.split("/").slice(1).join("/"), new Uint8Array(await f.arrayBuffer())]));
+  for (const b of document.querySelectorAll(".demo")) b.setAttribute("aria-pressed", "false");
+  load(pack(entries), `folder ${root}`);
+  event.target.value = "";
+});
+$("#go").addEventListener("click", predictForm);
+$("#fields").addEventListener("change", predictForm);
+$("#fields").addEventListener("submit", (event) => { event.preventDefault(); predictForm(); });
+$("#go-json").addEventListener("click", () => predict($("#json").value));
+
+try {
+  wasm = await import("./pkg/wasm_predict.js");
+  await wasm.default();
+} catch (e) {
+  status("err", "The WebAssembly module is not built (or the page was opened as a file). Run ",
+    h("code", {}, "python build.py --tabsmith <path to tabsmith>"), " in examples/wasm-predict, then serve ",
+    h("code", {}, "www/"), " over HTTP. ", h("span", { class: "muted" }, String(e)));
+}
+if (wasm) {
+  let demos = [];
+  try {
+    const r = await fetch("bundles/index.json");
+    if (r.ok) demos = await r.json();
+  } catch { /* no samples packed: the folder picker still works */ }
+  $("#demos").replaceChildren(...demos.map((d) => {
+    const button = h("button", { class: "demo", type: "button", "aria-pressed": "false" },
+      h("span", { class: "chip" }, d.task), h("span", { class: "demo-title" }, d.title),
+      h("span", { class: "demo-meta" }, `target ${d.target} · ${(d.bytes / 1024).toFixed(0)} KB`));
+    button.addEventListener("click", () => loadDemo(d, button));
+    return button;
+  }));
+  if (demos.length) loadDemo(demos[0], document.querySelector(".demo"));
+  else $("#demos").append(h("p", { class: "muted" }, "No sample bundles were packed; open a bundle folder instead."));
+}
+</script>
+</body>
+</html>

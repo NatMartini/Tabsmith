@@ -1,0 +1,25 @@
+[package]
+name = "wasm-predict"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Tabsmith bundles predicting in a web page: tabsmith-runtime compiled to WebAssembly."
+
+# Standalone on purpose (not a workspace member), like predict-app.
+[workspace]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+tabsmith-runtime = { path = "../../crates/tabsmith-runtime" }
+serde_json = "1"
+wasm-bindgen = "=0.2.129"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+
+# No `unsafe_code = "forbid"` here: `#[wasm_bindgen]` expands to the unsafe ABI glue
+# the JavaScript side calls. The code in src/ itself is safe Rust.

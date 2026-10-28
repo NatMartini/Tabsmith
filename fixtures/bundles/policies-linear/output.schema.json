@@ -1,0 +1,9 @@
+{
+  "target": "status",
+  "task": "binary",
+  "negative_label": "ok",
+  "positive_label": "fail",
+  "probability": "P(status == \"fail\")",
+  "threshold": 0.5,
+  "decision": "\"fail\" if probability >= 0.5 else \"ok\""
+}

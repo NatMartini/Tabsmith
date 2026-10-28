@@ -1,0 +1,29 @@
+{
+  "status": "unevaluated-candidate",
+  "valid": {
+    "task": "binary",
+    "metrics_version": "tabsmith.binary-metrics.v1",
+    "n": 225,
+    "n_positive": 135,
+    "n_negative": 90,
+    "threshold": 0.5,
+    "confusion": {
+      "tp": 89,
+      "fp": 36,
+      "tn": 54,
+      "fn": 46
+    },
+    "accuracy": 0.6355555555555555,
+    "balanced_accuracy": 0.6296296296296295,
+    "precision": 0.712,
+    "recall": 0.6592592592592592,
+    "specificity": 0.6,
+    "f1": 0.6846153846153845,
+    "log_loss": 0.6068008600005192,
+    "brier": 0.21117899331075862,
+    "roc_auc": 0.7180246913580247
+  },
+  "notes": [
+    "no held-out test evaluation: treat as a candidate only"
+  ]
+}

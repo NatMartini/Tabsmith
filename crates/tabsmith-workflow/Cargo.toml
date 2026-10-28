@@ -1,0 +1,42 @@
+[package]
+name = "tabsmith-workflow"
+description = "Tabsmith workflow core: data snapshots, splits, fitted preprocessing, training, evaluation, bundles."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+readme = "README.md"
+keywords = ["machine-learning", "training", "tabular", "classification", "burn"]
+categories = ["science"]
+# Integration tests and examples stay in the repository: some read fixtures from
+# ../../fixtures, which a published package cannot contain.
+include = ["/src/**/*.rs", "/src/certified_devices.json", "/README.md", "/LICENSE-MIT", "/LICENSE-APACHE"]
+
+[features]
+# GPU training through Burn's CubeCL backends, off by default so that the CPU build
+# needs no GPU stack. Kernel autotuning stays off: it picks kernels by timing, and
+# two processes could then train different weights from the same inputs.
+vulkan = ["burn/vulkan", "burn/fusion", "dep:wgpu"]
+cuda = ["burn/cuda", "burn/fusion", "dep:cudarc"]
+
+[dependencies]
+tabsmith-contracts.workspace = true
+tabsmith-runtime.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+toml_edit.workspace = true
+safetensors.workspace = true
+polars.workspace = true
+burn.workspace = true
+# Device discovery for the GPU features (the versions CubeCL itself uses).
+wgpu = { workspace = true, optional = true }
+cudarc = { workspace = true, optional = true }
+
+[dev-dependencies]
+tempfile.workspace = true
+proptest.workspace = true
+
+[lints]
+workspace = true

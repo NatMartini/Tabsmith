@@ -1,0 +1,97 @@
+{
+  "version": "tabsmith.std-tabular.v2",
+  "features": [
+    {
+      "kind": "categorical",
+      "name": "zone",
+      "categories": [
+        "1",
+        "4",
+        "3",
+        "2"
+      ],
+      "missing_slot": false,
+      "offset": 0,
+      "raw_dtype": "text"
+    },
+    {
+      "kind": "categorical",
+      "name": "grade",
+      "categories": [
+        "1.0",
+        "3.0",
+        "2.0"
+      ],
+      "missing_slot": false,
+      "offset": 4,
+      "raw_dtype": "text"
+    },
+    {
+      "kind": "categorical",
+      "name": "flag",
+      "categories": [
+        "false",
+        "true"
+      ],
+      "missing_slot": false,
+      "offset": 7,
+      "raw_dtype": "bool"
+    },
+    {
+      "kind": "categorical",
+      "name": "mode",
+      "categories": [
+        "auto",
+        "service",
+        "manual"
+      ],
+      "missing_slot": true,
+      "offset": 9,
+      "raw_dtype": "text"
+    },
+    {
+      "kind": "numeric",
+      "name": "temp",
+      "impute": 60.028445051920116,
+      "mean": 60.028445051920116,
+      "std": 7.903594727182268,
+      "offset": 13
+    },
+    {
+      "kind": "numeric",
+      "name": "load",
+      "impute": 1.0087820356291082,
+      "mean": 1.0087820356291082,
+      "std": 0.29182078765548114,
+      "offset": 14
+    }
+  ],
+  "dropped": [],
+  "output_dim": 15,
+  "output_names": [
+    "zone=1",
+    "zone=4",
+    "zone=3",
+    "zone=2",
+    "grade=1.0",
+    "grade=3.0",
+    "grade=2.0",
+    "flag=false",
+    "flag=true",
+    "mode=auto",
+    "mode=service",
+    "mode=manual",
+    "mode=<missing>",
+    "temp",
+    "load"
+  ],
+  "nan": "error",
+  "unknown_category": "error",
+  "missing_tokens": [
+    "",
+    "NA",
+    "-999"
+  ],
+  "fitted_on_split": "sp-7582f3ca5705",
+  "fitted_rows": 1050
+}

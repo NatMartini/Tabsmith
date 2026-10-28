@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# End-to-end acceptance run of the RustPy CPU workflow with real measurements.
+# End-to-end acceptance run of the Tabsmith CPU workflow with real measurements.
 #
-#   tools/acceptance.sh <rustpy-binary> <work-dir> <evidence-dir> [python-with-sklearn]
+#   tools/acceptance.sh <tabsmith-binary> <work-dir> <evidence-dir> [python-with-sklearn]
 #
 # Writes one JSON line per step to <evidence-dir>/steps.jsonl and the raw outputs
 # to <evidence-dir>/logs/. Nothing here is simulated except where a step says so
@@ -56,8 +56,8 @@ step 02-plan 0 "$P" "$BIN" plan
 step 03-plan-json 0 "$P" "$BIN" plan --json
 step 04-run 0 "$P" "$BIN" run
 step 05-run-json-cached 0 "$P" "$BIN" --json run --candidates linear
-step 06-compare 0 "$P" "$BIN" compare --runs run-001 run-002
-"$BIN" --project "$P" compare --runs run-001 run-002 --json >"$EVID/compare_v1.json"
+step 06-compare 0 "$P" "$BIN" compare --runs run-001 run-002 run-003
+"$BIN" --project "$P" compare --runs run-001 run-002 run-003 --json >"$EVID/compare_v1.json"
 BEST=$(jget "$EVID/compare_v1.json" "['result']['recommended']")
 echo "recommended: $BEST"
 step 07-evaluate-test 0 "$P" "$BIN" evaluate --run "$BEST" --split test
@@ -69,7 +69,7 @@ step 11-report 0 "$P" "$BIN" report
 "$BIN" --project "$P" runs --json >"$EVID/runs_v1.json"
 cp -r "$P/bundles/$BEST" "$EVID/bundle_v1"
 
-echo "== standalone application (rustpy-runtime only)"
+echo "== standalone application (tabsmith-runtime only)"
 APP="$REPO/examples/predict-app"
 step 12-app-build 0 "$APP" cargo build --release --quiet
 (cd "$APP" && cargo tree --edges normal) >"$EVID/logs/app_cargo_tree.txt" 2>&1
@@ -81,7 +81,7 @@ step 13-app-predict 0 "$APP" sh -c "./target/release/predict-app '$P/bundles/$BE
 cp "$EVID/logs/13-app-predict.out" "$EVID/app_predictions.txt"
 step 14-app-typed 0 "$APP" ./target/release/typed "$P/bundles/$BEST"
 
-echo "== one command: rustpy train, predict with the newest bundle, serve over HTTP"
+echo "== one command: tabsmith train, predict with the newest bundle, serve over HTTP"
 O="$WORK/one"
 mkdir -p "$O"
 step 15a-sample-data 0 "$O" "$BIN" sample-data machines.csv --rows 10000
@@ -109,7 +109,7 @@ step 21-run-v2 0 "$P" "$BIN" run
 "$BIN" --project "$P" runs --json >"$EVID/runs_v2.json"
 LAST=$(python3 -c "
 import json; runs=json.load(open('$EVID/runs_v2.json'))['result']
-print(' '.join(r['run_id'] for r in runs[-2:]))")
+print(' '.join(r['run_id'] for r in runs[-3:]))")
 step 22-compare-v2 0 "$P" "$BIN" compare --runs $LAST
 "$BIN" --project "$P" compare --runs $LAST --json >"$EVID/compare_v2.json"
 BEST2=$(jget "$EVID/compare_v2.json" "['result']['recommended']")
@@ -123,8 +123,8 @@ printf 'x' >>"$WORK/broken/model.safetensors"
 step 28-hot-swap-and-rollback 0 "$APP" ./target/release/hot_swap "$P/bundles/$BEST" "$P/bundles/$BEST2" "$WORK/broken"
 step 29-old-bundle-still-valid 0 "$P" "$BIN" bundle check "bundles/$BEST"
 step 30-report-v2 0 "$P" "$BIN" report
-cp "$P/.rustpy/reports/index.html" "$EVID/report.html"
-cp "$P/.rustpy/reports/report.json" "$EVID/report.json"
+cp "$P/.tabsmith/reports/index.html" "$EVID/report.html"
+cp "$P/.tabsmith/reports/report.json" "$EVID/report.json"
 
 echo "== exact resume in an independent process (R2)"
 step 40-init-a 0 "$WORK" "$BIN" init resume-a --sample-data
@@ -156,14 +156,14 @@ cat "$EVID/resume_check.json"
 echo "== Ctrl-C (real SIGINT) and resume"
 step 50-init-c 0 "$WORK" "$BIN" init cancel-c --sample-data
 C="$WORK/cancel-c"
-(cd "$C" && exec "$BIN" run --candidates small-mlp --set train.small-mlp.epochs=400 --set train.small-mlp.early_stopping_patience=0 >"$EVID/logs/51-sigint.out" 2>"$EVID/logs/51-sigint.err") &
+(cd "$C" && exec "$BIN" run --candidates small-mlp --set train.small-mlp.epochs=2000 --set train.small-mlp.early_stopping_patience=0 >"$EVID/logs/51-sigint.out" 2>"$EVID/logs/51-sigint.err") &
 PID=$!
 sleep 3
 kill -INT $PID
 wait $PID
 echo "{\"step\": \"51-sigint\", \"exit\": $?, \"expected_exit\": 130, \"note\": \"SIGINT after 3 s\"}" >>"$STEPS"
 step 52-runs-after-sigint 0 "$C" "$BIN" runs
-step 53-resume-after-sigint 0 "$C" "$BIN" resume run-001 --set train.small-mlp.epochs=400 --set train.small-mlp.early_stopping_patience=0
+step 53-resume-after-sigint 0 "$C" "$BIN" resume run-001 --set train.small-mlp.epochs=2000 --set train.small-mlp.early_stopping_patience=0
 "$BIN" --project "$C" runs --json >"$EVID/cancel_runs.json"
 
 echo "== determinism: two fresh projects, same data and config"
@@ -176,8 +176,8 @@ import json, subprocess, sys
 w = sys.argv[1]
 def shas(p):
     out = []
-    for r in sorted(__import__("os").listdir(f"{w}/{p}/.rustpy/runs")):
-        f = f"{w}/{p}/.rustpy/runs/{r}/run.json"
+    for r in sorted(__import__("os").listdir(f"{w}/{p}/.tabsmith/runs")):
+        f = f"{w}/{p}/.tabsmith/runs/{r}/run.json"
         try:
             run = json.load(open(f))
         except Exception:
@@ -239,16 +239,16 @@ python3 -c "import json; s=json.load(open('$EVID/failures_summary.json')); print
 if [ -n "$PY" ]; then
   echo "== independent reference (scikit-learn)"
   for r in run-001 run-002; do
-    step "70-export-$r" 0 "$REPO" cargo run --quiet -p rustpy-workflow --example export_reference -- "$P" "$r" "$WORK/ref-$r"
+    step "70-export-$r" 0 "$REPO" cargo run --quiet -p tabsmith-workflow --example export_reference -- "$P" "$r" "$WORK/ref-$r"
     step "71-sklearn-$r" 0 "$REPO" "$PY" -I tools/reference/sklearn_reference.py "$WORK/ref-$r" "$EVID/sklearn_$r.json"
   done
 fi
 
 echo "== wrapper overhead (release example; each mode in its own process, 5 interleaved repetitions)"
-step 80-overhead-build 0 "$REPO" cargo build --release --quiet -p rustpy-workflow --example overhead
+step 80-overhead-build 0 "$REPO" cargo build --release --quiet -p tabsmith-workflow --example overhead
 OH="$REPO/target/release/examples/overhead"
 for i in 1 2 3 4 5; do
-  for m in direct rustpy rustpy-final-checkpoint-only; do
+  for m in direct tabsmith tabsmith-final-checkpoint-only; do
     "$OH" "$WORK/det-1" "$m" 30 >>"$EVID/overhead.jsonl" 2>>"$EVID/logs/overhead.err"
   done
 done

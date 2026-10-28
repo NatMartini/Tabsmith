@@ -1,22 +1,22 @@
-"""Independent reference checks of a RustPy run with scikit-learn.
+"""Independent reference checks of a Tabsmith run with scikit-learn.
 
 Usage:
     python sklearn_reference.py <export-dir> <result.json>
 
 <export-dir> is produced by
-    cargo run -p rustpy-workflow --example export_reference -- <project> <run-id> <export-dir>
+    cargo run -p tabsmith-workflow --example export_reference -- <project> <run-id> <export-dir>
 
 Checks:
 1. Preprocessing parity: scikit-learn's StandardScaler (NaN-aware, fitted on the
    training rows) + constant-0 imputation in standardized space, and
    OneHotEncoder(handle_unknown="ignore"), fitted on the same raw training rows,
-   must reproduce RustPy's transformed validation matrix column by column.
-2. Metric parity: scikit-learn metrics on RustPy's validation probabilities must
-   equal the metrics RustPy recorded for the run.
+   must reproduce Tabsmith's transformed validation matrix column by column.
+2. Metric parity: scikit-learn metrics on Tabsmith's validation probabilities must
+   equal the metrics Tabsmith recorded for the run.
 3. Linear objective (linear runs only): scikit-learn LogisticRegression (lbfgs,
    class_weight="balanced", C = 1 / (n_train * l2)) minimises the same objective
-   as RustPy; the script reports both objective values and validation quality.
-   RustPy keeps the epoch with the lowest validation loss (early stopping), so its
+   as Tabsmith; the script reports both objective values and validation quality.
+   Tabsmith keeps the epoch with the lowest validation loss (early stopping), so its
    objective is expected to be close to, not equal to, the optimum.
 
 Pinned reference versions are recorded in the output.
@@ -37,7 +37,7 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 
 def load(export_dir):
-    run = json.load(open(f"{export_dir}/rustpy_run.json"))
+    run = json.load(open(f"{export_dir}/tabsmith_run.json"))
     features = run["fitted"]["features"]
     num = [f["name"] for f in features if f["kind"] == "numeric"]
     cat = [f["name"] for f in features if f["kind"] == "categorical"]
@@ -47,7 +47,7 @@ def load(export_dir):
     )
     x_cols = pd.read_csv(f"{export_dir}/x_valid.csv", nrows=0).columns.tolist()
     xs = {n: np.loadtxt(f"{export_dir}/x_{n}.csv", delimiter=",", skiprows=1, ndmin=2) for n in ("train", "valid")}
-    preds = {n: json.load(open(f"{export_dir}/rustpy_{n}.json")) for n in ("train", "valid")}
+    preds = {n: json.load(open(f"{export_dir}/tabsmith_{n}.json")) for n in ("train", "valid")}
     return run, num, cat, read("train"), read("valid"), x_cols, xs, preds
 
 
@@ -77,15 +77,15 @@ def preprocessing_parity(num, cat, raw_tr, raw_va, x_cols, x_valid):
             k = x_cols.index(n)
             diffs[n] = float(np.max(np.abs(ref[:, j] - x_valid[:, k])))
     return {
-        "columns_rustpy": len(x_cols),
+        "columns_tabsmith": len(x_cols),
         "columns_sklearn": len(names),
-        "only_in_rustpy": missing_in_ref,
+        "only_in_tabsmith": missing_in_ref,
         "only_in_sklearn": missing_in_ours,
         "max_abs_diff": max(diffs.values()) if diffs else None,
         "worst_column": max(diffs, key=diffs.get) if diffs else None,
         "pass": not missing_in_ref and not missing_in_ours and max(diffs.values()) < 1e-5,
         "tolerance": 1e-5,
-        "note": "RustPy matrices are f32; sklearn is f64",
+        "note": "Tabsmith matrices are f32; sklearn is f64",
     }
 
 
@@ -110,7 +110,7 @@ def metric_parity(run, preds):
     cm_ok = ours["confusion"] == {"tp": int(tp), "fp": int(fp), "tn": int(tn), "fn": int(fn)}
     return {
         "sklearn": ref,
-        "rustpy": {k: ours[k] for k in ref},
+        "tabsmith": {k: ours[k] for k in ref},
         "abs_diff": diffs,
         "confusion_matrix_equal": bool(cm_ok),
         "pass": cm_ok and max(diffs.values()) < 1e-9,
@@ -146,16 +146,16 @@ def linear_objective(run, xs, preds):
     t = run["threshold"]
     return {
         "objective_sklearn_optimum": j_ref,
-        "objective_rustpy": j_rp,
+        "objective_tabsmith": j_rp,
         "relative_gap": (j_rp - j_ref) / j_ref,
         "valid_balanced_accuracy": {
             "sklearn": M.balanced_accuracy_score(y_va, (p_ref >= t).astype(int)),
-            "rustpy": M.balanced_accuracy_score(y_va, (p_rp >= t).astype(int)),
+            "tabsmith": M.balanced_accuracy_score(y_va, (p_rp >= t).astype(int)),
         },
-        "valid_roc_auc": {"sklearn": M.roc_auc_score(y_va, p_ref), "rustpy": M.roc_auc_score(y_va, p_rp)},
+        "valid_roc_auc": {"sklearn": M.roc_auc_score(y_va, p_ref), "tabsmith": M.roc_auc_score(y_va, p_rp)},
         "valid_probability_correlation": float(np.corrcoef(p_ref, p_rp)[0, 1]),
         "valid_max_abs_probability_diff": float(np.max(np.abs(p_ref - p_rp))),
-        "note": "RustPy minimises the same objective with minibatch Adam and keeps the best-validation epoch; sklearn is the converged lbfgs optimum",
+        "note": "Tabsmith minimises the same objective with minibatch Adam and keeps the best-validation epoch; sklearn is the converged lbfgs optimum",
     }
 
 

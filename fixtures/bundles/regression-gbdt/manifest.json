@@ -1,0 +1,71 @@
+{
+  "bundle_format": 1,
+  "bundle_id": "b-af884afa0ccc83ff",
+  "name": "gbdt-run-003",
+  "created_at": "2026-10-28T04:03:04Z",
+  "recipe": "tabular-binary@0.1",
+  "tabsmith_version": "0.1.0",
+  "provenance": {
+    "run_id": "run-003",
+    "candidate": "gbdt",
+    "snapshot_id": "s-b3dc4c16cd4a",
+    "split_id": "sp-5752342bfaeb",
+    "transform_id": "t-8e41a4926ad7",
+    "config_hash": "1b2ad9fac48730a7a2375f5c9f73fb469710c5973d9a2cb2cbbccc1b22d13346"
+  },
+  "runtime": {
+    "min_runtime_version": "0.1.0",
+    "transform_version": "tabsmith.std-tabular.v2",
+    "model_format": "tabsmith.trees.v1",
+    "devices": [
+      "cpu"
+    ],
+    "precision": "fp32"
+  },
+  "files": [
+    {
+      "path": "input.schema.json",
+      "sha256": "00c894329518744b3ed651d6dc53370129bc52f4ae12e5264edcefc79b3c2944",
+      "bytes": 3291
+    },
+    {
+      "path": "output.schema.json",
+      "sha256": "e6af0024fdca0cb53f1d21b5c297858a35d001241b15a57119cd21703354662c",
+      "bytes": 312
+    },
+    {
+      "path": "transform.json",
+      "sha256": "c1405e2f9bb10185c0a7c67803a2cf001b035818909b7a07c1dd67d8c276fea8",
+      "bytes": 5092
+    },
+    {
+      "path": "model.config.json",
+      "sha256": "07cde3bc9f7b92177f5eae55b0c4ffb02afb31795afff7b0215475d4dd13178d",
+      "bytes": 239
+    },
+    {
+      "path": "model.safetensors",
+      "sha256": "75a78761fcb44b00f2949bcca865d330a58be639afbef9c697b43b78bd9f70d5",
+      "bytes": 72952
+    },
+    {
+      "path": "evaluation.json",
+      "sha256": "923f23cc2fe1b488fcf53d7964f3372f041a294905f9e0869ba46552a6bb0e56",
+      "bytes": 353
+    },
+    {
+      "path": "examples/input.json",
+      "sha256": "d7bb96e5870f53d910149ded65f81e27f3e116f2d3cbb2a327a25e34fb56cef7",
+      "bytes": 3302
+    },
+    {
+      "path": "examples/expected.json",
+      "sha256": "b7d681c85c79a075fe5541c34b7215c0d8ce52b0769909bbdf3df49a0abc732b",
+      "bytes": 595
+    }
+  ],
+  "self_contained": true,
+  "contains_training_data": false,
+  "contains_optimizer_state": false,
+  "evaluation_status": "unevaluated-candidate"
+}

@@ -1,0 +1,10 @@
+$ <repo>/target/release/tabsmith init bench
+created project bench
+  config: bench/tabsmith.toml
+
+next:
+  cd bench
+  tabsmith data bind <file.csv|file.parquet> --target <column>
+  tabsmith plan
+
+--- stderr ---

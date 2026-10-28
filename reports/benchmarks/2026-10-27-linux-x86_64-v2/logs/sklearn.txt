@@ -1,0 +1,4 @@
+$ ~/.cache/tabsmith-venv/bin/python -I <repo>/tools/bench/sklearn_bench.py <work>/bench run-001 run-002 run-003 <work>/records.jsonl <work>/sklearn
+
+--- stderr ---
+{"__rc": 0, "__s": 19.93808166499997, "__rss": 268.46875}

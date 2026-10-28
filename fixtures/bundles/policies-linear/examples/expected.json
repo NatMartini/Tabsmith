@@ -1,0 +1,21 @@
+{
+  "predictions": [
+    {
+      "label": "ok",
+      "probability": 0.1907855432901127
+    },
+    {
+      "label": "fail",
+      "probability": 0.9043395227635586
+    },
+    {
+      "label": "fail",
+      "probability": 0.8026726342170983
+    },
+    {
+      "label": "ok",
+      "probability": 0.19161259936604724
+    }
+  ],
+  "tolerance": 1e-6
+}

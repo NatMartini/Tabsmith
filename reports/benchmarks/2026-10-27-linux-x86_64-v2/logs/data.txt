@@ -1,0 +1,4 @@
+$ <repo>/target/release/tabsmith sample-data data/defects.csv --rows 10000
+wrote 10000 synthetic rows to data/defects.csv (target `defect`, binary)
+
+--- stderr ---

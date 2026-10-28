@@ -1,0 +1,15 @@
+{
+  "target": "failure_mode",
+  "task": "multiclass",
+  "negative_label": "",
+  "positive_label": "",
+  "probability": "P(failure_mode == label)",
+  "threshold": 0.5,
+  "decision": "the class with the highest probability",
+  "classes": [
+    "bearing",
+    "none",
+    "overheat",
+    "seal"
+  ]
+}

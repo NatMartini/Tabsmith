@@ -1,0 +1,1642 @@
+//! Command implementations: thin presentation over `tabsmith-workflow`.
+
+use std::io::Write as _;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use tabsmith_contracts::config::{Candidate, SelectionMetric, Task};
+use tabsmith_contracts::data::SplitName;
+use tabsmith_contracts::evaluation::Metrics;
+use tabsmith_contracts::run::{RunRecord, RunStatus};
+use tabsmith_contracts::{ErrorCode, Phase, Result, TabsmithError};
+use tabsmith_runtime::{Device, LoadOptions, Outcome, Predictor, Record};
+use tabsmith_workflow::bundle::BundleOptions;
+use tabsmith_workflow::pipeline::{Progress, RunOptions};
+use tabsmith_workflow::setup::{BindRequest, init_project};
+use tabsmith_workflow::{ConfigRequest, RunControl, Workspace};
+
+use crate::output::{Table, duration, f4, opt4, print_json, print_json_status};
+use crate::{BundleCommand, Cli, Command, ConfigArgs, DataCommand};
+
+fn workspace(cli_project: &Option<PathBuf>) -> Result<Workspace> {
+    match cli_project {
+        Some(p) => Workspace::open(p),
+        None => Workspace::discover("."),
+    }
+}
+
+fn config_request(c: &ConfigArgs) -> ConfigRequest {
+    ConfigRequest {
+        profile: c.profile.clone(),
+        overrides: c.overrides.clone(),
+        override_tables: vec![],
+    }
+}
+
+fn parse_split(s: &str) -> Result<SplitName> {
+    SplitName::parse(s).ok_or_else(|| {
+        TabsmithError::new(ErrorCode::ConfigInvalid, Phase::Evaluate, format!("unknown split `{s}`"))
+            .field("--split")
+            .expected("valid or test")
+    })
+}
+
+/// Ctrl-C: first press requests a clean stop at the next step boundary (with a
+/// checkpoint); a second press exits immediately.
+fn install_cancel_handler() -> Arc<AtomicBool> {
+    let flag = Arc::new(AtomicBool::new(false));
+    let f = flag.clone();
+    let _ = ctrlc::set_handler(move || {
+        if f.swap(true, Ordering::SeqCst) {
+            eprintln!("\nsecond Ctrl-C: exiting immediately (the run will show as interrupted)");
+            std::process::exit(130);
+        }
+        eprintln!("\nstopping at the next step boundary and writing a checkpoint… (Ctrl-C again to abort)");
+    });
+    flag
+}
+
+fn progress_printer(json: bool) -> impl FnMut(Progress) {
+    let mut explained = false;
+    move |p| {
+        if json {
+            return;
+        }
+        match p {
+            Progress::Stage(s) => eprintln!("· {s}"),
+            Progress::RunStarted {
+                run_id,
+                candidate,
+                steps_planned,
+            } => {
+                eprintln!("· {run_id}: training {candidate} (up to {steps_planned} steps)");
+                if !explained {
+                    explained = true;
+                    eprintln!(
+                        "  (loss = the training objective: log loss, class-weighted unless train.<candidate>.class_weight = \"none\"; early stopping keeps the epoch with the lowest validation loss. The comparison's log_loss is unweighted.)"
+                    );
+                }
+            }
+            Progress::Epoch {
+                run_id,
+                epoch,
+                epochs,
+                train_loss,
+                valid_loss,
+                valid_metric,
+            } => {
+                if epoch == 1 || epoch % 5 == 0 || epoch == epochs {
+                    eprintln!(
+                        "  {run_id} epoch {epoch:>3}/{epochs}: train loss {train_loss:.4}  valid loss {valid_loss:.4}  valid metric {valid_metric:.4}"
+                    );
+                }
+            }
+            Progress::RunFinished {
+                run_id,
+                status,
+                stop_reason,
+                best_epoch,
+                epochs_done,
+            } => {
+                let detail = match (status, stop_reason.as_deref(), best_epoch) {
+                    (RunStatus::Completed, Some("early_stopping"), Some(b)) => {
+                        format!(" (early stopping after epoch {epochs_done}; weights of best epoch {b} kept)")
+                    }
+                    (RunStatus::Completed, Some("time_budget"), Some(b)) => {
+                        format!(" (time budget reached after epoch {epochs_done}; weights of best epoch {b} kept)")
+                    }
+                    (RunStatus::Completed, _, Some(b)) => format!(" ({epochs_done} epochs; weights of best epoch {b} kept)"),
+                    _ => String::new(),
+                };
+                eprintln!("· {run_id}: {}{detail}", status.as_str())
+            }
+        }
+    }
+}
+
+/// Comma-separated list arguments: trimmed, without empty entries ("a, b," -> [a, b]).
+fn clean(list: Vec<String>) -> Vec<String> {
+    list.into_iter().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()
+}
+
+pub fn dispatch(cli: Cli) -> Result<u8> {
+    let json = cli.json;
+    match cli.command {
+        Command::Init { name, recipe, sample_data } => {
+            let r = init_project(&name, &recipe, sample_data)?;
+            if json {
+                print_json(&r);
+            } else {
+                println!("created project {}", r.project);
+                println!("  config: {}", r.config);
+                match &r.sample_data {
+                    Some(d) => {
+                        println!("  sample data: {d} (10,000 synthetic rows, bound with target `defect`)");
+                        println!("\nnext:\n  cd {}\n  tabsmith plan\n  tabsmith run", name.display());
+                    }
+                    None => println!(
+                        "\nnext:\n  cd {}\n  tabsmith data bind <file.csv|file.parquet> --target <column>\n  tabsmith plan",
+                        name.display()
+                    ),
+                }
+            }
+            Ok(0)
+        }
+        Command::SampleData {
+            out,
+            task,
+            rows,
+            seed,
+            shifted,
+        } => {
+            let task = parse_task(Some(task))?.unwrap_or_default();
+            let variant = if shifted {
+                tabsmith_workflow::sample::SampleVariant::Shifted
+            } else {
+                tabsmith_workflow::sample::SampleVariant::Base
+            };
+            tabsmith_workflow::sample::write_sample_csv(&out, rows, seed, variant, task)?;
+            let target = tabsmith_workflow::sample::sample_target(task);
+            if json {
+                print_json(
+                    &serde_json::json!({"path": out, "rows": rows, "seed": seed, "shifted": shifted, "task": task, "target": target}),
+                );
+            } else {
+                println!("wrote {rows} synthetic rows to {} (target `{target}`, {task})", out.display());
+            }
+            Ok(0)
+        }
+        Command::Data(DataCommand::Bind {
+            file,
+            target,
+            positive,
+            task,
+            split,
+            group,
+            id,
+            exclude,
+        }) => {
+            let ws = workspace(&cli.project)?;
+            let r = ws.bind_data(&BindRequest {
+                file,
+                target,
+                positive,
+                split,
+                group,
+                id,
+                exclude: clean(exclude),
+                task: parse_task(task)?,
+            })?;
+            if json {
+                print_json(&r);
+                return Ok(0);
+            }
+            println!(
+                "bound {} ({} rows, {} columns) as snapshot {}",
+                r.source,
+                r.snapshot.n_rows,
+                r.snapshot.columns.len(),
+                r.snapshot.snapshot_id
+            );
+            println!(
+                "target `{}`: positive {:?} ({} rows), negative {:?} ({} rows)",
+                r.target.name, r.target.positive_label, r.target.positives, r.target.negative_label, r.target.negatives
+            );
+            println!("split {}:", r.split);
+            for (name, rows, pos) in &r.split_counts {
+                println!("  {name:<5} {rows:>7} rows, {pos} positive");
+            }
+            for w in &r.warnings {
+                println!("note: {w}");
+            }
+            println!("\nnext: tabsmith plan");
+            Ok(0)
+        }
+        Command::Data(DataCommand::Inspect { config }) | Command::Plan { config } => {
+            let ws = workspace(&cli.project)?;
+            let plan = ws.plan(&config_request(&config))?;
+            if json {
+                print_json(&plan);
+                return Ok(0);
+            }
+            print_plan(&plan);
+            Ok(0)
+        }
+        Command::Config { config } => {
+            let ws = workspace(&cli.project)?;
+            let rows = ws.effective_config(&config_request(&config))?;
+            if json {
+                print_json(&rows);
+                return Ok(0);
+            }
+            let mut t = Table::new(&["setting", "value", "source"]);
+            for (k, v, s) in rows {
+                t.row(vec![k, v, s.to_string()]);
+            }
+            print!("{}", t.render());
+            Ok(0)
+        }
+        Command::Run {
+            config,
+            candidates,
+            no_cache,
+            simulate_crash_after_steps,
+            simulate_cancel_after_steps,
+        } => {
+            let ws = workspace(&cli.project)?;
+            let candidates = parse_candidates(candidates)?;
+            let cancel = install_cancel_handler();
+            let opts = RunOptions {
+                candidates,
+                no_cache,
+                control: RunControl {
+                    cancel,
+                    crash_after_steps: simulate_crash_after_steps,
+                    cancel_after_steps: simulate_cancel_after_steps,
+                },
+            };
+            let mut progress = progress_printer(json);
+            let result = ws.run(&config_request(&config), &opts, &mut progress)?;
+            // Exit code: 130 when cancelled, else the first failed run's error family.
+            let code: u8 = if result.cancelled {
+                130
+            } else {
+                result
+                    .runs
+                    .iter()
+                    .find(|r| r.status != RunStatus::Completed)
+                    .map(|r| r.error.as_ref().map_or(1, |e| e.code.exit_code().clamp(1, 255) as u8))
+                    .unwrap_or(0)
+            };
+            if json {
+                print_json_status(
+                    &serde_json::json!({
+                        "group": result.group,
+                        "runs": result.runs,
+                        "comparison": result.comparison,
+                        "reused_stages": result.reused,
+                    }),
+                    code == 0,
+                );
+            } else {
+                if !result.reused.is_empty() {
+                    println!("reused cached stages (R1): {}", result.reused.join(", "));
+                }
+                print_comparison(&result.comparison);
+                for r in &result.runs {
+                    if let Some(e) = &r.error {
+                        eprint!("{}", e.render());
+                    }
+                }
+                if let Some(best) = &result.comparison.recommended {
+                    println!(
+                        "\nnext: lock the final candidate and use the test split once:\n  tabsmith evaluate --run {best} --split test\n  tabsmith bundle build --run {best}"
+                    );
+                }
+            }
+            Ok(code)
+        }
+        Command::Train {
+            file,
+            target,
+            positive,
+            task,
+            split,
+            group,
+            id,
+            exclude,
+            candidates,
+            config,
+        } => {
+            let candidates = parse_candidates(candidates)?;
+            let task = parse_task(task)?;
+            let ws = match workspace(&cli.project) {
+                Ok(ws) => ws,
+                Err(e) if e.code == ErrorCode::ConfigNotFound && file.is_some() => {
+                    // No project yet: this directory becomes one (like `git init`).
+                    let dir = cli.project.clone().unwrap_or_else(|| PathBuf::from("."));
+                    init_project(&dir, task.unwrap_or_default().recipe(), false)?;
+                    if !json {
+                        eprintln!("· created tabsmith.toml in {} (project state goes to .tabsmith/)", dir.display());
+                    }
+                    Workspace::open(&dir)?
+                }
+                Err(e) => return Err(e),
+            };
+            if let Some(file) = file {
+                let target = match target {
+                    Some(t) => t,
+                    None => ws.resolve(&ConfigRequest::default())?.config.data.target.ok_or_else(|| {
+                        TabsmithError::new(ErrorCode::ConfigInvalid, Phase::Config, "which column should the model predict?")
+                            .field("--target")
+                            .next(format!("tabsmith train {} --target <column>", file.display()))
+                    })?,
+                };
+                let b = ws.bind_data(&BindRequest {
+                    file,
+                    target,
+                    positive,
+                    split,
+                    group,
+                    id,
+                    exclude: clean(exclude),
+                    task,
+                })?;
+                if !json {
+                    let t = &b.target;
+                    let labels = match t.task {
+                        Task::Binary => format!(
+                            "positive {:?}: {} rows, negative {:?}: {} rows",
+                            t.positive_label, t.positives, t.negative_label, t.negatives
+                        ),
+                        Task::Multiclass => t
+                            .classes
+                            .iter()
+                            .zip(&t.class_counts)
+                            .map(|(c, n)| format!("{c:?}: {n}"))
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                        Task::Regression => "a number".to_string(),
+                    };
+                    eprintln!(
+                        "· data {}: {} rows × {} columns, {} target `{}` ({labels})",
+                        b.source,
+                        b.snapshot.n_rows,
+                        b.snapshot.columns.len(),
+                        t.task,
+                        t.name,
+                    );
+                    for w in &b.warnings {
+                        eprintln!("  note: {w}");
+                    }
+                }
+            } else if target.is_some()
+                || positive.is_some()
+                || task.is_some()
+                || split.is_some()
+                || group.is_some()
+                || id.is_some()
+                || !exclude.is_empty()
+            {
+                return Err(TabsmithError::new(
+                    ErrorCode::ConfigInvalid,
+                    Phase::Config,
+                    "--target/--positive/--task/--split/--group/--id/--exclude describe a data file; pass the file too",
+                )
+                .next("tabsmith train <file> --target <column> ..."));
+            }
+            let opts = RunOptions {
+                candidates,
+                no_cache: false,
+                control: RunControl {
+                    cancel: install_cancel_handler(),
+                    ..Default::default()
+                },
+            };
+            let mut progress = progress_printer(json);
+            let r = ws.train_auto(&config_request(&config), &opts, &mut progress)?;
+            let code: u8 = if r.group.cancelled {
+                130
+            } else {
+                r.group
+                    .runs
+                    .iter()
+                    .find(|x| x.status != RunStatus::Completed)
+                    .map(|x| x.error.as_ref().map_or(1, |e| e.code.exit_code().clamp(1, 255) as u8))
+                    .unwrap_or(0)
+            };
+            if json {
+                print_json_status(&r, code == 0);
+            } else {
+                print_auto(&ws, &r);
+            }
+            Ok(code)
+        }
+        Command::Runs => {
+            let ws = workspace(&cli.project)?;
+            let runs = ws.list_runs()?;
+            if json {
+                print_json(&runs);
+                return Ok(0);
+            }
+            if runs.is_empty() {
+                println!("no runs yet — start with `tabsmith run`");
+                return Ok(0);
+            }
+            let task = runs
+                .iter()
+                .find_map(|r| r.metrics.as_ref().map(|m| m.valid.task()))
+                .unwrap_or_default();
+            let shown: [&str; 2] = match task {
+                Task::Binary => ["balanced_accuracy", "roc_auc"],
+                Task::Multiclass => ["balanced_accuracy", "accuracy"],
+                Task::Regression => ["rmse", "r2"],
+            };
+            let (h1, h2) = (
+                format!("valid {}", metric_label(shown[0])),
+                format!("valid {}", metric_label(shown[1])),
+            );
+            let mut t = Table::new(&["run", "candidate", "status", "lineage", "snapshot", "steps", &h1, &h2, "train time"]);
+            for r in &runs {
+                t.row(vec![
+                    r.run_id.clone(),
+                    r.candidate.to_string(),
+                    r.status.as_str().into(),
+                    lineage(r),
+                    r.snapshot_id.clone(),
+                    format!("{}/{}", r.steps_done, r.steps_planned),
+                    opt4(r.metrics.as_ref().and_then(|m| m.valid.get(shown[0]))),
+                    opt4(r.metrics.as_ref().and_then(|m| m.valid.get(shown[1]))),
+                    duration(r.timings.train_ms),
+                ]);
+            }
+            print!("{}", t.render());
+            for r in runs
+                .iter()
+                .filter(|r| matches!(r.status, RunStatus::Interrupted | RunStatus::Cancelled | RunStatus::Failed))
+            {
+                if let Some(e) = &r.error {
+                    println!("{}: {} — next: {}", r.run_id, e.message, e.next_action.as_deref().unwrap_or("-"));
+                }
+            }
+            Ok(0)
+        }
+        Command::Status { run } => {
+            let ws = workspace(&cli.project)?;
+            let r = ws.load_run(&run)?;
+            if json {
+                print_json(&r);
+                return Ok(0);
+            }
+            print_run(&r);
+            Ok(0)
+        }
+        Command::Compare { runs } => {
+            let ws = workspace(&cli.project)?;
+            let c = ws.compare(&clean(runs))?;
+            if json {
+                print_json(&c);
+            } else {
+                print_comparison(&c);
+            }
+            Ok(0)
+        }
+        Command::Resume {
+            run,
+            warm_start,
+            config,
+            simulate_crash_after_steps,
+            simulate_cancel_after_steps,
+        } => {
+            let ws = workspace(&cli.project)?;
+            let cancel = install_cancel_handler();
+            let control = RunControl {
+                cancel,
+                crash_after_steps: simulate_crash_after_steps,
+                cancel_after_steps: simulate_cancel_after_steps,
+            };
+            let mut progress = progress_printer(json);
+            let r = ws.resume(&run, warm_start, &config_request(&config), &control, &mut progress)?;
+            let code: u8 = match r.status {
+                RunStatus::Completed => 0,
+                RunStatus::Cancelled => 130,
+                _ => r.error.as_ref().map_or(1, |e| e.code.exit_code().clamp(1, 255) as u8),
+            };
+            if json {
+                print_json_status(&r, code == 0);
+            } else {
+                print_run(&r);
+                if let Some(e) = &r.error {
+                    eprint!("{}", e.render());
+                }
+            }
+            Ok(code)
+        }
+        Command::Evaluate {
+            run,
+            bundle,
+            split,
+            allow_test_reuse,
+            allow_unverified_rows,
+            config,
+        } => {
+            let ws = workspace(&cli.project)?;
+            let split = parse_split(&split)?;
+            let rec = match (run, bundle) {
+                (Some(r), None) => {
+                    if config.profile.is_some() || !config.overrides.is_empty() {
+                        return Err(TabsmithError::new(
+                            ErrorCode::ConfigInvalid,
+                            Phase::Evaluate,
+                            "--set/--profile do not apply to `evaluate --run`: a run is evaluated with its recorded configuration (threshold, preprocessing)",
+                        )
+                        .field("--set/--profile")
+                        .next("drop the flags; to evaluate other settings, train a run with them (`tabsmith run --set ...`)"));
+                    }
+                    ws.evaluate_run(&r, split, allow_test_reuse, allow_unverified_rows)?
+                }
+                (None, Some(b)) => ws.evaluate_bundle(&b, split, &config_request(&config), allow_test_reuse, allow_unverified_rows)?,
+                _ => {
+                    return Err(
+                        TabsmithError::new(ErrorCode::ConfigInvalid, Phase::Evaluate, "pass exactly one of --run or --bundle")
+                            .next("tabsmith evaluate --run run-002 --split test"),
+                    );
+                }
+            };
+            if json {
+                print_json(&rec);
+                return Ok(0);
+            }
+            let m = &rec.metrics;
+            println!(
+                "{} on {} split of snapshot {} ({} rows):",
+                rec.evaluation_id,
+                rec.protocol.split.as_str(),
+                rec.protocol.snapshot_id,
+                m.n()
+            );
+            let mut t = Table::new(&["metric", "value"]);
+            for (k, v) in metric_rows(m) {
+                t.row(vec![k.into(), opt4(v)]);
+            }
+            print!("{}", t.render());
+            match m {
+                Metrics::Binary(b) => println!(
+                    "  confusion at threshold {}: tp {} fp {} tn {} fn {}",
+                    b.threshold, b.confusion.tp, b.confusion.fp, b.confusion.tn, b.confusion.fn_
+                ),
+                Metrics::Multiclass(mc) => println!("  confusion (rows: actual, columns: predicted): {:?}", mc.confusion),
+                Metrics::Regression(rg) => println!("  mean target of these rows: {}", f4(rg.mean)),
+            }
+            if let Some(l) = &rec.latency {
+                println!(
+                    "  single-row latency (transform + model): p50 {:.0} µs, p95 {:.0} µs",
+                    l.single_row_p50_us, l.single_row_p95_us
+                );
+            }
+            match rec.test_use_index {
+                Some(1) if rec.test_shared_with.is_empty() => println!("  test split: first use (recorded in the test ledger)"),
+                Some(1) => println!(
+                    "  test split: first use for a model of this data version; the rows were also used for {} (another data version): a shared hold-out for an old-vs-new comparison",
+                    rec.test_shared_with.join(", ")
+                ),
+                Some(n) => println!("  test split: REUSE #{n} — not an unbiased estimate"),
+                None => {}
+            }
+            for n in &rec.notes {
+                println!("  note: {n}");
+            }
+            Ok(0)
+        }
+        Command::Bundle(BundleCommand::Build {
+            run,
+            device,
+            out,
+            allow_unevaluated,
+        }) => {
+            if device != "cpu" {
+                return Err(TabsmithError::new(
+                    ErrorCode::DeviceUnsupported,
+                    Phase::Bundle,
+                    format!("bundles for device `{device}` are not available in this release"),
+                )
+                .field("--device")
+                .expected("cpu"));
+            }
+            let ws = workspace(&cli.project)?;
+            let r = ws.build_bundle(&run, &BundleOptions { out, allow_unevaluated })?;
+            if json {
+                print_json(&r);
+                return Ok(0);
+            }
+            if r.already_existed {
+                println!("bundle {} already exists at {} (identical content)", r.manifest.bundle_id, r.path);
+            } else {
+                println!("built bundle {} at {}", r.manifest.bundle_id, r.path);
+            }
+            println!(
+                "  {} files, evaluation: {}, self-check: {} ({} examples, max |Δp| {:.1e})",
+                r.manifest.files.len(),
+                r.manifest.evaluation_status,
+                if r.check.passed { "passed" } else { "FAILED" },
+                r.check.examples_checked,
+                r.check.max_abs_probability_diff
+            );
+            println!(
+                "\nuse it from Rust:\n  let predictor = Predictor::load(\"{}\", LoadOptions::cpu())?;",
+                r.path
+            );
+            println!("check it on the target machine:\n  tabsmith bundle check {}", r.path);
+            Ok(0)
+        }
+        Command::Bundle(BundleCommand::Check { dir, device }) => {
+            let dev = Device::parse(&device).ok_or_else(|| {
+                TabsmithError::new(ErrorCode::DeviceUnsupported, Phase::Load, format!("unknown device `{device}`"))
+                    .field("--device")
+                    .expected("cpu")
+            })?;
+            let p = Predictor::load(&dir, LoadOptions::device(dev).with_self_check(true))?;
+            let r = p.self_check()?;
+            if json {
+                print_json_status(&serde_json::json!({"check": r, "manifest": p.manifest()}), r.passed);
+            } else {
+                println!("bundle {} at {}", r.bundle_id, dir.display());
+                println!("  files verified (sha256): {}", r.files_verified);
+                println!(
+                    "  runtime {} on {}/{} ({}), load {:.1} ms",
+                    r.runtime_version, r.os, r.arch, r.device, r.load_ms
+                );
+                println!(
+                    "  example predictions: {} checked, max |Δp| {:.1e} (tolerance {:.0e}), label mismatches {}",
+                    r.examples_checked, r.max_abs_probability_diff, r.tolerance, r.label_mismatches
+                );
+                println!(
+                    "  inputs: {} fields; output: P({} = {:?}), threshold {}",
+                    p.input_schema().fields.len(),
+                    p.output_schema().target,
+                    p.output_schema().positive_label,
+                    p.output_schema().threshold
+                );
+                println!("  evaluation: {}", p.manifest().evaluation_status);
+                println!("  result: {}", if r.passed { "PASSED on this machine" } else { "FAILED" });
+            }
+            Ok(if r.passed { 0 } else { 4 })
+        }
+        Command::Bundle(BundleCommand::List) => {
+            let ws = workspace(&cli.project)?;
+            let list = ws.list_bundles();
+            if json {
+                print_json(
+                    &list
+                        .iter()
+                        .map(|(p, m)| serde_json::json!({"path": p, "manifest": m}))
+                        .collect::<Vec<_>>(),
+                );
+                return Ok(0);
+            }
+            let mut t = Table::new(&["path", "bundle id", "run", "candidate", "evaluation", "created"]);
+            for (p, m) in list {
+                match m {
+                    Some(m) => t.row(vec![
+                        ws.project.rel(&p),
+                        m.bundle_id,
+                        m.provenance.run_id,
+                        m.provenance.candidate,
+                        m.evaluation_status,
+                        m.created_at,
+                    ]),
+                    None => t.row(vec![
+                        ws.project.rel(&p),
+                        "(unreadable)".into(),
+                        "".into(),
+                        "".into(),
+                        "".into(),
+                        "".into(),
+                    ]),
+                }
+            }
+            print!("{}", t.render());
+            Ok(0)
+        }
+        Command::Predict {
+            bundle,
+            input,
+            output,
+            keep,
+        } => {
+            let bundle = resolve_bundle(&cli.project, bundle, json)?;
+            predict_file(&bundle, &input, output.as_deref(), &clean(keep), json)
+        }
+        Command::Serve {
+            bundle,
+            host,
+            port,
+            threads,
+            allow_reload,
+        } => {
+            let bundle = resolve_bundle(&cli.project, bundle, json)?;
+            let stop = Arc::new(AtomicBool::new(false));
+            let s = stop.clone();
+            let _ = ctrlc::set_handler(move || s.store(true, Ordering::SeqCst));
+            crate::serve::serve(
+                crate::serve::ServeOptions {
+                    bundle,
+                    host,
+                    port,
+                    threads,
+                    allow_reload,
+                },
+                stop,
+            )?;
+            Ok(0)
+        }
+        Command::Report => {
+            let ws = workspace(&cli.project)?;
+            let path = ws.write_report()?;
+            if json {
+                print_json(&serde_json::json!({"html": path, "json": path.with_file_name("report.json")}));
+            } else {
+                println!("wrote {}", path.display());
+                println!("      {}", path.with_file_name("report.json").display());
+            }
+            Ok(0)
+        }
+        Command::Doctor => doctor(&cli.project, json),
+    }
+}
+
+fn lineage(r: &RunRecord) -> String {
+    r.lineage
+        .as_ref()
+        .map(|l| {
+            let level = serde_json::to_value(l.level)
+                .ok()
+                .and_then(|v| v.as_str().map(String::from))
+                .unwrap_or_default();
+            format!("{level} of {}", l.parent_run_id)
+        })
+        .unwrap_or_else(|| "–".into())
+}
+
+fn print_plan(plan: &tabsmith_workflow::setup::PlanReport) {
+    let s = &plan.snapshot;
+    println!(
+        "data      {} — {} rows × {} columns (snapshot {}, sha256 {})",
+        s.source.path,
+        s.n_rows,
+        s.columns.len(),
+        s.snapshot_id,
+        &s.source.sha256[..12]
+    );
+    println!(
+        "target    `{}`: positive {:?} = {} rows ({:.1}%), negative {:?} = {} rows",
+        plan.target.name,
+        plan.target.positive_label,
+        plan.target.positives,
+        100.0 * plan.target.positives as f64 / (plan.target.positives + plan.target.negatives) as f64,
+        plan.target.negative_label,
+        plan.target.negatives
+    );
+    println!("split     {} ({}):", plan.split_strategy, plan.split_id);
+    for (name, rows, pos) in &plan.split_counts {
+        println!("            {name:<5} {rows:>7} rows, {pos} positive");
+    }
+    println!("\ncolumns");
+    let mut t = Table::new(&["column", "type", "missing", "distinct", "role"]);
+    for c in &plan.columns {
+        let prof = s.column(&c.name);
+        let role = match &c.role {
+            tabsmith_workflow::data::ColumnRole::Feature { kind } => format!("feature ({})", kind.as_str()),
+            tabsmith_workflow::data::ColumnRole::Target => "target".into(),
+            tabsmith_workflow::data::ColumnRole::Id => "row id".into(),
+            tabsmith_workflow::data::ColumnRole::Group => "group (split key)".into(),
+            tabsmith_workflow::data::ColumnRole::Excluded { reason } => format!("excluded: {reason}"),
+        };
+        let role = if c.decided_by == "config" {
+            format!("{role} [config]")
+        } else {
+            role
+        };
+        t.row(vec![
+            c.name.clone(),
+            prof.map(|p| p.engine_dtype.clone()).unwrap_or_default(),
+            prof.map(|p| {
+                let m = p.null_count + p.nan_count;
+                if m == 0 {
+                    "0".into()
+                } else {
+                    format!("{m} ({} null, {} NaN)", p.null_count, p.nan_count)
+                }
+            })
+            .unwrap_or_default(),
+            prof.map(|p| p.distinct.to_string()).unwrap_or_default(),
+            role,
+        ]);
+    }
+    print!("{}", t.render());
+    println!(
+        "\npreprocessing (fitted on train rows only; transform {}, {} model inputs)",
+        plan.transform_id, plan.feature_dim
+    );
+    let mut t = Table::new(&["feature", "encoding"]);
+    for f in &plan.features {
+        t.row(vec![f.name.clone(), f.encoding.clone()]);
+    }
+    print!("{}", t.render());
+    println!("\ncandidates  ({})", plan.selection);
+    let mut t = Table::new(&[
+        "candidate",
+        "params",
+        "hidden",
+        "epochs",
+        "batch",
+        "lr",
+        "l2",
+        "class weight",
+        "steps",
+        "device",
+    ]);
+    for c in &plan.candidates {
+        let dev = plan
+            .devices
+            .iter()
+            .find(|(k, _)| *k == c.candidate)
+            .map(|(_, d)| format!("{} ({}, {}, requested {})", d.device, d.backend, d.precision, d.requested))
+            .unwrap_or_default();
+        t.row(vec![
+            c.candidate.to_string(),
+            c.parameters.to_string(),
+            format!("{:?}", c.hidden),
+            c.epochs.to_string(),
+            c.batch_size.to_string(),
+            c.learning_rate.to_string(),
+            c.l2.to_string(),
+            c.class_weight.clone(),
+            c.steps.to_string(),
+            dev,
+        ]);
+    }
+    print!("{}", t.render());
+    if let Some((_, d)) = plan.devices.first() {
+        println!(
+            "\nexecution  precision {}, fallback {}, threads {}, estimated peak {:.0} MB of {} MB budget",
+            d.precision, d.fallback, d.threads, d.estimated_peak_mb, d.memory_budget_mb
+        );
+        println!("           data placement: {}", d.data_placement);
+        for step in &d.copy_path {
+            println!("           copy: {step}");
+        }
+        for dev in &d.detected {
+            println!(
+                "           detected: {} [{}] — {:?}{}",
+                dev.name,
+                dev.kind,
+                dev.certification,
+                dev.note.as_ref().map(|n| format!(" ({n})")).unwrap_or_default()
+            );
+        }
+        for n in plan.devices.iter().flat_map(|(_, d)| d.notes.iter()) {
+            println!("           note: {n}");
+        }
+    }
+    if !plan.reused.is_empty() {
+        println!("\ncached stages reused: {}", plan.reused.join(", "));
+    }
+    for w in &plan.warnings {
+        println!("note: {w}");
+    }
+    println!("\nnext: tabsmith run");
+}
+
+/// `--bundle`, or the project's most recently built bundle.
+fn resolve_bundle(project: &Option<PathBuf>, bundle: Option<PathBuf>, json: bool) -> Result<PathBuf> {
+    if let Some(b) = bundle {
+        return Ok(b);
+    }
+    let ws = workspace(project).map_err(|e| e.next("pass --bundle <dir>, or run inside a project that has built one"))?;
+    let (dir, m) = ws.latest_bundle().ok_or_else(|| {
+        TabsmithError::new(ErrorCode::BundleNotFound, Phase::Predict, "this project has no bundle yet")
+            .field("--bundle")
+            .next("tabsmith train <file> --target <column> (or tabsmith bundle build --run <run>)")
+    })?;
+    if !json {
+        if m.evaluation_status == tabsmith_workflow::auto::EVALUATED {
+            eprintln!(
+                "· using the latest evaluated bundle {} ({}, from {})",
+                ws.project.rel(&dir),
+                m.bundle_id,
+                m.provenance.run_id
+            );
+        } else {
+            eprintln!(
+                "· using the latest bundle {} ({}, from {}) — an unevaluated candidate: it has no held-out test evaluation",
+                ws.project.rel(&dir),
+                m.bundle_id,
+                m.provenance.run_id
+            );
+        }
+        for newer in ws.newer_candidates(&m) {
+            eprintln!(
+                "  note: the newer bundle {} is an unevaluated candidate and is not used by default (pass --bundle to use it)",
+                ws.project.rel(&newer)
+            );
+        }
+    }
+    Ok(dir)
+}
+
+fn parse_candidates(list: Option<Vec<String>>) -> Result<Option<Vec<Candidate>>> {
+    list.map(clean)
+        .map(|list| {
+            list.iter()
+                .map(|c| {
+                    Candidate::parse(c).ok_or_else(|| {
+                        TabsmithError::new(ErrorCode::ConfigInvalid, Phase::Config, format!("unknown candidate `{c}`"))
+                            .field("--candidates")
+                            .expected("linear, small-mlp")
+                    })
+                })
+                .collect::<Result<Vec<_>>>()
+        })
+        .transpose()
+}
+
+/// Summary of `tabsmith train`.
+fn print_auto(ws: &Workspace, r: &tabsmith_workflow::auto::AutoReport) {
+    // The data-change note was already shown as a progress line while training.
+    let mut comparison = r.group.comparison.clone();
+    comparison.notes.retain(|n| !n.starts_with("new data version:"));
+    print_comparison(&comparison);
+    for run in &r.group.runs {
+        if let Some(e) = &run.error {
+            eprint!("{}", e.render());
+        }
+    }
+    let Some(chosen) = &r.chosen else {
+        for n in &r.notes {
+            println!("note: {n}");
+        }
+        return;
+    };
+    let candidate = r
+        .group
+        .runs
+        .iter()
+        .find(|x| &x.run_id == chosen)
+        .map(|x| x.candidate.to_string())
+        .unwrap_or_default();
+    println!(
+        "
+chosen on validation: {chosen} ({candidate})"
+    );
+    let line = metrics_line;
+    match (&r.test, &r.test_skipped, &r.identical_to) {
+        (Some(t), _, Some(same)) => println!(
+            "test split ({} rows): {} — the evaluation of {same}, which has the same weights (the test split was not used again)",
+            t.metrics.n(),
+            line(&t.metrics)
+        ),
+        (Some(t), _, None) => println!("test split ({} rows, used once): {}", t.metrics.n(), line(&t.metrics)),
+        (None, Some(why), _) => println!("test split not used: {why}"),
+        _ => {}
+    }
+    if let Some(p) = &r.previous {
+        match (&p.evaluation, &p.new_model_on_same_rows) {
+            (Some(old), Some(new)) => {
+                let n = old.metrics.n();
+                let metric = r.group.comparison.metric.as_str();
+                let selection = SelectionMetric::parse(metric).unwrap_or(SelectionMetric::BalancedAccuracy);
+                let (vo, vn) = (old.metrics.get(metric).unwrap_or(f64::NAN), new.get(metric).unwrap_or(f64::NAN));
+                let d = vn - vo;
+                println!(
+                    "previous bundle {} ({}) on the {n} test rows it never saw: {}",
+                    p.path,
+                    p.run_id,
+                    line(&old.metrics)
+                );
+                println!("new model {chosen} on the same {n} rows: {}", line(new));
+                // A crude resolution of a difference on n test rows: 1/√n for rates,
+                // the old error / √n for errors in the target's units.
+                let resolution = if selection.higher_is_better() { 1.0 } else { vo.abs() } / (n.max(1) as f64).sqrt();
+                let new_is_better = selection.better(vn, vo);
+                if d.abs() < resolution {
+                    println!(
+                        "  → about the same: the {} difference ({d:+.4}) is below the ±{resolution:.3} resolution of {n} rows",
+                        metric_label(metric)
+                    );
+                } else {
+                    println!(
+                        "  → the new model is {} by {:.4} {} on the same {n} rows",
+                        if new_is_better { "better" } else { "worse" },
+                        d.abs(),
+                        metric_label(metric)
+                    );
+                }
+                if !new_is_better && d != 0.0 {
+                    println!(
+                        "  `tabsmith predict` uses the newest evaluated bundle; to keep serving the previous one pass --bundle {}",
+                        p.path
+                    );
+                }
+            }
+            _ => println!(
+                "previous bundle {} could not be scored on the new test rows: {}",
+                p.path,
+                p.note.as_deref().unwrap_or("unknown reason")
+            ),
+        }
+    }
+    if let Some(b) = &r.bundle {
+        println!(
+            "bundle: {} ({}, {}; self-check {})",
+            b.path,
+            b.manifest.bundle_id,
+            b.manifest.evaluation_status,
+            if b.check.passed { "passed" } else { "FAILED" }
+        );
+    }
+    for n in &r.notes {
+        println!("note: {n}");
+    }
+    if let Some(b) = &r.bundle {
+        let abs = b.path.split('/').fold(ws.project.root.clone(), |p, c| p.join(c));
+        println!(
+            "
+next:"
+        );
+        println!("  tabsmith predict --input <new.csv> --output predictions.csv");
+        println!(
+            "  in Rust: tabsmith_runtime::Predictor::load({:?}, LoadOptions::cpu())",
+            abs.display().to_string()
+        );
+        println!("  tabsmith report   # HTML report of data, runs, evaluations and bundles");
+    }
+}
+
+/// `--task binary|multiclass|regression`.
+fn parse_task(task: Option<String>) -> Result<Option<Task>> {
+    task.map(|t| {
+        Task::parse(&t).ok_or_else(|| {
+            TabsmithError::new(ErrorCode::ConfigInvalid, Phase::Config, format!("unknown task `{t}`"))
+                .field("--task")
+                .expected("binary, multiclass or regression")
+        })
+    })
+    .transpose()
+}
+
+/// Every metric of an evaluation worth showing, in display order, for its task.
+fn metric_rows(m: &Metrics) -> Vec<(&'static str, Option<f64>)> {
+    let names: &[&'static str] = match m {
+        Metrics::Binary(_) => &[
+            "balanced_accuracy",
+            "precision",
+            "recall",
+            "f1",
+            "roc_auc",
+            "log_loss",
+            "brier",
+            "accuracy",
+        ],
+        Metrics::Multiclass(_) => &["balanced_accuracy", "accuracy", "f1", "roc_auc", "log_loss"],
+        Metrics::Regression(_) => &["rmse", "mae", "r2"],
+    };
+    names.iter().map(|n| (*n, m.get(n))).collect()
+}
+
+/// A short label for a metric name.
+fn metric_label(name: &str) -> &str {
+    match name {
+        "balanced_accuracy" => "balanced accuracy",
+        "roc_auc" => "AUC",
+        "f1" => "F1",
+        "log_loss" => "log loss",
+        "rmse" => "RMSE",
+        "mae" => "MAE",
+        "r2" => "R²",
+        other => other,
+    }
+}
+
+/// One line with the headline metrics of the task.
+fn metrics_line(m: &Metrics) -> String {
+    let names: &[&str] = match m {
+        Metrics::Binary(_) => &["balanced_accuracy", "roc_auc", "f1", "precision", "recall"],
+        Metrics::Multiclass(_) => &["balanced_accuracy", "accuracy", "f1", "log_loss"],
+        Metrics::Regression(_) => &["rmse", "mae", "r2"],
+    };
+    names
+        .iter()
+        .map(|n| format!("{} {}", metric_label(n), opt4(m.get(n))))
+        .collect::<Vec<_>>()
+        .join("  ")
+}
+
+/// Metrics shown next to the selection metric in comparisons, by task.
+fn companion_metrics(task: Task, selected: &str) -> Vec<&'static str> {
+    let all: &[&'static str] = match task {
+        Task::Binary => &["roc_auc", "f1", "log_loss", "balanced_accuracy"],
+        Task::Multiclass => &["accuracy", "f1", "log_loss", "balanced_accuracy"],
+        Task::Regression => &["rmse", "mae", "r2"],
+    };
+    all.iter().copied().filter(|n| *n != selected).take(3).collect()
+}
+
+fn print_comparison(c: &tabsmith_workflow::Comparison) {
+    println!("\ncomparison on the validation split (metric: {})", c.metric);
+    let task = c.rows.iter().find_map(|r| r.valid.as_ref().map(Metrics::task)).unwrap_or_default();
+    let companions = companion_metrics(task, &c.metric);
+    let labels: Vec<String> = companions.iter().map(|n| metric_label(n).to_string()).collect();
+    let mut header: Vec<&str> = vec!["run", "candidate", "status", &c.metric];
+    header.extend(labels.iter().map(String::as_str));
+    header.extend(["params", "p95 latency", "train time", "peak mem", "comparable"]);
+    let mut t = Table::new(&header);
+    for r in &c.rows {
+        let mut cells = vec![
+            r.run_id.clone(),
+            r.candidate.to_string(),
+            r.status.as_str().into(),
+            opt4(r.metric_value),
+        ];
+        cells.extend(companions.iter().map(|n| opt4(r.valid.as_ref().and_then(|v| v.get(n)))));
+        cells.extend([
+            r.parameters.to_string(),
+            r.p95_latency_us.map(|l| format!("{l:.0} µs")).unwrap_or_else(|| "–".into()),
+            duration(r.train_ms),
+            r.peak_rss_mb.map(|m| format!("{m:.0} MB")).unwrap_or_else(|| "–".into()),
+            if r.comparable { "yes".into() } else { "no".into() },
+        ]);
+        t.row(cells);
+    }
+    print!("{}", t.render());
+    for r in &c.rows {
+        for n in &r.notes {
+            println!("  {}: {n}", r.run_id);
+        }
+    }
+    match &c.recommended {
+        Some(r) => println!(
+            "recommended: {r} (best validation {} among comparable runs meeting constraints)",
+            c.metric
+        ),
+        None => println!("recommended: none (no comparable completed run meets the constraints)"),
+    }
+    for n in &c.notes {
+        println!("note: {n}");
+    }
+}
+
+fn print_run(r: &RunRecord) {
+    println!("{} — {} — {}", r.run_id, r.candidate, r.status.as_str());
+    println!("  lineage: {}", lineage(r));
+    println!(
+        "  snapshot {} · split {} · transform {} · config {}",
+        r.snapshot_id,
+        r.split_id,
+        r.transform_id,
+        &r.config_hash[..12]
+    );
+    println!(
+        "  steps {}/{} · stop: {} · train {} · data {} · fit {}",
+        r.steps_done,
+        r.steps_planned,
+        r.stop_reason.as_deref().unwrap_or("–"),
+        duration(r.timings.train_ms),
+        duration(r.timings.data_ms),
+        duration(r.timings.fit_transform_ms)
+    );
+    if !r.reused_stages.is_empty() {
+        println!("  reused stages: {}", r.reused_stages.join(", "));
+    }
+    println!(
+        "  device: requested {} → {} {} {} (threads {})",
+        r.device_plan.requested, r.device_plan.backend, r.device_plan.device, r.device_plan.precision, r.device_plan.threads
+    );
+    if let Some(rc) = &r.device_receipt {
+        println!(
+            "  receipt: {} {} {}, peak RSS {}, matches plan: {}",
+            rc.backend,
+            rc.device,
+            rc.precision,
+            rc.peak_rss_mb.map(|m| format!("{m:.0} MB")).unwrap_or_else(|| "–".into()),
+            rc.matches_plan
+        );
+    }
+    if let Some(m) = &r.metrics {
+        println!(
+            "  best epoch {} · valid: {} · train: {}",
+            m.best_epoch,
+            metrics_line(&m.valid),
+            metrics_line(&m.train)
+        );
+    }
+    if let Some(d) = r.engine_parity_max_abs_diff {
+        println!("  engine vs runtime max |Δlogit| on validation rows: {d:.2e}");
+    }
+    for a in &r.artifacts {
+        println!("  artifact {} ({} bytes, sha256 {})", a.path, a.bytes, &a.sha256[..12]);
+    }
+    if let Some(e) = &r.error {
+        println!("  error: {} {}", e.code, e.message);
+        for k in &e.retained_artifacts {
+            println!("  kept: {k}");
+        }
+        if let Some(n) = &e.next_action {
+            println!("  next: {n}");
+        }
+    }
+}
+
+fn csv_escape(s: &str) -> String {
+    if s.contains([',', '"', '\n', '\r']) {
+        format!("\"{}\"", s.replace('"', "\"\""))
+    } else {
+        s.to_string()
+    }
+}
+
+fn predict_file(bundle: &Path, input: &Path, output: Option<&Path>, keep: &[String], json: bool) -> Result<u8> {
+    let predictor = Predictor::load(bundle, LoadOptions::cpu())?;
+    if !input.is_file() {
+        return Err(TabsmithError::new(
+            ErrorCode::DataSourceNotFound,
+            Phase::Predict,
+            format!("input file {} does not exist", input.display()),
+        )
+        .field("--input")
+        .next(format!(
+            "check the --input path (relative to the current directory); {}/examples/input.json shows the fields this bundle expects",
+            bundle.display()
+        )));
+    }
+    let ext = input
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_lowercase)
+        .unwrap_or_default();
+    // Key columns copied verbatim to the output: the bundle's id column (when the
+    // input has it) and any --keep columns.
+    let id_field = predictor.input_schema().passthrough_id.clone();
+    let out_schema = predictor.output_schema().clone();
+    let class_columns: Vec<String> = out_schema.classes.iter().map(|c| format!("p_{c}")).collect();
+    let mut output_columns: Vec<String> = [
+        "row",
+        "label",
+        "probability",
+        "is_positive",
+        "probabilities",
+        "value",
+        "prediction",
+        "unseen_categories",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect();
+    output_columns.extend(class_columns.iter().cloned());
+    if let Some(k) = keep.iter().find(|k| output_columns.contains(k)) {
+        return Err(TabsmithError::new(
+            ErrorCode::ConfigInvalid,
+            Phase::Predict,
+            format!("--keep `{k}` collides with an output column of the same name"),
+        )
+        .field("--keep")
+        .expected(format!("columns other than {output_columns:?}"))
+        .next(format!("rename `{k}` in the input file (e.g. to `true_{k}`) before predicting")));
+    }
+    let mut present_keys: std::collections::BTreeSet<String> = Default::default();
+    let n_records: usize;
+    let mut key_cols: Vec<String> = Vec::new();
+    for k in id_field.iter().chain(keep) {
+        if !k.is_empty() && !key_cols.contains(k) {
+            key_cols.push(k.clone());
+        }
+    }
+    let table = match ext.as_str() {
+        "json" | "jsonl" | "ndjson" => {
+            let text = std::fs::read_to_string(input).map_err(|e| TabsmithError::io(Phase::Predict, input, e))?;
+            let values: Vec<serde_json::Value> = if ext == "json" {
+                match serde_json::from_str::<serde_json::Value>(&text) {
+                    Ok(serde_json::Value::Array(a)) => a,
+                    Ok(v) => vec![v],
+                    Err(e) => {
+                        return Err(
+                            TabsmithError::new(ErrorCode::DataReadFailed, Phase::Predict, format!("invalid JSON: {e}"))
+                                .field(input.display().to_string()),
+                        );
+                    }
+                }
+            } else {
+                text.lines()
+                    .filter(|l| !l.trim().is_empty())
+                    .enumerate()
+                    .map(|(i, l)| {
+                        serde_json::from_str(l).map_err(|e| {
+                            TabsmithError::new(
+                                ErrorCode::DataReadFailed,
+                                Phase::Predict,
+                                format!("line {}: invalid JSON: {e}", i + 1),
+                            )
+                            .field(input.display().to_string())
+                        })
+                    })
+                    .collect::<Result<_>>()?
+            };
+            for (i, v) in values.iter().enumerate() {
+                if let Some(o) = v.as_object() {
+                    present_keys.extend(o.keys().cloned());
+                } else {
+                    return Err(TabsmithError::new(
+                        ErrorCode::SchemaTypeMismatch,
+                        Phase::Predict,
+                        format!("record {} is not a JSON object", i + 1),
+                    )
+                    .field("--input")
+                    .expected("one JSON object per record"));
+                }
+            }
+            n_records = values.len();
+            let records = values.iter().map(Record::from_json).collect::<Result<Vec<_>>>()?;
+            predictor.records_table(&records, &key_cols)?
+        }
+        _ => {
+            let t = tabsmith_workflow::data::read_for_prediction(input, predictor.input_schema(), &predictor.bundle().transform, &key_cols)
+                .map_err(|e| input_error(e, input))?;
+            present_keys.extend(t.names().into_iter().map(str::to_string));
+            n_records = t.n_rows();
+            t
+        }
+    };
+    // --keep columns must exist (an empty batch has nothing to check); the id
+    // column is used only when the input has it.
+    for k in keep {
+        if n_records > 0 && !present_keys.contains(k) {
+            let present: Vec<&String> = present_keys.iter().collect();
+            return Err(TabsmithError::new(
+                ErrorCode::SchemaMissingColumn,
+                Phase::Predict,
+                format!("--keep column `{k}` is not in the input"),
+            )
+            .field(k.clone())
+            .actual(format!("columns present: {present:?}"))
+            .next("pass columns that exist in the input file, separated by commas (--keep customer_id,month)"));
+        }
+    }
+    key_cols.retain(|k| table.column(k).is_some());
+    // --keep columns are declared identifiers, not model inputs: drop them before
+    // predicting so `extra_columns = "error"` bundles accept them.
+    let schema = predictor.input_schema();
+    let model_cols: Vec<&str> = table
+        .names()
+        .into_iter()
+        .filter(|n| schema.field(n).is_some() || schema.passthrough_id.as_deref() == Some(*n) || !keep.iter().any(|k| k == n))
+        .collect();
+    let model_table = table.select(&model_cols);
+    let preds = predictor.predict_table(&model_table)?;
+    let unseen = predictor.unseen_categories(&model_table);
+    // Key columns are copied verbatim: model inputs were parsed (59.3320 -> 59.332)
+    // and every column was read with the missing-value tokens (NA -> empty), so
+    // re-read them as plain text.
+    let verbatim = match ext.as_str() {
+        "json" | "jsonl" | "ndjson" => None,
+        _ if !key_cols.is_empty() && n_records > 0 => {
+            Some(tabsmith_workflow::data::read_columns_as_text(input, schema, &key_cols).map_err(|e| input_error(e, input))?)
+        }
+        _ => None,
+    };
+    let key_source = verbatim.as_ref().unwrap_or(&table);
+    let key_values: Vec<Vec<String>> = (0..table.n_rows())
+        .map(|i| {
+            key_cols
+                .iter()
+                .map(|k| value_ref_text(key_source.column(k).expect("checked above").get(i)))
+                .collect()
+        })
+        .collect();
+    // Without key columns, rows are numbered from 1 in input order.
+    let headers: Vec<String> = if key_cols.is_empty() {
+        vec!["row".into()]
+    } else {
+        key_cols.clone()
+    };
+    let keys_of = |i: usize| -> Vec<String> {
+        if key_cols.is_empty() {
+            vec![(i + 1).to_string()]
+        } else {
+            key_values[i].clone()
+        }
+    };
+    let any_unseen = preds.iter().any(|p| !p.unseen_categories.is_empty());
+    let json_row = |i: usize, p: &tabsmith_runtime::Prediction| {
+        let mut o = serde_json::Map::new();
+        for (h, v) in headers.iter().zip(keys_of(i)) {
+            let v = if key_cols.is_empty() {
+                serde_json::Value::from(i + 1)
+            } else {
+                serde_json::Value::String(v)
+            };
+            o.insert(h.clone(), v);
+        }
+        o.insert("label".into(), p.label.clone().into());
+        if let Ok(serde_json::Value::Object(fields)) = serde_json::to_value(&p.outcome) {
+            o.extend(fields);
+        }
+        if !p.unseen_categories.is_empty() {
+            o.insert("unseen_categories".into(), serde_json::json!(p.unseen_categories));
+        }
+        serde_json::Value::Object(o)
+    };
+    let warnings = unseen_warnings(&unseen, preds.len(), predictor.bundle().transform.unknown_category);
+    if json && output.is_none() {
+        // One JSON document on stdout.
+        let rows: Vec<serde_json::Value> = preds.iter().enumerate().map(|(i, p)| json_row(i, p)).collect();
+        print_json(
+            &serde_json::json!({"bundle_id": predictor.bundle_id(), "predictions": rows, "unseen_categories": unseen, "warnings": warnings}),
+        );
+        return Ok(0);
+    }
+    // The file format follows --output's extension (.jsonl or CSV).
+    let jsonl = output.is_some_and(|o| o.extension().is_some_and(|e| e == "jsonl" || e == "ndjson"));
+    let mut text = String::new();
+    if jsonl {
+        for (i, p) in preds.iter().enumerate() {
+            text.push_str(&json_row(i, p).to_string());
+            text.push('\n');
+        }
+    } else {
+        let mut header: Vec<String> = headers.iter().map(|h| csv_escape(h)).collect();
+        match out_schema.task {
+            Task::Binary => header.extend(["label".to_string(), "probability".to_string()]),
+            Task::Multiclass => {
+                header.extend(["label".to_string(), "probability".to_string()]);
+                header.extend(class_columns.iter().map(|c| csv_escape(c)));
+            }
+            Task::Regression => header.push("prediction".to_string()),
+        }
+        if any_unseen {
+            header.push("unseen_categories".into());
+        }
+        text.push_str(&header.join(","));
+        text.push('\n');
+        for (i, p) in preds.iter().enumerate() {
+            let mut cells: Vec<String> = keys_of(i).iter().map(|v| csv_escape(v)).collect();
+            match &p.outcome {
+                Outcome::Binary { probability, .. } => {
+                    cells.push(csv_escape(&p.label));
+                    cells.push(format!("{probability:.6}"));
+                }
+                Outcome::Multiclass {
+                    probability,
+                    probabilities,
+                } => {
+                    cells.push(csv_escape(&p.label));
+                    cells.push(format!("{probability:.6}"));
+                    cells.extend(probabilities.iter().map(|q| format!("{q:.6}")));
+                }
+                Outcome::Regression { value } => cells.push(value.to_string()),
+            }
+            if any_unseen {
+                cells.push(csv_escape(&p.unseen_categories.join(";")));
+            }
+            text.push_str(&cells.join(","));
+            text.push('\n');
+        }
+    }
+    if !json {
+        for w in &warnings {
+            eprintln!("warning: {w}");
+        }
+    }
+    match output {
+        Some(path) => {
+            std::fs::write(path, text).map_err(|e| TabsmithError::io(Phase::Predict, path, e))?;
+            let pos = preds.iter().filter(|p| p.is_positive()).count();
+            if json {
+                print_json(
+                    &serde_json::json!({"path": path, "rows": preds.len(), "positive": pos, "bundle_id": predictor.bundle_id(), "unseen_categories": unseen, "warnings": warnings}),
+                );
+            } else {
+                eprintln!(
+                    "wrote {} predictions ({pos} positive) to {} using bundle {}",
+                    preds.len(),
+                    path.display(),
+                    predictor.bundle_id()
+                );
+            }
+        }
+        None => {
+            let _ = std::io::stdout().write_all(text.as_bytes());
+        }
+    }
+    Ok(0)
+}
+
+/// Read errors in `predict` concern `--input`, not the project's data.source.
+fn input_error(e: TabsmithError, input: &Path) -> TabsmithError {
+    if e.phase != Phase::Data {
+        return e;
+    }
+    let next = match e.code {
+        ErrorCode::DataUnsupported => "predict reads .csv, .parquet, .json and .jsonl files; rename or convert the input".to_string(),
+        _ => format!(
+            "check {} (it needs a header row and at least the bundle's input columns)",
+            input.display()
+        ),
+    };
+    let mut e = e.in_phase(Phase::Predict).next(next);
+    e.field = Some("--input".into());
+    e
+}
+
+/// Human-readable warnings for categorical values the bundle has never seen.
+fn unseen_warnings(
+    unseen: &[tabsmith_runtime::UnseenCategories],
+    rows: usize,
+    policy: tabsmith_contracts::config::UnknownCategoryPolicy,
+) -> Vec<String> {
+    if unseen.is_empty() {
+        return Vec::new();
+    }
+    let parts: Vec<String> = unseen
+        .iter()
+        .map(|u| format!("{}: {} of {rows} rows (e.g. {})", u.field, u.rows, u.examples.join(", ")))
+        .collect();
+    let effect = match policy {
+        tabsmith_contracts::config::UnknownCategoryPolicy::Ignore => {
+            "they are encoded as all zeros, so these predictions rely on the other fields only"
+        }
+        tabsmith_contracts::config::UnknownCategoryPolicy::Error => "they are refused by this bundle",
+    };
+    vec![format!(
+        "categories not seen in training — {}; {effect}. If this is new data (a new month, product or code), retrain on data that contains it",
+        parts.join("; ")
+    )]
+}
+
+fn value_ref_text(v: tabsmith_runtime::ValueRef<'_>) -> String {
+    match v {
+        tabsmith_runtime::ValueRef::Null => String::new(),
+        tabsmith_runtime::ValueRef::Text(s) => s.to_string(),
+        tabsmith_runtime::ValueRef::Int(v) => v.to_string(),
+        tabsmith_runtime::ValueRef::Float(v) => v.to_string(),
+        tabsmith_runtime::ValueRef::Bool(v) => v.to_string(),
+    }
+}
+
+fn doctor(project: &Option<PathBuf>, json: bool) -> Result<u8> {
+    use tabsmith_workflow::device::{COMPILED_BACKENDS, detect_devices, environment};
+    let env = environment();
+    let devices = detect_devices();
+    let ws = workspace(project);
+    let project_status = match &ws {
+        Ok(w) => {
+            let probe = w.project.state_dir().join(".doctor-write-test");
+            let writable = std::fs::create_dir_all(w.project.state_dir())
+                .and_then(|_| std::fs::write(&probe, b"ok"))
+                .is_ok();
+            let _ = std::fs::remove_file(&probe);
+            let cfg = w.project.resolve_config(&ConfigRequest::default());
+            serde_json::json!({
+                "root": w.project.root,
+                "state_writable": writable,
+                "config_valid": cfg.is_ok(),
+                "config_error": cfg.err().map(|e| e.message),
+            })
+        }
+        Err(e) => serde_json::json!({"found": false, "hint": e.next_action}),
+    };
+    if json {
+        print_json(&serde_json::json!({
+            "environment": env,
+            "compiled_backends": COMPILED_BACKENDS,
+            "devices": devices,
+            "project": project_status,
+            "python_required": false,
+        }));
+        return Ok(0);
+    }
+    println!("tabsmith {}  ({}/{})", env.tabsmith_version, env.os, env.arch);
+    println!("engine      {}", env.engine);
+    println!("backends    {}", COMPILED_BACKENDS.join(", "));
+    println!(
+        "cpu         {} ({} logical)",
+        env.cpu_model.as_deref().unwrap_or("unknown"),
+        env.logical_cpus
+    );
+    for d in &devices {
+        let reach = match (&d.backend, d.index) {
+            (Some(b), Some(i)) => format!(
+                " via {b} (execution.gpu = {i}{})",
+                d.driver
+                    .as_ref()
+                    .map(|v| format!(", {}{v}", if b == "vulkan" { "driver " } else { "" }))
+                    .unwrap_or_default()
+            ),
+            _ => String::new(),
+        };
+        println!(
+            "device      {} [{}]{reach} — {:?}{}",
+            d.name,
+            d.kind,
+            d.certification,
+            d.note
+                .as_ref()
+                .filter(|n| !n.is_empty())
+                .map(|n| format!(": {n}"))
+                .unwrap_or_default()
+        );
+    }
+    println!("python      not required (training and prediction are pure Rust)");
+    match ws {
+        Ok(w) => {
+            println!("project     {}", w.project.root.display());
+            println!("            state dir writable: {}", project_status["state_writable"]);
+            match w.project.resolve_config(&ConfigRequest::default()) {
+                Ok(_) => println!("            tabsmith.toml: valid"),
+                Err(e) => println!("            tabsmith.toml: INVALID — {}", e.message),
+            }
+        }
+        Err(_) => println!("project     none here (create one with `tabsmith init <name> --sample-data`)"),
+    }
+    Ok(0)
+}

@@ -4,8 +4,8 @@
   "parent_steps": 116,
   "resumed_from_step": 58,
   "resumed_run": "run-002",
-  "resumed_model_sha256": "4bbeb062f359e3916ff48fe43ba52fc0a65c32559f7e7ab70a783beba65c1917",
-  "uninterrupted_model_sha256": "4bbeb062f359e3916ff48fe43ba52fc0a65c32559f7e7ab70a783beba65c1917",
+  "resumed_model_sha256": "cba79c74ba76ffb102fb9252bdf4378c3126c1cbfb6220a9b3e05871a31a87cb",
+  "uninterrupted_model_sha256": "cba79c74ba76ffb102fb9252bdf4378c3126c1cbfb6220a9b3e05871a31a87cb",
   "bitwise_identical_weights": true,
   "identical_history": true
 }

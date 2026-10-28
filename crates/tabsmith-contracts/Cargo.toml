@@ -1,0 +1,24 @@
+[package]
+name = "tabsmith-contracts"
+description = "Stable cross-stage contracts for Tabsmith: config, schemas, errors, Run and Bundle manifests."
+version.workspace = true
+edition.workspace = true
+# Lower than the workspace minimum: this crate does not depend on Burn or Polars.
+# 1.88 is the floor set by sha2 0.11; checked by the `msrv` CI job.
+rust-version = "1.88"
+license.workspace = true
+authors.workspace = true
+readme = "README.md"
+keywords = ["machine-learning", "tabular", "classification", "schema", "manifest"]
+categories = ["science", "data-structures"]
+include = ["/src/**/*.rs", "/README.md", "/LICENSE-MIT", "/LICENSE-APACHE"]
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+thiserror.workspace = true
+sha2.workspace = true
+
+[lints]
+workspace = true

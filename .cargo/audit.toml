@@ -1,0 +1,22 @@
+# cargo-audit exceptions. Each one says why it does not apply, or what it waits for;
+# SECURITY.md ("Dependencies") explains them for users. Any other advisory fails the
+# `audit` CI job. Reviewed 2026-10-28.
+
+[advisories]
+ignore = [
+    # Recorded in Cargo.lock as optional dependencies of dependencies, but never built:
+    # `cargo tree --target all --all-features --workspace -e all -i <crate>` prints
+    # nothing for quick-xml 0.39, zip 0.6 or zstd-safe 5.
+    "RUSTSEC-2026-0194", # quick-xml: quadratic duplicate-attribute check
+    "RUSTSEC-2026-0195", # quick-xml: NsReader namespace allocation
+    "RUSTSEC-2026-0367", # zip: SUID/SGID bits kept on extraction
+    "RUSTSEC-2026-0368", # zip: extraction creates symlinks outside the destination
+    "RUSTSEC-2026-0369", # zip: permissions applied through symlinks on extraction
+
+    # zstd 0.13 / zstd-safe 7, used by Polars 0.55 (the latest release) to read
+    # zstd-compressed Parquet pages and .zst CSV files in the `tabsmith` tool. Not in
+    # tabsmith-runtime. Waits for a Polars release on zstd 0.14 / zstd-safe 8.
+    "RUSTSEC-2026-0391", # zstd: data of an abandoned stream leaks into the next one on a reused context
+    "RUSTSEC-2026-0403", # zstd-safe: uninitialised memory when streaming decompression of a legacy frame fails
+    "RUSTSEC-2026-0398", # zstd-safe: Seekable::decompress (Polars does not use the seekable API)
+]

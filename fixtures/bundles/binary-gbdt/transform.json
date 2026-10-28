@@ -1,0 +1,245 @@
+{
+  "version": "tabsmith.std-tabular.v2",
+  "features": [
+    {
+      "kind": "categorical",
+      "name": "line",
+      "categories": [
+        "D",
+        "C",
+        "A",
+        "B"
+      ],
+      "missing_slot": false,
+      "offset": 0,
+      "raw_dtype": "text"
+    },
+    {
+      "kind": "categorical",
+      "name": "shift",
+      "categories": [
+        "day",
+        "night",
+        "swing"
+      ],
+      "missing_slot": false,
+      "offset": 4,
+      "raw_dtype": "text"
+    },
+    {
+      "kind": "categorical",
+      "name": "supplier",
+      "categories": [
+        "S1",
+        "S4",
+        "S6",
+        "S3",
+        "S2",
+        "S5"
+      ],
+      "missing_slot": false,
+      "offset": 7,
+      "raw_dtype": "text"
+    },
+    {
+      "kind": "categorical",
+      "name": "device_type",
+      "categories": [
+        "pump",
+        "valve",
+        "motor"
+      ],
+      "missing_slot": false,
+      "offset": 13,
+      "raw_dtype": "text"
+    },
+    {
+      "kind": "categorical",
+      "name": "firmware",
+      "categories": [
+        "v2.0",
+        "v1.3",
+        "v1.2"
+      ],
+      "missing_slot": false,
+      "offset": 16,
+      "raw_dtype": "text"
+    },
+    {
+      "kind": "numeric",
+      "name": "hours_in_service",
+      "impute": 10065.04555808656,
+      "mean": 10065.04555808656,
+      "std": 5770.312667313814,
+      "offset": 19
+    },
+    {
+      "kind": "numeric",
+      "name": "cycles",
+      "impute": 1009.5339407744875,
+      "mean": 1009.5339407744875,
+      "std": 594.6532414353919,
+      "offset": 20
+    },
+    {
+      "kind": "numeric",
+      "name": "temp_mean",
+      "impute": 61.87788669703867,
+      "mean": 61.87788669703867,
+      "std": 6.352261363747783,
+      "offset": 21
+    },
+    {
+      "kind": "numeric",
+      "name": "temp_std",
+      "impute": 2.0999936218678803,
+      "mean": 2.0999936218678803,
+      "std": 0.8039974788633015,
+      "offset": 22
+    },
+    {
+      "kind": "numeric",
+      "name": "temp_max",
+      "impute": 68.33845717539853,
+      "mean": 68.33845717539853,
+      "std": 6.707970950439017,
+      "offset": 23
+    },
+    {
+      "kind": "numeric",
+      "name": "vibration_rms",
+      "impute": 0.9808687471526204,
+      "mean": 0.9808687471526204,
+      "std": 0.36930370297062476,
+      "offset": 24
+    },
+    {
+      "kind": "numeric",
+      "name": "vibration_peak",
+      "impute": 3.0628746697038673,
+      "mean": 3.0628746697038673,
+      "std": 1.1792222478127314,
+      "offset": 25
+    },
+    {
+      "kind": "numeric",
+      "name": "pressure_mean",
+      "impute": 4.192125193621864,
+      "mean": 4.192125193621864,
+      "std": 0.49587082178558445,
+      "offset": 26
+    },
+    {
+      "kind": "numeric",
+      "name": "pressure_std",
+      "impute": 0.3025380410022787,
+      "mean": 0.3025380410022787,
+      "std": 0.09941000910629255,
+      "offset": 27
+    },
+    {
+      "kind": "numeric",
+      "name": "current_mean",
+      "impute": 11.631391389521644,
+      "mean": 11.631391389521644,
+      "std": 1.767581625717766,
+      "offset": 28
+    },
+    {
+      "kind": "numeric",
+      "name": "current_std",
+      "impute": 0.8111196810933953,
+      "mean": 0.8111196810933953,
+      "std": 0.29379618265551144,
+      "offset": 29
+    },
+    {
+      "kind": "numeric",
+      "name": "humidity",
+      "impute": 45.01648943323722,
+      "mean": 45.01648943323722,
+      "std": 11.721657619858602,
+      "offset": 30
+    },
+    {
+      "kind": "numeric",
+      "name": "voltage_drop",
+      "impute": 0.7980180796252933,
+      "mean": 0.7980180796252933,
+      "std": 0.20074406855382815,
+      "offset": 31
+    },
+    {
+      "kind": "numeric",
+      "name": "ambient_noise_db",
+      "impute": 49.92161507972676,
+      "mean": 49.92161507972676,
+      "std": 4.952491125745974,
+      "offset": 32
+    },
+    {
+      "kind": "categorical",
+      "name": "maintenance_flag",
+      "categories": [
+        "false",
+        "true"
+      ],
+      "missing_slot": false,
+      "offset": 33,
+      "raw_dtype": "bool"
+    }
+  ],
+  "dropped": [
+    {
+      "name": "calibration_offset",
+      "reason": "zero variance in the training rows (constant 0)"
+    }
+  ],
+  "output_dim": 35,
+  "output_names": [
+    "line=D",
+    "line=C",
+    "line=A",
+    "line=B",
+    "shift=day",
+    "shift=night",
+    "shift=swing",
+    "supplier=S1",
+    "supplier=S4",
+    "supplier=S6",
+    "supplier=S3",
+    "supplier=S2",
+    "supplier=S5",
+    "device_type=pump",
+    "device_type=valve",
+    "device_type=motor",
+    "firmware=v2.0",
+    "firmware=v1.3",
+    "firmware=v1.2",
+    "hours_in_service",
+    "cycles",
+    "temp_mean",
+    "temp_std",
+    "temp_max",
+    "vibration_rms",
+    "vibration_peak",
+    "pressure_mean",
+    "pressure_std",
+    "current_mean",
+    "current_std",
+    "humidity",
+    "voltage_drop",
+    "ambient_noise_db",
+    "maintenance_flag=false",
+    "maintenance_flag=true"
+  ],
+  "nan": "missing",
+  "unknown_category": "ignore",
+  "missing_tokens": [
+    "",
+    "NA",
+    "null"
+  ],
+  "fitted_on_split": "sp-776160f3cff7",
+  "fitted_rows": 2195
+}

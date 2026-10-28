@@ -1,0 +1,9 @@
+{
+  "target": "defect",
+  "task": "binary",
+  "negative_label": "0",
+  "positive_label": "1",
+  "probability": "P(defect == \"1\")",
+  "threshold": 0.5,
+  "decision": "\"1\" if probability >= 0.5 else \"0\""
+}

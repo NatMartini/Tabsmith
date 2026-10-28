@@ -1,0 +1,20 @@
+[package]
+name = "tabsmith-embedded"
+description = "The arithmetic of Tabsmith models in no_std Rust: shared by the runtime and by models compiled into code, so both compute the same bits on every platform."
+version.workspace = true
+edition.workspace = true
+# The floor of tabsmith-runtime, which depends on this crate; checked by the `msrv` CI job.
+rust-version = "1.88"
+license.workspace = true
+authors.workspace = true
+readme = "README.md"
+keywords = ["machine-learning", "no-std", "embedded", "inference", "tabular"]
+categories = ["no-std", "embedded", "science"]
+include = ["/src/**/*.rs", "/README.md", "/LICENSE-MIT", "/LICENSE-APACHE"]
+
+[dependencies]
+# exp in pure Rust: the same bits on every target, where the platform C library would differ.
+libm.workspace = true
+
+[lints]
+workspace = true

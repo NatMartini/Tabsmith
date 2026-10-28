@@ -1,0 +1,585 @@
+{
+  "certified": true,
+  "checks": {
+    "determinism": true,
+    "exact_resume": true,
+    "cpu_agreement": true,
+    "bundle": true
+  },
+  "registry_entry": {
+    "backend": "vulkan",
+    "device": "NVIDIA GeForce RTX 5090",
+    "os": "windows",
+    "driver": "610.88",
+    "precision": "fp32",
+    "certified_on": "2026-10-27",
+    "evidence": "reports/gpu/2026-10-27-rtx5090-windows-vulkan-fp32"
+  },
+  "machine": {
+    "os": "Windows-11-10.0.26300-SP0",
+    "cpu": "AMD Ryzen 9 9950X3D2 16-Core Processor",
+    "tabsmith": "0.1.0"
+  },
+  "device": {
+    "backend": "vulkan",
+    "certification": "not_certified",
+    "driver": "610.88",
+    "index": 0,
+    "kind": "nvidia-gpu",
+    "name": "NVIDIA GeForce RTX 5090",
+    "note": "not certified for this recipe yet (see tools/gpu_certify.py)"
+  },
+  "precision": "fp32",
+  "determinism": {
+    "run_1_model_sha256": "0c8f689f1ed2c6a063723d80ddcbb6ef839325cfe6d23a259bcf5e0d5fa075aa",
+    "run_2_model_sha256": "0c8f689f1ed2c6a063723d80ddcbb6ef839325cfe6d23a259bcf5e0d5fa075aa",
+    "bitwise_identical_weights": true,
+    "identical_history": true,
+    "device_plan": {
+      "backend": "burn-vulkan",
+      "certification": "not_certified",
+      "compiled_backends": [
+        "burn-flex (cpu)",
+        "burn-vulkan (vulkan)",
+        "burn-cuda (cuda)"
+      ],
+      "copy_path": [
+        "file -> Polars DataFrame (host)",
+        "DataFrame -> raw value columns (host copy)",
+        "raw values -> f32 feature matrix via the shared transform (host copy)",
+        "feature matrix -> per-batch tensors on the GPU (host-to-device copy)",
+        "per epoch: losses and weights back to the host for validation through the runtime"
+      ],
+      "data_placement": "host, copied to the GPU per batch (planned placement, not a fallback)",
+      "detected": [
+        {
+          "backend": "cpu",
+          "certification": "not_certified",
+          "kind": "cpu",
+          "name": "x86_64 CPU",
+          "note": "32 logical CPUs; the recipe has only been verified on linux/x86_64, not on windows/x86_64"
+        },
+        {
+          "backend": "vulkan",
+          "certification": "not_certified",
+          "driver": "610.88",
+          "index": 0,
+          "kind": "nvidia-gpu",
+          "name": "NVIDIA GeForce RTX 5090",
+          "note": "not certified for this recipe yet (see tools/gpu_certify.py)"
+        },
+        {
+          "backend": "vulkan",
+          "certification": "not_certified",
+          "driver": "2026.04.17 (AMD proprietary shader compiler)",
+          "index": 1,
+          "kind": "amd-gpu",
+          "name": "AMD Radeon(TM) Graphics",
+          "note": "not certified for this recipe yet (see tools/gpu_certify.py)"
+        },
+        {
+          "backend": "cuda",
+          "certification": "not_certified",
+          "driver": "compute capability 12.0",
+          "index": 0,
+          "kind": "nvidia-gpu",
+          "name": "NVIDIA GeForce RTX 5090",
+          "note": "32606 MB; not certified for this recipe yet (see tools/gpu_certify.py); matrix products run in TF32 (set execution.precision = \"tf32\" to train here)"
+        }
+      ],
+      "device": "vulkan (NVIDIA GeForce RTX 5090)",
+      "estimated_peak_mb": 74.90555953979492,
+      "fallback": "error",
+      "memory_budget_mb": 4096,
+      "notes": [
+        "vulkan (NVIDIA GeForce RTX 5090) initialised and compiled its first kernels in 212 ms",
+        "vulkan (NVIDIA GeForce RTX 5090) is not certified for this recipe: results are recorded but not claimed reproducible"
+      ],
+      "precision": "fp32",
+      "requested": "vulkan",
+      "threads": 1
+    },
+    "device_receipt": {
+      "backend": "burn-vulkan",
+      "device": "vulkan (NVIDIA GeForce RTX 5090)",
+      "host_device_transfers": "per batch: features, labels and weights to the GPU; per epoch: losses and weights to the host",
+      "matches_plan": true,
+      "precision": "fp32",
+      "threads": 1
+    }
+  },
+  "exact_resume": {
+    "resumed_from_step": 58,
+    "resumed_model_sha256": "0c8f689f1ed2c6a063723d80ddcbb6ef839325cfe6d23a259bcf5e0d5fa075aa",
+    "uninterrupted_model_sha256": "0c8f689f1ed2c6a063723d80ddcbb6ef839325cfe6d23a259bcf5e0d5fa075aa",
+    "bitwise_identical_weights": true,
+    "identical_history": true
+  },
+  "cpu_agreement": {
+    "balanced_accuracy": {
+      "gpu": 0.7665301441677588,
+      "cpu": 0.7665301441677588,
+      "difference": 0.0,
+      "tolerance": 0.005,
+      "within": true
+    },
+    "roc_auc": {
+      "gpu": 0.8427151594582787,
+      "cpu": 0.8427151594582787,
+      "difference": 0.0,
+      "tolerance": 0.002,
+      "within": true
+    },
+    "log_loss": {
+      "gpu": 0.46138748951103836,
+      "cpu": 0.46138749658367395,
+      "difference": 7.072635588301068e-09,
+      "tolerance": 0.002,
+      "within": true
+    }
+  },
+  "bundle": {
+    "self_check_passed": true,
+    "max_abs_probability_diff": 0.0
+  },
+  "timing": {
+    "readme_problem": {
+      "model": "`tabsmith init --sample-data` problem, small-mlp hidden [32, 16], batch 64",
+      "cpu_ms_per_step": 0.1585,
+      "gpu_ms_per_step": 1.3737,
+      "cpu_train_s": 0.12,
+      "gpu_train_s": 1.04
+    },
+    "large_problem": {
+      "rows": 400000,
+      "model": "small-mlp, hidden [512, 512], batch 2048, 4 epochs",
+      "steps": 548,
+      "cpu_ms_per_step": 31.897,
+      "gpu_ms_per_step": 4.837,
+      "gpu_startup_s": 0.95,
+      "cpu_train_s": 18.05,
+      "gpu_train_s": 3.6,
+      "speedup_per_step": 6.6,
+      "speedup": 5.0,
+      "valid_balanced_accuracy": {
+        "cpu": 0.7585937105801366,
+        "gpu": 0.7586502522530603
+      }
+    }
+  },
+  "steps": [
+    {
+      "cmd": [
+        "tabsmith",
+        "--json",
+        "doctor"
+      ],
+      "cwd": ".",
+      "exit": 0,
+      "seconds": 0.751
+    },
+    {
+      "cmd": [
+        "tabsmith",
+        "init",
+        "det-1",
+        "--sample-data"
+      ],
+      "cwd": ".",
+      "exit": 0,
+      "seconds": 0.197
+    },
+    {
+      "cmd": [
+        "tabsmith",
+        "init",
+        "det-2",
+        "--sample-data"
+      ],
+      "cwd": ".",
+      "exit": 0,
+      "seconds": 0.199
+    },
+    {
+      "cmd": [
+        "tabsmith",
+        "run",
+        "--candidates",
+        "small-mlp",
+        "--set",
+        "execution.candidate_device=\"vulkan\"",
+        "--set",
+        "execution.gpu=0",
+        "--set",
+        "execution.precision=\"fp32\""
+      ],
+      "cwd": "det-1",
+      "exit": 0,
+      "seconds": 1.867
+    },
+    {
+      "cmd": [
+        "tabsmith",
+        "run",
+        "--candidates",
+        "small-mlp",
+        "--set",
+        "execution.candidate_device=\"vulkan\"",
+        "--set",
+        "execution.gpu=0",
+        "--set",
+        "execution.precision=\"fp32\""
+      ],
+      "cwd": "det-2",
+      "exit": 0,
+      "seconds": 2.048
+    },
+    {
+      "cmd": [
+        "tabsmith",
+        "--json",
+        "runs"
+      ],
+      "cwd": "det-1",
+      "exit": 0,
+      "seconds": 0.083
+    },
+    {
+      "cmd": [
+        "tabsmith",
+        "--json",
+        "runs"
+      ],
+      "cwd": "det-2",
+      "exit": 0,
+      "seconds": 0.076
+    },
+    {
+      "cmd": [
+        "tabsmith",
+        "init",
+        "resume",
+        "--sample-data"
+      ],
+      "cwd": ".",
+      "exit": 0,
+      "seconds": 0.217
+    },
+    {
+      "cmd": [
+        "tabsmith",
+        "run",
+        "--candidates",
+        "small-mlp",
+        "--set",
+        "execution.candidate_device=\"vulkan\"",
+        "--set",
+        "execution.gpu=0",
+        "--set",
+        "execution.precision=\"fp32\"",
+        "--simulate-crash-after-steps",
+        "130"
+      ],
+      "cwd": "resume",
+      "exit": 137,
+      "seconds": 1.38
+    },
+    {
+      "cmd": [
+        "tabsmith",
+        "resume",
+        "run-001",
+        "--set",
+        "execution.candidate_device=\"vulkan\"",
+        "--set",
+        "execution.gpu=0",
+        "--set",
+        "execution.precision=\"fp32\""
+      ],
+      "cwd": "resume",
+      "exit": 0,
+      "seconds": 1.856
+    },
+    {
+      "cmd": [
+        "tabsmith",
+        "--json",
+        "runs"
+      ],
+      "cwd": "resume",
+      "exit": 0,
+      "seconds": 0.082
+    },
+    {
+      "cmd": [
+        "tabsmith",
+        "init",
+        "cpu-reference",
+        "--sample-data"
+      ],
+      "cwd": ".",
+      "exit": 0,
+      "seconds": 0.203
+    },
+    {
+      "cmd": [
+        "tabsmith",
+        "run",
+        "--candidates",
+        "small-mlp",
+        "--set",
+        "execution.candidate_device=\"cpu\""
+      ],
+      "cwd": "cpu-reference",
+      "exit": 0,
+      "seconds": 0.53
+    },
+    {
+      "cmd": [
+        "tabsmith",
+        "--json",
+        "runs"
+      ],
+      "cwd": "cpu-reference",
+      "exit": 0,
+      "seconds": 0.068
+    },
+    {
+      "cmd": [
+        "tabsmith",
+        "bundle",
+        "build",
+        "--run",
+        "run-001",
+        "--allow-unevaluated",
+        "--out",
+        "<work>\\det-1\\bundles\\gpu-trained"
+      ],
+      "cwd": "det-1",
+      "exit": 0,
+      "seconds": 0.106
+    },
+    {
+      "cmd": [
+        "tabsmith",
+        "--json",
+        "bundle",
+        "check",
+        "<work>\\det-1\\bundles\\gpu-trained"
+      ],
+      "cwd": "det-1",
+      "exit": 0,
+      "seconds": 0.077
+    },
+    {
+      "cmd": [
+        "tabsmith",
+        "init",
+        "large-cpu"
+      ],
+      "cwd": ".",
+      "exit": 0,
+      "seconds": 0.075
+    },
+    {
+      "cmd": [
+        "tabsmith",
+        "sample-data",
+        "data/defects.csv",
+        "--rows",
+        "400000"
+      ],
+      "cwd": "large-cpu",
+      "exit": 0,
+      "seconds": 1.427
+    },
+    {
+      "cmd": [
+        "tabsmith",
+        "data",
+        "bind",
+        "data/defects.csv",
+        "--target",
+        "defect",
+        "--group",
+        "device_id",
+        "--id",
+        "unit_id"
+      ],
+      "cwd": "large-cpu",
+      "exit": 0,
+      "seconds": 1.931
+    },
+    {
+      "cmd": [
+        "tabsmith",
+        "run",
+        "--candidates",
+        "small-mlp",
+        "--set",
+        "train.small-mlp.hidden=[512, 512]",
+        "--set",
+        "train.small-mlp.batch_size=2048",
+        "--set",
+        "train.small-mlp.early_stopping_patience=0",
+        "--set",
+        "train.small-mlp.epochs=1",
+        "--set",
+        "execution.candidate_device=\"cpu\""
+      ],
+      "cwd": "large-cpu",
+      "exit": 0,
+      "seconds": 7.525
+    },
+    {
+      "cmd": [
+        "tabsmith",
+        "--json",
+        "runs"
+      ],
+      "cwd": "large-cpu",
+      "exit": 0,
+      "seconds": 0.084
+    },
+    {
+      "cmd": [
+        "tabsmith",
+        "run",
+        "--candidates",
+        "small-mlp",
+        "--set",
+        "train.small-mlp.hidden=[512, 512]",
+        "--set",
+        "train.small-mlp.batch_size=2048",
+        "--set",
+        "train.small-mlp.early_stopping_patience=0",
+        "--set",
+        "train.small-mlp.epochs=4",
+        "--set",
+        "execution.candidate_device=\"cpu\""
+      ],
+      "cwd": "large-cpu",
+      "exit": 0,
+      "seconds": 20.454
+    },
+    {
+      "cmd": [
+        "tabsmith",
+        "--json",
+        "runs"
+      ],
+      "cwd": "large-cpu",
+      "exit": 0,
+      "seconds": 0.069
+    },
+    {
+      "cmd": [
+        "tabsmith",
+        "init",
+        "large-gpu"
+      ],
+      "cwd": ".",
+      "exit": 0,
+      "seconds": 0.078
+    },
+    {
+      "cmd": [
+        "tabsmith",
+        "sample-data",
+        "data/defects.csv",
+        "--rows",
+        "400000"
+      ],
+      "cwd": "large-gpu",
+      "exit": 0,
+      "seconds": 1.386
+    },
+    {
+      "cmd": [
+        "tabsmith",
+        "data",
+        "bind",
+        "data/defects.csv",
+        "--target",
+        "defect",
+        "--group",
+        "device_id",
+        "--id",
+        "unit_id"
+      ],
+      "cwd": "large-gpu",
+      "exit": 0,
+      "seconds": 1.908
+    },
+    {
+      "cmd": [
+        "tabsmith",
+        "run",
+        "--candidates",
+        "small-mlp",
+        "--set",
+        "train.small-mlp.hidden=[512, 512]",
+        "--set",
+        "train.small-mlp.batch_size=2048",
+        "--set",
+        "train.small-mlp.early_stopping_patience=0",
+        "--set",
+        "train.small-mlp.epochs=1",
+        "--set",
+        "execution.candidate_device=\"vulkan\"",
+        "--set",
+        "execution.gpu=0",
+        "--set",
+        "execution.precision=\"fp32\""
+      ],
+      "cwd": "large-gpu",
+      "exit": 0,
+      "seconds": 4.569
+    },
+    {
+      "cmd": [
+        "tabsmith",
+        "--json",
+        "runs"
+      ],
+      "cwd": "large-gpu",
+      "exit": 0,
+      "seconds": 0.065
+    },
+    {
+      "cmd": [
+        "tabsmith",
+        "run",
+        "--candidates",
+        "small-mlp",
+        "--set",
+        "train.small-mlp.hidden=[512, 512]",
+        "--set",
+        "train.small-mlp.batch_size=2048",
+        "--set",
+        "train.small-mlp.early_stopping_patience=0",
+        "--set",
+        "train.small-mlp.epochs=4",
+        "--set",
+        "execution.candidate_device=\"vulkan\"",
+        "--set",
+        "execution.gpu=0",
+        "--set",
+        "execution.precision=\"fp32\""
+      ],
+      "cwd": "large-gpu",
+      "exit": 0,
+      "seconds": 6.397
+    },
+    {
+      "cmd": [
+        "tabsmith",
+        "--json",
+        "runs"
+      ],
+      "cwd": "large-gpu",
+      "exit": 0,
+      "seconds": 0.073
+    }
+  ]
+}

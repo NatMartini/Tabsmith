@@ -1,0 +1,195 @@
+{
+  "machine": {
+    "cpu": "AMD Ryzen 9 9950X3D2 16-Core Processor",
+    "logical_cpus": 32,
+    "os": "Linux 6.6.87.2-microsoft-standard-WSL2"
+  },
+  "tabsmith": {
+    "run_wall_seconds": 0.9848635590000185,
+    "run_peak_rss_mb": 44.28125,
+    "candidates": {
+      "linear": {
+        "run_id": "run-001",
+        "train_seconds": 0.110867511,
+        "data_seconds": 0.033119202,
+        "fit_transform_seconds": 0.006286432,
+        "best_epoch": 29,
+        "epochs": 39,
+        "test": {
+          "balanced_accuracy": 0.752767027863777,
+          "roc_auc": 0.8201818885448916,
+          "log_loss": 0.5126654099873512
+        },
+        "app_single_record_us": {
+          "iterations": 20000,
+          "p50": 2.35,
+          "p95": 2.68,
+          "p99": 5.491
+        },
+        "app_batch_rows_per_second": 787674.966240251,
+        "app_load_ms": 0.266231,
+        "cold_start_seconds": 0.0010675660000174503,
+        "cold_start_peak_rss_mb": 12.25,
+        "cli_predict_csv_seconds": 0.10042865299999448,
+        "cli_predict_peak_rss_mb": 52.37890625,
+        "bundle_bytes": 17012
+      },
+      "small-mlp": {
+        "run_id": "run-002",
+        "train_seconds": 0.100714315,
+        "data_seconds": 0.033119202,
+        "fit_transform_seconds": 0.006286432,
+        "best_epoch": 5,
+        "epochs": 13,
+        "test": {
+          "balanced_accuracy": 0.7729150541795666,
+          "roc_auc": 0.8250241873065015,
+          "log_loss": 0.4852916603651825
+        },
+        "app_single_record_us": {
+          "iterations": 20000,
+          "p50": 2.58,
+          "p95": 2.75,
+          "p99": 4.87
+        },
+        "app_batch_rows_per_second": 641488.7877061496,
+        "app_load_ms": 0.252971,
+        "cold_start_seconds": 0.0009090099999866652,
+        "cold_start_peak_rss_mb": 12.25,
+        "cli_predict_csv_seconds": 0.10632626900002151,
+        "cli_predict_peak_rss_mb": 52.06640625,
+        "bundle_bytes": 24262
+      },
+      "gbdt": {
+        "run_id": "run-003",
+        "train_seconds": 0.668613055,
+        "data_seconds": 0.033119202,
+        "fit_transform_seconds": 0.006286432,
+        "best_epoch": 29,
+        "epochs": 54,
+        "test": {
+          "balanced_accuracy": 0.7331946594427244,
+          "roc_auc": 0.8187741873065015,
+          "log_loss": 0.4581746900572991
+        },
+        "app_single_record_us": {
+          "iterations": 20000,
+          "p50": 3.02,
+          "p95": 3.76,
+          "p99": 6.680000000000001
+        },
+        "app_batch_rows_per_second": 523178.94619099307,
+        "app_load_ms": 0.40808799999999995,
+        "cold_start_seconds": 0.0010922280000045248,
+        "cold_start_peak_rss_mb": 12.25,
+        "cli_predict_csv_seconds": 0.10987508299996307,
+        "cli_predict_peak_rss_mb": 52.33203125,
+        "bundle_bytes": 52848
+      }
+    },
+    "cli_binary_bytes": 29394840,
+    "app_binary_bytes": 1732312
+  },
+  "python": {
+    "versions": {
+      "python": "3.14.4",
+      "scikit-learn": "1.9.1",
+      "numpy": "2.5.4",
+      "pandas": "3.1.0"
+    },
+    "rows": 10000,
+    "train_rows": 7356,
+    "test_rows": 1386,
+    "read_csv_seconds": 0.008713237999984358,
+    "candidates": {
+      "linear": {
+        "fit_seconds": 0.0360704549999582,
+        "test": {
+          "balanced_accuracy": 0.7515963622291022,
+          "roc_auc": 0.8209268575851393,
+          "log_loss": 0.5194914860883824
+        },
+        "iterations": 25,
+        "batch": {
+          "rows": 10000,
+          "seconds": 0.013570289799997682,
+          "rows_per_second": 736903.9384849179
+        },
+        "single_record_us": {
+          "p50": 1993.1869999822993,
+          "p95": 2204.0759999981674,
+          "p99": 2562.5609999906374,
+          "iterations": 2000
+        },
+        "model_file_bytes": 6602,
+        "cold_start_seconds": 0.6183983010000134,
+        "cold_start_peak_rss_mb": 160.3671875
+      },
+      "small-mlp": {
+        "fit_seconds": 0.1337957279999955,
+        "test": {
+          "balanced_accuracy": 0.7313564241486068,
+          "roc_auc": 0.7928357198142416,
+          "log_loss": 0.5293774560434565
+        },
+        "iterations": 13,
+        "batch": {
+          "rows": 10000,
+          "seconds": 0.024941962000002604,
+          "rows_per_second": 400930.76879833895
+        },
+        "single_record_us": {
+          "p50": 2006.5369999997529,
+          "p95": 2253.3580000185793,
+          "p99": 2681.655999992927,
+          "iterations": 2000
+        },
+        "model_file_bytes": 68170,
+        "cold_start_seconds": 0.6117400199999565,
+        "cold_start_peak_rss_mb": 161.0546875
+      },
+      "gbdt": {
+        "fit_seconds": 3.6553458220000152,
+        "test": {
+          "balanced_accuracy": 0.7294649767801857,
+          "roc_auc": 0.8183581656346749,
+          "log_loss": 0.4160863612665911
+        },
+        "iterations": 54,
+        "batch": {
+          "rows": 10000,
+          "seconds": 0.013676644800000304,
+          "rows_per_second": 731173.4819639227
+        },
+        "single_record_us": {
+          "p50": 2844.1229999884854,
+          "p95": 4174.010999975053,
+          "p99": 4456.839999988915,
+          "iterations": 2000
+        },
+        "model_file_bytes": 234482,
+        "cold_start_seconds": 0.6251259979999872,
+        "cold_start_peak_rss_mb": 164.3359375
+      }
+    },
+    "peak_rss_mb": 268.46875,
+    "process_wall_seconds": 19.93808166499997,
+    "process_peak_rss_mb": 268.46875,
+    "environment_bytes": 354146284,
+    "site_packages_bytes": {
+      "cloudpickle": 116927,
+      "dateutil": 683644,
+      "joblib": 1944920,
+      "narwhals": 5286983,
+      "numpy": 41010982,
+      "numpy.libs": 27463459,
+      "pandas": 78484533,
+      "pip": 11341867,
+      "scikit_learn.libs": 253289,
+      "scipy": 107997447,
+      "scipy.libs": 31202973,
+      "sklearn": 46240890,
+      "tzdata": 518136
+    }
+  }
+}

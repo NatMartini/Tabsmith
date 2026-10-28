@@ -1,5 +1,9 @@
 # Benchmark 2026-10-27, Linux x86_64
 
+> Made before the rename from RustPy to Tabsmith: read `rustpy` as `tabsmith`
+> (today `--tabsmith target/release/tabsmith`, `-p tabsmith-cli`; [note](../../README.md)).
+> / 本报告产生于 RustPy 改名为 Tabsmith 之前，文中的 `rustpy` 即今天的 `tabsmith`。
+
 [`results.md`](results.md) (and the raw numbers in [`results.json`](results.json),
 the logs of every step in [`logs/`](logs/)) from commit `ae39055`, on an AMD Ryzen 9
 9950X3D2 (32 logical CPUs) under WSL2 (Linux 6.6), with Python 3.14.4,

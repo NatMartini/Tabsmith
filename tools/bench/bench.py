@@ -1,6 +1,6 @@
-"""RustPy vs. the equivalent scikit-learn workflow, measured on the same machine.
+"""Tabsmith vs. the equivalent scikit-learn workflow, measured on the same machine.
 
-    python3 tools/bench/bench.py --rustpy target/release/rustpy \
+    python3 tools/bench/bench.py --tabsmith target/release/tabsmith \
         --app examples/predict-app/target/release/bench \
         --python /path/to/venv-with-sklearn/bin/python \
         --out reports/benchmarks/<date> [--rows 10000]
@@ -98,13 +98,13 @@ def median_of(n, fn):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--rustpy", required=True)
+    ap.add_argument("--tabsmith", required=True)
     ap.add_argument("--app", required=True, help="examples/predict-app/target/release/bench")
     ap.add_argument("--python", required=True, help="a Python with scikit-learn, pandas, joblib")
     ap.add_argument("--out", required=True)
     ap.add_argument("--rows", type=int, default=10000)
     a = ap.parse_args()
-    rustpy, app, py = (os.path.abspath(x) for x in (a.rustpy, a.app, a.python))
+    tabsmith, app, py = (os.path.abspath(x) for x in (a.tabsmith, a.app, a.python))
     predict_app = os.path.join(os.path.dirname(app), "predict-app")
     out = os.path.abspath(a.out)
     shutil.rmtree(out, ignore_errors=True)
@@ -112,30 +112,30 @@ def main():
     os.makedirs(logs)
     work = os.path.join(out, "work")
     os.makedirs(work)
-    R = {"machine": {}, "rustpy": {}, "python": {}}
+    R = {"machine": {}, "tabsmith": {}, "python": {}}
     R["machine"]["cpu"] = next((l.split(":", 1)[1].strip() for l in open("/proc/cpuinfo") if l.startswith("model name")), "?")
     R["machine"]["logical_cpus"] = os.cpu_count()
     R["machine"]["os"] = " ".join(os.uname()[0:3:2])
 
-    # --- RustPy: data, training, evaluation, bundles -----------------------------------
-    run([rustpy, "init", "bench"], cwd=work, log=f"{logs}/init.txt")
+    # --- Tabsmith: data, training, evaluation, bundles -----------------------------------
+    run([tabsmith, "init", "bench"], cwd=work, log=f"{logs}/init.txt")
     proj = os.path.join(work, "bench")
-    run([rustpy, "sample-data", "data/defects.csv", "--rows", str(a.rows)], cwd=proj, log=f"{logs}/data.txt")
-    run([rustpy, "data", "bind", "data/defects.csv", "--target", "defect", "--group", "device_id", "--id", "unit_id"],
+    run([tabsmith, "sample-data", "data/defects.csv", "--rows", str(a.rows)], cwd=proj, log=f"{logs}/data.txt")
+    run([tabsmith, "data", "bind", "data/defects.csv", "--target", "defect", "--group", "device_id", "--id", "unit_id"],
         cwd=proj, log=f"{logs}/bind.txt")
-    secs, rss, txt = measured([rustpy, "--json", "run", "--no-cache"], cwd=proj, log=f"{logs}/run.txt")
+    secs, rss, txt = measured([tabsmith, "--json", "run", "--no-cache"], cwd=proj, log=f"{logs}/run.txt")
     result = json.loads(txt)["result"]
     runs = {r["candidate"]: r for r in result["runs"]}
-    R["rustpy"]["run_wall_seconds"] = secs
-    R["rustpy"]["run_peak_rss_mb"] = rss
-    R["rustpy"]["candidates"] = {}
+    R["tabsmith"]["run_wall_seconds"] = secs
+    R["tabsmith"]["run_peak_rss_mb"] = rss
+    R["tabsmith"]["candidates"] = {}
     evals = {}
     for cand, r in runs.items():
-        # Both candidates are scored on the test split here (a benchmark, not model selection).
-        txt = run([rustpy, "--json", "evaluate", "--run", r["run_id"], "--split", "test", "--allow-test-reuse"],
+        # Every candidate is scored on the test split here (a benchmark, not model selection).
+        txt = run([tabsmith, "--json", "evaluate", "--run", r["run_id"], "--split", "test", "--allow-test-reuse"],
                   cwd=proj, log=f"{logs}/eval-{cand}.txt")
         evals[cand] = json.loads(txt)["result"]["metrics"]
-        run([rustpy, "bundle", "build", "--run", r["run_id"]], cwd=proj, log=f"{logs}/bundle-{cand}.txt")
+        run([tabsmith, "bundle", "build", "--run", r["run_id"]], cwd=proj, log=f"{logs}/bundle-{cand}.txt")
     data_csv = os.path.join(proj, "data", "defects.csv")
     records = os.path.join(work, "records.jsonl")
     one = os.path.join(work, "one.jsonl")
@@ -150,10 +150,10 @@ def main():
         # Cold start: a fresh process that loads the bundle and predicts one record.
         cold, cold_rss = median_of(7, lambda: measured([predict_app, bundle], stdin_path=one))
         # Batch prediction of the whole CSV through the CLI (read + transform + predict + write).
-        cli_s, cli_rss, _ = measured([rustpy, "predict", "--bundle", bundle, "--input", data_csv, "--output",
+        cli_s, cli_rss, _ = measured([tabsmith, "predict", "--bundle", bundle, "--input", data_csv, "--output",
                                       os.path.join(work, f"preds-{cand}.csv")], cwd=proj)
         m = evals[cand]
-        R["rustpy"]["candidates"][cand] = {
+        R["tabsmith"]["candidates"][cand] = {
             "run_id": r["run_id"],
             "train_seconds": r["timings"]["train_ms"] / 1e3,
             "data_seconds": r["timings"]["data_ms"] / 1e3,
@@ -170,17 +170,18 @@ def main():
             "cli_predict_peak_rss_mb": cli_rss,
             "bundle_bytes": du(bundle),
         }
-    R["rustpy"]["cli_binary_bytes"] = os.path.getsize(rustpy)
-    R["rustpy"]["app_binary_bytes"] = os.path.getsize(predict_app)
+    R["tabsmith"]["cli_binary_bytes"] = os.path.getsize(tabsmith)
+    R["tabsmith"]["app_binary_bytes"] = os.path.getsize(predict_app)
 
     # --- scikit-learn: same rows, split, features and settings -----------------------
     sk_out = os.path.join(work, "sklearn")
     secs, rss, _ = measured([py, "-I", os.path.join(HERE, "sklearn_bench.py"), proj, runs["linear"]["run_id"],
-                             runs["small-mlp"]["run_id"], records, sk_out], log=f"{logs}/sklearn.txt")
+                             runs["small-mlp"]["run_id"], runs["gbdt"]["run_id"], records, sk_out],
+                            log=f"{logs}/sklearn.txt")
     sk = json.load(open(os.path.join(sk_out, "sklearn.json")))
     sk["process_wall_seconds"] = secs
     sk["process_peak_rss_mb"] = rss
-    for cand in ("linear", "small-mlp"):
+    for cand in CANDIDATES:
         model = os.path.join(sk_out, f"sklearn_{cand}.joblib")
         code = ("import json,sys,joblib,pandas as pd;m=joblib.load(sys.argv[1]);"
                 "r=[json.loads(l) for l in sys.stdin];print(m.predict_proba(pd.DataFrame(r))[:,1][0])")
@@ -205,21 +206,26 @@ def main():
     print(open(os.path.join(out, "results.md")).read())
 
 
+CANDIDATES = ("linear", "small-mlp", "gbdt")
+
+
 def markdown(R, rows):
-    rp, sk = R["rustpy"], R["python"]
+    rp, sk = R["tabsmith"], R["python"]
     mb = lambda b: f"{b / 1e6:.1f} MB"
     lines = [f"Machine: {R['machine']['cpu']}, {R['machine']['logical_cpus']} logical CPUs, {R['machine']['os']}. "
              f"Data: {rows} rows (synthetic equipment-defect sample), same split, features and settings on both sides. "
              f"Python {sk['versions']['python']}, scikit-learn {sk['versions']['scikit-learn']}, "
-             f"pandas {sk['versions']['pandas']}, numpy {sk['versions']['numpy']}.", ""]
-    lines += ["| | RustPy linear | scikit-learn LogisticRegression | RustPy small-mlp | scikit-learn MLPClassifier |",
-              "|---|---|---|---|---|"]
-    L, Lm = rp["candidates"]["linear"], sk["candidates"]["linear"]
-    N, Nm = rp["candidates"]["small-mlp"], sk["candidates"]["small-mlp"]
-    row = lambda name, f: lines.append(f"| {name} | {f(L, 'r')} | {f(Lm, 's')} | {f(N, 'r')} | {f(Nm, 's')} |")
+             f"pandas {sk['versions']['pandas']}, numpy {sk['versions']['numpy']}. "
+             "Tabsmith's linear, small-mlp and gbdt candidates stand next to scikit-learn's LogisticRegression, "
+             "MLPClassifier and HistGradientBoostingClassifier (HGB). Tabsmith trains on one thread; "
+             "scikit-learn runs with its defaults (HGB uses every core).", ""]
+    lines += ["| | Tabsmith linear | scikit-learn logistic | Tabsmith small-mlp | scikit-learn MLP | Tabsmith gbdt | scikit-learn HGB |",
+              "|---|---|---|---|---|---|---|"]
+    pairs = [(rp["candidates"][c], sk["candidates"][c]) for c in CANDIDATES]
+    row = lambda name, f: lines.append(f"| {name} | " + " | ".join(f"{f(r, 'r')} | {f(s, 's')}" for r, s in pairs) + " |")
     row("Test balanced accuracy", lambda c, k: f"{c['test']['balanced_accuracy']:.4f}")
     row("Test ROC AUC", lambda c, k: f"{c['test']['roc_auc']:.4f}")
-    row("Epochs / solver iterations", lambda c, k: str(c['epochs'] if k == 'r' else c['iterations']))
+    row("Epochs / rounds / solver iterations", lambda c, k: str(c['epochs'] if k == 'r' else c['iterations']))
     row("Training time", lambda c, k: f"{(c['train_seconds'] if k == 'r' else c['fit_seconds']):.2f} s")
     row("Single-record prediction in an app (p50)", lambda c, k: f"{(c['app_single_record_us'] if k == 'r' else c['single_record_us'])['p50']:.1f} µs")
     row("Single-record prediction (p99)", lambda c, k: f"{(c['app_single_record_us'] if k == 'r' else c['single_record_us'])['p99']:.1f} µs")
@@ -227,13 +233,13 @@ def markdown(R, rows):
     row("Cold start: new process, load model, predict 1 record", lambda c, k: f"{c['cold_start_seconds'] * 1e3:.0f} ms")
     row("Peak memory of that process", lambda c, k: f"{c['cold_start_peak_rss_mb']:.0f} MB")
     row("Model artifact", lambda c, k: mb(c['bundle_bytes'] if k == 'r' else c['model_file_bytes']))
-    lines += ["", "| Deployment footprint | RustPy | Python |", "|---|---|---|",
-              f"| What the application ships | {mb(rp['app_binary_bytes'])} binary (depends on rustpy-runtime only) | "
+    lines += ["", "| Deployment footprint | Tabsmith | Python |", "|---|---|---|",
+              f"| What the application ships | {mb(rp['app_binary_bytes'])} binary (depends on tabsmith-runtime only) | "
               f"{mb(sk['environment_bytes'])} environment (Python + numpy + scipy + scikit-learn + pandas + joblib) |",
-              f"| Training tool | {mb(rp['cli_binary_bytes'])} `rustpy` binary | the same environment |",
-              f"| Train both candidates from the CSV | {rp['run_wall_seconds']:.2f} s for the whole `rustpy run` process "
-              f"(read, profile, split, preprocess, train, validate, checkpoints), peak {rp['run_peak_rss_mb']:.0f} MB | "
-              f"{sk['read_csv_seconds'] + Lm['fit_seconds'] + Nm['fit_seconds']:.2f} s for read_csv + both fits "
+              f"| Training tool | {mb(rp['cli_binary_bytes'])} `tabsmith` binary | the same environment |",
+              f"| Train all three candidates from the CSV | {rp['run_wall_seconds']:.2f} s for the whole `tabsmith run` "
+              f"process (read, profile, split, preprocess, train, validate, checkpoints), peak {rp['run_peak_rss_mb']:.0f} MB | "
+              f"{sk['read_csv_seconds'] + sum(s['fit_seconds'] for _, s in pairs):.2f} s for read_csv + three fits "
               f"(imports and process start not included) |"]
     return "\n".join(lines) + "\n"
 
