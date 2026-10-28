@@ -4,8 +4,8 @@
 
 **Train a model from a CSV and ship it inside your Rust application — one tool, no Python.**
 
-[![CI](https://github.com/__OWNER__/__REPO__/actions/workflows/ci.yml/badge.svg)](https://github.com/__OWNER__/__REPO__/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/__OWNER__/__REPO__?include_prereleases)](https://github.com/__OWNER__/__REPO__/releases)
+[![CI](https://github.com/NatMartini/Tabsmith/actions/workflows/ci.yml/badge.svg)](https://github.com/NatMartini/Tabsmith/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/NatMartini/Tabsmith?include_prereleases)](https://github.com/NatMartini/Tabsmith/releases)
 [![crates.io](https://img.shields.io/crates/v/tabsmith-runtime.svg?label=tabsmith-runtime)](https://crates.io/crates/tabsmith-runtime)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 
@@ -75,9 +75,9 @@ Prebuilt binaries (Linux x86_64/arm64, macOS Intel/Apple Silicon, Windows):
 
 ```sh
 # Linux / macOS
-curl -fsSL https://github.com/__OWNER__/__REPO__/releases/latest/download/install.sh | sh
+curl -fsSL https://github.com/NatMartini/Tabsmith/releases/latest/download/install.sh | sh
 # Windows (PowerShell)
-irm https://github.com/__OWNER__/__REPO__/releases/latest/download/install.ps1 | iex
+irm https://github.com/NatMartini/Tabsmith/releases/latest/download/install.ps1 | iex
 ```
 
 With Cargo (Rust 1.95+):
@@ -90,7 +90,7 @@ cargo binstall tabsmith-cli         # or download the prebuilt one
 From source:
 
 ```sh
-git clone https://github.com/__OWNER__/__REPO__ tabsmith && cd tabsmith
+git clone https://github.com/NatMartini/Tabsmith tabsmith && cd tabsmith
 cargo install --path crates/tabsmith-cli --locked
 ```
 
@@ -320,7 +320,7 @@ Not done yet, by design or for lack of hardware:
 - **GPU**: an opt-in build. GPU paths are certified only where they were run (an RTX 5090 and an AMD integrated GPU on Windows, [reports/gpu](reports/gpu/)); CUDA trains in TF32, which must be requested explicitly (`execution.precision = "tf32"`), because the matmul library has no fp32 switch. Asking for a GPU that is not there is an error, never a silent fallback.
 - **Platforms**: certified on Linux x86_64, where the acceptance run above was made. The full test suite also passes on Windows x86_64, and CI is set up to run it on macOS (Apple Silicon); both are reported as "not certified" by design in 0.1. The Linux arm64 and macOS Intel binaries are built but not tested.
 - **Tasks**: binary, multiclass and regression on one table. Time-based splits are refused rather than faked; ranking, survival and multi-table data are not supported.
-- **CI and macOS**: the CI workflow has not run yet, because the repository is not on GitHub yet. Linux results come from WSL on the development machine; `tools/verify.sh` runs the same checks on a Mac, which has not been done yet.
+- **macOS**: checked only by CI's Apple Silicon runners; nobody has run Tabsmith on a Mac by hand. The Linux results in the reports come from WSL on the development machine.
 - **Users**: no formal user study yet — feedback and issues are very welcome.
 
 The [implementation backlog](docs/implementation-backlog.md) lists the status of

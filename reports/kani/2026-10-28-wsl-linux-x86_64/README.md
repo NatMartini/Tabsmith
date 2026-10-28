@@ -14,7 +14,7 @@ can return. The harnesses are at the end of
 
 **Where.** The development machine (AMD Ryzen 9 9950X3D2), WSL2 Ubuntu 26.04 (Linux
 6.6.87.2). Kani 0.68.0 with CBMC 6.11.0 and its pinned toolchain nightly-2026-08-21.
-The working tree on top of commit `31c9f44`, not yet committed (the compiled-model work).
+The verified working tree was committed afterwards as `166698d`.
 
 ## Settings
 

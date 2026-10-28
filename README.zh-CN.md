@@ -63,9 +63,9 @@ GPU（Vulkan、CUDA）上训练；运行时还能编译成 WebAssembly 在网页
 
 ```sh
 # Linux / macOS
-curl -fsSL https://github.com/__OWNER__/__REPO__/releases/latest/download/install.sh | sh
+curl -fsSL https://github.com/NatMartini/Tabsmith/releases/latest/download/install.sh | sh
 # Windows (PowerShell)
-irm https://github.com/__OWNER__/__REPO__/releases/latest/download/install.ps1 | iex
+irm https://github.com/NatMartini/Tabsmith/releases/latest/download/install.ps1 | iex
 ```
 
 使用 Cargo（Rust 1.95+）：
@@ -78,7 +78,7 @@ cargo binstall tabsmith-cli         # 或下载预编译版本
 从源码安装：
 
 ```sh
-git clone https://github.com/__OWNER__/__REPO__ tabsmith && cd tabsmith
+git clone https://github.com/NatMartini/Tabsmith tabsmith && cd tabsmith
 cargo install --path crates/tabsmith-cli --locked
 ```
 
@@ -280,7 +280,7 @@ Tabsmith 0.1 还很年轻。已经可靠且有测试覆盖的部分（140 个自
 - **GPU**：需要单独构建。GPU 路径只在实际运行过的硬件上认证（Windows 上的 RTX 5090 和 AMD 核显，见 [reports/gpu](reports/gpu/)）；CUDA 用 TF32 训练，必须显式声明（`execution.precision = "tf32"`），因为矩阵乘法库没有 fp32 开关。请求不存在的 GPU 会报错，绝不会静默回退。
 - **平台**：在 Linux x86_64 上认证，上面的验收运行就在该平台上完成。完整测试套件也在 Windows x86_64 上通过，CI 也配置为在 macOS（Apple Silicon）上运行它；按 0.1 版的设计，这两者都报告为“未认证”。Linux arm64 和 macOS Intel 二进制只构建、未测试。
 - **任务**：单表上的二分类、多分类和回归。按时间切分会被拒绝，而不是假装支持；不支持排序、生存分析和多表数据。
-- **CI 与 macOS**：仓库还没有放到 GitHub 上，所以 CI 工作流还没有运行过；Linux 上的结果来自开发机上的 WSL。`tools/verify.sh` 可以在 Mac 上跑同样的检查，但还没有在 Mac 上跑过。
+- **macOS**：只由 CI 的 Apple Silicon runner 检查，还没有人在 Mac 上手动运行过 Tabsmith。报告里 Linux 上的结果来自开发机上的 WSL。
 - **用户**：还没有正式的用户研究——非常欢迎反馈和 issue。
 
 [实施待办](docs/implementation-backlog.md)列出了每个计划条目的状态。
