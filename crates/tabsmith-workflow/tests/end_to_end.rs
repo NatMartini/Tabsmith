@@ -35,6 +35,7 @@ fn project(dir: &Path, rows: usize) -> Workspace {
         positive: None,
         split: None,
         group: Some("device_id".into()),
+        time: None,
         id: Some("unit_id".into()),
         exclude: vec![],
         task: None,
@@ -236,6 +237,7 @@ fn exact_resume_matches_uninterrupted_training_bitwise() {
         checkpoint_dir: tmp.path().join(dir),
         key: key.clone(),
         device: tabsmith_workflow::device::EngineDevice::Cpu,
+        monotone: Vec::new(),
     };
 
     let full = match train(&inputs("full"), &RunControl::default(), StartFrom::Scratch, &mut |_| {}).unwrap() {

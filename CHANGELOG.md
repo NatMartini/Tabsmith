@@ -8,6 +8,54 @@ Before 1.0, minor versions may contain breaking changes.
 
 ## [Unreleased]
 
+Bundles that carry monotone constraints need this version of the runtime
+(`min_runtime_version` 0.2.0); every other bundle still loads with 0.1.0.
+
+### Added
+
+- **What the compiler knows about a compiled model**: `model!` generates the Kani
+  proof harnesses itself (`kani` option; loop bounds from the model's shape), the
+  bounds of the raw outputs over every input or over a box of feature values
+  (`OUTPUT_BOUNDS`, `output_bounds`, `feature_box`; sound `const fn`s in
+  `tabsmith-embedded`), the probability or value bounds derived from them, the
+  arithmetic of one prediction (`WORST_CASE`), and a compile-time check of the trees'
+  monotone constraints. `Model` implements the `tabsmith_embedded::Model` trait, as
+  the runtime's `Predictor` does.
+- **Monotone constraints** for the trees (`train.gbdt.trees.monotone`, by numeric
+  column): kept by construction, recorded in the bundle, checked by the bundle loader
+  and by the compiler.
+- **Chronological splits** (`--time <column>` / `split = "time"`): the earliest rows
+  train, the latest are the test, rows with the same time stay together; a declared
+  time column with any other split is still refused.
+- **Conformal prediction**: every bundle built with its project's data carries
+  `conformal.json`, calibrated on the validation split (alpha 0.1), and every
+  prediction then has an `interval` (regression) or a `prediction_set`
+  (classification), in the runtime, the CLI output and the compiled model
+  (`CONFORMAL`, `interval`, `prediction_set`).
+- **Permutation importance** of every input field (`importance.json`, the drop of
+  the selection metric on the validation split when the field is shuffled), listed
+  by `tabsmith bundle build`.
+- **Drift monitoring**: `tabsmith serve` answers `GET /stats` with the inputs seen
+  since the bundle was loaded against the training statistics in the bundle, and
+  the fields that drifted.
+- **The same trees on every operating system**: the trees' training and the losses
+  take `exp` and `log` from `libm`, like inference, instead of the platform C library
+  (measured: identical weights and history on Windows and Linux, `reports/reproducibility/`).
+- **Trees on every core**: binning, histograms and the application of a grown tree run
+  in parallel; sums run in fixed chunks of 16,384 rows merged in order, so the trees
+  do not depend on the core count.
+
+### Changed
+
+- Retraining the trees on data that 0.1.0 trained gives the same trees except in two
+  places: a node with more than 16,384 rows now sums its histogram in chunks (last
+  bits of its leaf values), and the starting score uses `libm`'s `log` (last bit). The
+  device plan reports the trees' thread count instead of 1.
+- `E_SPLIT_UNSUPPORTED` now means "a time column is declared but the split is not
+  `time`"; the message says so.
+- The workspace version is 0.2.0 (unreleased); a bundle with monotone constraints
+  records `min_runtime_version` 0.2.0.
+
 ## [0.1.0] - 2026-10-28
 
 First public release: supervised learning on one table (binary classification,

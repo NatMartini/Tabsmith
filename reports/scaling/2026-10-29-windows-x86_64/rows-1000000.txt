@@ -1,0 +1,4 @@
+sample-data: 4 s, 172 MB
+train (gbdt): exit , wall 42 s, peak working set 1602 MB
+could not parse train.json: Cannot index into a null array.
+stderr tail:

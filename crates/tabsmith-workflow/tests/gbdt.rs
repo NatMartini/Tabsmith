@@ -94,13 +94,70 @@ fn gbdt_is_reproducible_resumable_and_bundled() {
         &BundleOptions {
             allow_unevaluated: true,
             out: Some(out.clone()),
+            conformal_alpha: None,
         },
     )
     .unwrap();
     let p = Predictor::load(&out, LoadOptions::cpu().with_self_check(true)).unwrap();
     assert_eq!(p.manifest().runtime.model_format, TREES_FORMAT);
+    assert_eq!(
+        p.manifest().runtime.min_runtime_version,
+        "0.1.0",
+        "no constraints: a 0.1.0 runtime loads it"
+    );
     let examples: Vec<Record> = p.bundle().examples.records.iter().map(|v| Record::from_json(v).unwrap()).collect();
     for pred in p.predict(&examples).unwrap() {
         assert!((0.0..=1.0).contains(&pred.probability().unwrap()));
     }
+}
+
+#[test]
+fn monotone_constraints_reach_the_bundle_and_hold() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ws = project(tmp.path());
+    let mut cfg = config();
+    cfg.overrides.push("train.gbdt.trees.monotone.vibration_rms=\"increasing\"".into());
+    cfg.overrides
+        .push("train.gbdt.trees.monotone.hours_in_service=\"decreasing\"".into());
+    let run = ws.run(&cfg, &gbdt(RunControl::default()), &mut |_| {}).unwrap().runs.remove(0);
+    assert_eq!(run.status, RunStatus::Completed);
+    let out = tmp.path().join("bundles/monotone");
+    ws.build_bundle(
+        &run.run_id,
+        &BundleOptions {
+            allow_unevaluated: true,
+            out: Some(out.clone()),
+            conformal_alpha: None,
+        },
+    )
+    .unwrap();
+    // The bundle records the constraints, and the loader checked every tree against them.
+    // A 0.1.0 runtime would reject the unknown field, and the manifest says so.
+    let p = Predictor::load(&out, LoadOptions::cpu().with_self_check(true)).unwrap();
+    assert_eq!(p.manifest().runtime.min_runtime_version, "0.2.0");
+    let tabsmith_runtime::model::Model::Trees(trees) = &p.bundle().model else {
+        panic!("trees")
+    };
+    let spec = trees.config.trees.as_ref().unwrap();
+    assert_eq!(spec.monotone.iter().filter(|&&m| m == 1).count(), 1);
+    assert_eq!(spec.monotone.iter().filter(|&&m| m == -1).count(), 1);
+    // Sweeping a constrained column with everything else fixed never moves the
+    // probability the wrong way.
+    let base = Record::from_json(&p.bundle().examples.records[0]).unwrap();
+    let sweep = |column: &str, values: &[f64]| -> Vec<f64> {
+        values
+            .iter()
+            .map(|&v| p.predict_one(&base.clone().with(column, v)).unwrap().probability().unwrap())
+            .collect()
+    };
+    let up = sweep("vibration_rms", &[0.1, 0.5, 1.0, 1.5, 2.0, 3.0, 5.0]);
+    assert!(up.windows(2).all(|w| w[1] >= w[0]), "{up:?}");
+    let down = sweep("hours_in_service", &[0.0, 1000.0, 5000.0, 10000.0, 20000.0, 40000.0]);
+    assert!(down.windows(2).all(|w| w[1] <= w[0]), "{down:?}");
+
+    // A categorical column cannot be constrained.
+    let mut bad = config();
+    bad.overrides.push("train.gbdt.trees.monotone.line=\"increasing\"".into());
+    let e = ws.run(&bad, &gbdt(RunControl::default()), &mut |_| {}).unwrap_err();
+    assert_eq!(e.code, tabsmith_contracts::ErrorCode::ConfigInvalid);
 }

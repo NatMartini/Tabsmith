@@ -45,7 +45,7 @@ pub fn multiclass_metrics(p: &[Vec<f64>], y: &[u32], k: usize) -> MulticlassMetr
             }
         }
         confusion[yi as usize][pred] += 1;
-        log_loss -= pi[yi as usize].clamp(LOG_LOSS_EPS, 1.0 - LOG_LOSS_EPS).ln();
+        log_loss -= libm::log(pi[yi as usize].clamp(LOG_LOSS_EPS, 1.0 - LOG_LOSS_EPS));
     }
     let n = y.len() as u64;
     let class_counts: Vec<u64> = confusion.iter().map(|row| row.iter().sum()).collect();
@@ -121,7 +121,7 @@ pub fn binary_metrics(p: &[f64], y: &[bool], threshold: f64) -> BinaryMetrics {
             (false, true) => fn_ += 1,
         }
         let pc = pi.clamp(LOG_LOSS_EPS, 1.0 - LOG_LOSS_EPS);
-        log_loss -= if yi { pc.ln() } else { (1.0 - pc).ln() };
+        log_loss -= libm::log(if yi { pc } else { 1.0 - pc });
         let t = if yi { 1.0 } else { 0.0 };
         brier += (pi - t) * (pi - t);
     }

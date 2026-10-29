@@ -1,0 +1,3 @@
+adult: exit , wall 1 s, peak working set 8 MB
+california: exit , wall 4 s, peak working set 29 MB
+covertype: exit , wall 603 s, peak working set 1277 MB

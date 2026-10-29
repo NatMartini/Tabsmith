@@ -838,7 +838,7 @@ pub fn plan_device(request: DeviceRequest, key: &str, exec: &ExecutionConfig, wo
         fallback: "error".to_string(),
         data_placement: data_placement.to_string(),
         copy_path,
-        threads: 1,
+        threads: engine_threads(&engine),
         estimated_peak_mb: work.peak_mb,
         memory_budget_mb: exec.max_memory_mb,
         notes,
@@ -907,13 +907,22 @@ pub fn peak_rss_mb() -> Option<f64> {
     Some(kb / 1024.0)
 }
 
+/// The threads an engine trains with: the networks run on one thread (D5); the trees
+/// build their histograms on every core, with sums merged in a fixed order.
+fn engine_threads(engine: &EngineDevice) -> usize {
+    match engine {
+        EngineDevice::Trees => crate::gbdt::threads(),
+        _ => 1,
+    }
+}
+
 pub fn receipt(planned: &PlannedDevice) -> DeviceReceipt {
     let engine = &planned.engine;
     let receipt = DeviceReceipt {
         backend: engine.backend().to_string(),
         device: engine.label(),
         precision: engine.precision().to_string(),
-        threads: 1,
+        threads: engine_threads(engine),
         peak_rss_mb: peak_rss_mb(),
         host_device_transfers: if engine.is_gpu() {
             "per batch: features, labels and weights to the GPU; per epoch: losses and weights to the host".to_string()

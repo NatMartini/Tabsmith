@@ -12,6 +12,9 @@ next to it are the evidence itself, with local paths replaced by `<work>` /
 | [gpu/](gpu/) | Certification of each GPU path on real hardware: determinism across processes, exact resume, agreement with the CPU, bundle self-check, and training time against the CPU | [`tools/gpu_certify.py`](../tools/gpu_certify.py) |
 | [fuzz/](fuzz/) | Fuzzing of the bundle loader with libFuzzer: duration, executions, coverage, seeds, result | [`fuzz/`](../fuzz/) |
 | [kani/](kani/) | Kani proofs that the models compiled into code never panic, for every input: each proof's checks, time, memory and result, why the trees are proved one walk at a time, and a false positive in CBMC's NaN check | `cargo kani` in [`examples/embedded-predict`](../examples/embedded-predict/) |
+| [reproducibility/](reproducibility/) | The same training on Windows and on Linux: the trees' weights and history are identical to the bit, the Burn-trained networks differ in the seventh digit | the two scripts in the report |
+| [scaling/](scaling/) | The trees on 1,000,000 rows: stage times, rounds per second, peak memory, quality | the script in the report |
+| [datasets/](datasets/) | Three public datasets (Adult, Covertype, California Housing): every candidate against its scikit-learn equivalent on the same rows and split, test metrics side by side, including where Tabsmith loses | [`tools/datasets/compare.py`](../tools/datasets/compare.py) + [`tools/datasets/report.py`](../tools/datasets/report.py) |
 
 Numbers depend on the machine. Re-run the tools on yours rather than comparing
 absolute values across machines; a new report goes into a new dated directory,

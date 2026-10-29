@@ -397,7 +397,14 @@ fn walkthrough_details() {
     );
     assert!(human.status.success());
     let stdout = String::from_utf8_lossy(&human.stdout);
-    assert!(stdout.starts_with("unit_id,line,label,probability,unseen_categories"), "{stdout}");
+    // The bundle was calibrated (conformal.json), so every row has a prediction set.
+    assert!(
+        stdout.starts_with("unit_id,line,label,probability,prediction_set,unseen_categories"),
+        "{stdout}"
+    );
+    let sets: Vec<&str> = stdout.lines().skip(1).map(|l| l.split(',').nth(4).unwrap()).collect();
+    assert!(sets.iter().all(|s| ["", "0", "1", "0|1"].contains(s)), "{sets:?}");
+    assert!(sets.contains(&"0|1"), "some rows are ambiguous: {sets:?}");
     assert!(String::from_utf8_lossy(&human.stderr).contains("warning: categories not seen in training"));
     // Without key columns, rows are numbered from 1.
     let numbered = json(&dir, &["predict", "--bundle", &bundle, "--input", "later.csv"]);
@@ -505,15 +512,27 @@ fn serve_predicts_over_http() {
     let run = json(&dir, &args(&["run", "--candidates", "linear"], &QUICK));
     let id = run["result"]["runs"][0]["run_id"].as_str().unwrap().to_string();
     ok(&dir, &["bundle", "build", "--run", &id, "--allow-unevaluated"]);
-    let mut child = Command::new(BIN)
-        .current_dir(&dir)
-        .args(["serve", "--port", "0", "--allow-reload"])
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .unwrap();
+    // The server dies with the test, even when an assertion fails first.
+    struct KillOnDrop(std::process::Child);
+    impl Drop for KillOnDrop {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+    let mut child = KillOnDrop(
+        Command::new(BIN)
+            .current_dir(&dir)
+            .args(["serve", "--port", "0", "--allow-reload"])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
     let mut first = String::new();
-    std::io::BufReader::new(child.stdout.take().unwrap()).read_line(&mut first).unwrap();
+    std::io::BufReader::new(child.0.stdout.take().unwrap())
+        .read_line(&mut first)
+        .unwrap();
     let addr = first
         .trim()
         .strip_prefix("listening on http://")
@@ -538,6 +557,27 @@ fn serve_predicts_over_http() {
     let (code, err) = http(&addr, "POST", "/predict", "{\"line\": \"A\"}");
     assert_eq!(code, 400);
     assert_eq!(err["error"]["code"], "E_SCHEMA_MISSING_COLUMN");
+    // /stats: the accepted request was counted against the training statistics; the
+    // examples are synthetic values around the training means, so nothing drifted.
+    let (code, stats) = http(&addr, "GET", "/stats", "");
+    assert_eq!(code, 200, "{stats}");
+    assert_eq!(stats["requests"], 1);
+    assert_eq!(stats["records"], got.len());
+    assert_eq!(stats["fields"]["temp_mean"]["kind"], "numeric");
+    assert!(stats["fields"]["temp_mean"]["mean_z"].as_f64().unwrap().abs() < 2.0, "{stats}");
+    assert_eq!(stats["fields"]["line"]["kind"], "categorical");
+    // The examples hold at most one synthetic unseen category (unknown = ignore).
+    let unseen_in_examples = stats["fields"]["line"]["unseen"].as_u64().unwrap();
+    assert!(unseen_in_examples <= 1, "{stats}");
+    assert!(stats["outputs"]["mean_probability"].as_f64().is_some(), "{stats}");
+    // A value never seen in training counts as unseen for the categorical field.
+    let mut odd = records["records"][0].clone();
+    odd["line"] = serde_json::Value::String("Z9".into());
+    let (code, _) = http(&addr, "POST", "/predict", &odd.to_string());
+    assert_eq!(code, 200);
+    let (_, stats) = http(&addr, "GET", "/stats", "");
+    assert_eq!(stats["requests"], 2);
+    assert_eq!(stats["fields"]["line"]["unseen"], unseen_in_examples + 1);
     let (code, err) = http(&addr, "POST", "/reload", "{\"bundle\": \"does/not/exist\"}");
     assert!(code >= 400, "{err}");
     // Outside the bundle folder: refused before anything is read, with the same answer
@@ -555,8 +595,7 @@ fn serve_predicts_over_http() {
     assert_eq!(code, 200, "a bundle in the bundle folder can be reloaded: {same}");
     let (_, still) = http(&addr, "GET", "/health", "");
     assert_eq!(still["bundle_id"], health["bundle_id"], "a failed reload keeps the old bundle");
-    child.kill().unwrap();
-    let _ = child.wait();
+    drop(child);
 }
 
 /// review-cli: --keep collisions are refused, kept model inputs keep the file's

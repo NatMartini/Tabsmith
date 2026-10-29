@@ -8,9 +8,9 @@ use tabsmith_contracts::data::SplitName;
 use tabsmith_contracts::evaluation::EvaluationSubject;
 use tabsmith_contracts::hash::sha256_file;
 use tabsmith_contracts::manifest::{
-    BundleEvaluation, BundleManifest, BundleProvenance, EVALUATION_FILE, EXAMPLES_EXPECTED_FILE, EXAMPLES_INPUT_FILE, ExampleExpected,
-    ExampleInputs, ExpectedPrediction, FileEntry, INPUT_SCHEMA_FILE, MANIFEST_FILE, MODEL_CONFIG_FILE, MODEL_WEIGHTS_FILE,
-    OUTPUT_SCHEMA_FILE, RuntimeRequirements, TRANSFORM_FILE,
+    BundleEvaluation, BundleManifest, BundleProvenance, CONFORMAL_FILE, EVALUATION_FILE, EXAMPLES_EXPECTED_FILE, EXAMPLES_INPUT_FILE,
+    ExampleExpected, ExampleInputs, ExpectedPrediction, FileEntry, IMPORTANCE_FILE, INPUT_SCHEMA_FILE, MANIFEST_FILE, MODEL_CONFIG_FILE,
+    MODEL_WEIGHTS_FILE, OUTPUT_SCHEMA_FILE, RuntimeRequirements, TRANSFORM_FILE,
 };
 use tabsmith_contracts::run::{RunRecord, RunStatus};
 use tabsmith_contracts::schema::FieldKind;
@@ -19,6 +19,7 @@ use tabsmith_contracts::transform::{FeatureTransform, TRANSFORM_VERSION};
 use tabsmith_contracts::{BUNDLE_FORMAT_VERSION, ErrorCode, Phase, RECIPE_ID, Result, TABSMITH_VERSION, TabsmithError};
 use tabsmith_runtime::{CheckReport, LoadOptions, Predictor, Record, Value};
 
+use crate::assurance::{Assurance, DEFAULT_ALPHA};
 use crate::fit::FittedArtifacts;
 use crate::pipeline::Workspace;
 use crate::project::{read_json, write_atomic, write_json};
@@ -29,6 +30,8 @@ pub struct BundleOptions {
     pub out: Option<PathBuf>,
     /// Build a candidate bundle without a test evaluation (marked `unevaluated-candidate`).
     pub allow_unevaluated: bool,
+    /// Miscoverage of the conformal intervals and sets (default 0.1: 90 % coverage).
+    pub conformal_alpha: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -38,6 +41,9 @@ pub struct BundleBuildReport {
     pub check: CheckReport,
     /// True when an identical bundle already existed at the path.
     pub already_existed: bool,
+    /// The conformal calibration and the permutation importance written into the
+    /// bundle (`conformal.json`, `importance.json`), when they could be computed.
+    pub assurance: Assurance,
 }
 
 /// Synthetic example records derived from the transform statistics: typical
@@ -206,6 +212,16 @@ impl Workspace {
             .metrics
             .clone()
             .ok_or_else(|| TabsmithError::internal(Phase::Bundle, "completed run without metrics"))?;
+        // Conformal calibration and importance need the project's data; a bundle is
+        // still built without them when the data is gone, and says so.
+        let mut assurance_notes = Vec::new();
+        let assurance = match self.assurance(&run, &model, opts.conformal_alpha.unwrap_or(DEFAULT_ALPHA)) {
+            Ok(a) => a,
+            Err(e) => {
+                assurance_notes.push(format!("no conformal calibration and no importance: {}", e.message));
+                Assurance::default()
+            }
+        };
         let out = opts.out.clone().unwrap_or_else(|| self.project.bundles_dir().join(run_id));
         let parent = out.parent().unwrap_or(Path::new(".")).to_path_buf();
         fs::create_dir_all(&parent).map_err(|e| TabsmithError::io(Phase::Bundle, &parent, e))?;
@@ -234,6 +250,17 @@ impl Workspace {
             let weights = self.project.run_dir(run_id).join("model").join(MODEL_WEIGHTS_FILE);
             let bytes = fs::read(&weights).map_err(|e| TabsmithError::io(Phase::Bundle, &weights, e))?;
             write_atomic(&tmp.join(MODEL_WEIGHTS_FILE), &bytes)?;
+            let mut notes = match &test_eval {
+                Some(e) => match &e.subject {
+                    EvaluationSubject::Run { run_id: other } if other != run_id => vec![format!(
+                        "test evaluation {} of run {other}, which produced identical weights on the same data version",
+                        e.evaluation_id
+                    )],
+                    _ => vec![],
+                },
+                None => vec!["no held-out test evaluation: treat as a candidate only".into()],
+            };
+            notes.extend(assurance_notes.iter().cloned());
             let evaluation = BundleEvaluation {
                 status: if test_eval.is_some() {
                     crate::auto::EVALUATED.into()
@@ -242,18 +269,15 @@ impl Workspace {
                 },
                 test: test_eval.clone(),
                 valid: metrics.valid.clone(),
-                notes: match &test_eval {
-                    Some(e) => match &e.subject {
-                        EvaluationSubject::Run { run_id: other } if other != run_id => vec![format!(
-                            "test evaluation {} of run {other}, which produced identical weights on the same data version",
-                            e.evaluation_id
-                        )],
-                        _ => vec![],
-                    },
-                    None => vec!["no held-out test evaluation: treat as a candidate only".into()],
-                },
+                notes,
             };
             write_json(&tmp.join(EVALUATION_FILE), &evaluation)?;
+            if let Some(c) = &assurance.conformal {
+                write_json(&tmp.join(CONFORMAL_FILE), c)?;
+            }
+            if let Some(i) = &assurance.importance {
+                write_json(&tmp.join(IMPORTANCE_FILE), i)?;
+            }
             let examples = synthetic_examples(&fitted);
             write_json(
                 &tmp.join(EXAMPLES_INPUT_FILE),
@@ -297,7 +321,13 @@ impl Workspace {
                     evaluation_id: test_eval.as_ref().map(|e| e.evaluation_id.clone()),
                 },
                 runtime: RuntimeRequirements {
-                    min_runtime_version: "0.1.0".into(),
+                    // A 0.1.0 runtime rejects a tree config with `monotone` (unknown
+                    // field); every other bundle of this version still loads there.
+                    min_runtime_version: if model.config().trees.as_ref().is_some_and(|t| !t.monotone.is_empty()) {
+                        "0.2.0".into()
+                    } else {
+                        "0.1.0".into()
+                    },
                     transform_version: TRANSFORM_VERSION.into(),
                     model_format: model.config().format.clone(),
                     devices: vec!["cpu".into()],
@@ -309,18 +339,25 @@ impl Workspace {
                 contains_optimizer_state: false,
                 evaluation_status: evaluation.status.clone(),
             };
+            let mut listed = vec![
+                INPUT_SCHEMA_FILE,
+                OUTPUT_SCHEMA_FILE,
+                TRANSFORM_FILE,
+                MODEL_CONFIG_FILE,
+                MODEL_WEIGHTS_FILE,
+                EVALUATION_FILE,
+                EXAMPLES_INPUT_FILE,
+                EXAMPLES_EXPECTED_FILE,
+            ];
+            if assurance.conformal.is_some() {
+                listed.push(CONFORMAL_FILE);
+            }
+            if assurance.importance.is_some() {
+                listed.push(IMPORTANCE_FILE);
+            }
             let write_manifest = |m: &mut BundleManifest, files: &mut Vec<FileEntry>| -> Result<()> {
                 files.clear();
-                for rel in [
-                    INPUT_SCHEMA_FILE,
-                    OUTPUT_SCHEMA_FILE,
-                    TRANSFORM_FILE,
-                    MODEL_CONFIG_FILE,
-                    MODEL_WEIGHTS_FILE,
-                    EVALUATION_FILE,
-                    EXAMPLES_INPUT_FILE,
-                    EXAMPLES_EXPECTED_FILE,
-                ] {
+                for rel in &listed {
                     files.push(file_entry(&tmp, rel)?);
                 }
                 m.files = files.clone();
@@ -363,6 +400,7 @@ impl Workspace {
                         manifest: m,
                         check,
                         already_existed: true,
+                        assurance: assurance.clone(),
                     })
                 }
                 _ => Err(TabsmithError::new(
@@ -390,6 +428,7 @@ impl Workspace {
                     manifest: m,
                     check,
                     already_existed: true,
+                    assurance: assurance.clone(),
                 });
             }
             return Err(TabsmithError::io(Phase::Bundle, &out, e));
@@ -401,6 +440,7 @@ impl Workspace {
             manifest,
             check,
             already_existed: false,
+            assurance,
         })
     }
 

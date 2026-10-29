@@ -33,6 +33,15 @@
 //!   rules the runtime applies to JSON records.
 //! - **`EXAMPLES` and `self_check()`**: the bundle's example records, and a check that
 //!   they predict, bit for bit, what the runtime predicted for them at compile time.
+//! - **What the compiler knows about the model.** `WORST_CASE` bounds the arithmetic
+//!   of one prediction (no loop depends on the data). `OUTPUT_BOUNDS` bounds the raw
+//!   outputs over every possible input, and `output_bounds(&lo, &hi)` over a box of
+//!   feature values (`feature_box(sd)` builds one): the smallest and largest reachable
+//!   leaf of every tree, or interval arithmetic through the layers widened for
+//!   rounding. Both are `const` and evaluated by rustc. A binary model also gets
+//!   `PROBABILITY_BOUNDS`, a regression `VALUE_BOUNDS`.
+//! - **`Model`**, a unit struct implementing the `tabsmith_embedded::Model` trait, which
+//!   the runtime's `Predictor` implements too.
 //!
 //! The generated code is `no_std`: the model's weights and trees are constants and
 //! inference allocates nothing. It calls the kernels of `tabsmith-embedded`, the
@@ -40,8 +49,12 @@
 //! and the same on every platform. The crate that invokes `model!` must depend on
 //! `tabsmith-embedded`.
 //!
-//! `model!(name, "path", kani)` also derives `kani::Arbitrary` for the input types
-//! under `cfg(kani)`, for proofs with the Kani model checker.
+//! `model!(name, "path", kani)` also makes the module carry its own proofs for the
+//! [Kani](https://github.com/model-checking/kani) model checker: under `cfg(kani)`, the
+//! input types derive `kani::Arbitrary` and a module `name::proofs` holds one harness
+//! per stage of `predict` (features, outputs, decode), each proving that the stage never
+//! panics for any value of its argument, with loop bounds taken from the model's shape.
+//! `cargo kani` runs them; nothing is written by hand.
 //!
 //! These do not compile:
 //!

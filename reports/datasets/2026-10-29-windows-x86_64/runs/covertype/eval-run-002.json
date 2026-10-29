@@ -1,0 +1,118 @@
+{
+  "ok": true,
+  "result": {
+    "created_at": "2026-10-29T06:50:22Z",
+    "evaluation_id": "eval-003",
+    "latency": {
+      "batch_ms": 0.2088,
+      "rows": 200,
+      "single_row_p50_us": 2.7,
+      "single_row_p95_us": 2.9000000000000004
+    },
+    "metrics": {
+      "accuracy": 0.7474297778593721,
+      "balanced_accuracy": 0.8353328960784785,
+      "class_counts": [
+        31776,
+        42495,
+        5363,
+        412,
+        1424,
+        2605,
+        3077
+      ],
+      "confusion": [
+        [
+          24160,
+          5309,
+          3,
+          11,
+          483,
+          98,
+          1712
+        ],
+        [
+          7069,
+          30143,
+          903,
+          11,
+          3058,
+          1105,
+          206
+        ],
+        [
+          1,
+          44,
+          4155,
+          296,
+          58,
+          809,
+          0
+        ],
+        [
+          0,
+          0,
+          16,
+          392,
+          0,
+          4,
+          0
+        ],
+        [
+          15,
+          88,
+          19,
+          0,
+          1293,
+          9,
+          0
+        ],
+        [
+          3,
+          16,
+          447,
+          90,
+          20,
+          2029,
+          0
+        ],
+        [
+          89,
+          17,
+          3,
+          0,
+          0,
+          0,
+          2968
+        ]
+      ],
+      "f1": 0.6727162277843585,
+      "log_loss": 0.5928682950879804,
+      "metrics_version": "tabsmith.binary-metrics.v1",
+      "n": 87152,
+      "roc_auc": 0.9633591811799214,
+      "task": "multiclass"
+    },
+    "model_sha256": "67f26c609af855b08276be71a9a5c812bd8f7d8b4fd45cf63134db2174cbe22e",
+    "model_snapshot_id": "s-46c79bb0379b",
+    "notes": [
+      "test rows reused (use #3): already used for run-003 (eval-001), run-001 (eval-002); this is no longer an unbiased estimate"
+    ],
+    "protocol": {
+      "metrics_version": "tabsmith.binary-metrics.v1",
+      "positive_label": "1,2,3,4,5,6,7",
+      "snapshot_id": "s-46c79bb0379b",
+      "split": "test",
+      "split_id": "sp-364c8fca501b",
+      "target": "cover_type",
+      "task": "multiclass",
+      "threshold": "0"
+    },
+    "subject": {
+      "kind": "run",
+      "run_id": "run-002"
+    },
+    "test_use_index": 3,
+    "unseen_rows_verified": true
+  }
+}

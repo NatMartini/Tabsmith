@@ -1,0 +1,52 @@
+{
+  "task": "regression",
+  "target": "median_house_value",
+  "rows": 20640,
+  "train_rows": 14446,
+  "test_rows": 3097,
+  "features": {
+    "numeric": 8,
+    "categorical": 0
+  },
+  "versions": {
+    "python": "3.14.4",
+    "scikit-learn": "1.9.1",
+    "numpy": "2.5.4",
+    "pandas": "3.1.0"
+  },
+  "candidates": {
+    "linear": {
+      "fit_seconds": 0.011082970000018122,
+      "weighted": false,
+      "test": {
+        "rmse": 69285.59370211727,
+        "mae": 50857.961635312844,
+        "r2": 0.6427008808245535
+      },
+      "iterations": 32,
+      "tabsmith_epochs_or_rounds": 32
+    },
+    "small-mlp": {
+      "fit_seconds": 0.5671238410000115,
+      "weighted": false,
+      "test": {
+        "rmse": 54712.227537067054,
+        "mae": 37832.68052999199,
+        "r2": 0.7772001706747492
+      },
+      "iterations": 40,
+      "tabsmith_epochs_or_rounds": 40
+    },
+    "gbdt": {
+      "fit_seconds": 0.5135798720000082,
+      "weighted": false,
+      "test": {
+        "rmse": 45816.6593166394,
+        "mae": 30629.67438907201,
+        "r2": 0.8437597591906497
+      },
+      "iterations": 334,
+      "tabsmith_epochs_or_rounds": 334
+    }
+  }
+}

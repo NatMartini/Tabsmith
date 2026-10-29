@@ -18,8 +18,15 @@ predicts.
   glibc differ for 0.07 % of `f32` exponentials and 0.12 % of logarithms.
 - **No allocation, no `std`, no `unsafe`.** It builds for microcontrollers (tested
   with `thumbv7em-none-eabihf`) and WebAssembly.
+- **Bounds, at compile time.** `Trees::bounds` and `dense_bounds` are `const fn`s that
+  bound a model's outputs over a box of inputs: the extreme reachable leaves of every
+  tree (sound with no margin, since rounding is monotone), or interval arithmetic
+  through a layer widened by the worst rounding error of the kernel. A compiled model
+  bounds itself while it compiles.
 - **Shared types.** `FieldValue` (a raw input value), `FieldInfo` (what a compiled model
-  knows about a field), `InputError` and `SelfCheckError`.
+  knows about a field), `InputError`, `SelfCheckError`, `Work` (the arithmetic of one
+  prediction) and the `Model` trait, implemented by `tabsmith-runtime`'s `Predictor`
+  and by every compiled model.
 
 Applications normally use it through `tabsmith-macros`, which needs this crate as a
 dependency of the crate that invokes `model!`.

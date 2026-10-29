@@ -174,6 +174,7 @@ pub fn dispatch(cli: Cli) -> Result<u8> {
             task,
             split,
             group,
+            time,
             id,
             exclude,
         }) => {
@@ -184,6 +185,7 @@ pub fn dispatch(cli: Cli) -> Result<u8> {
                 positive,
                 split,
                 group,
+                time,
                 id,
                 exclude: clean(exclude),
                 task: parse_task(task)?,
@@ -304,6 +306,7 @@ pub fn dispatch(cli: Cli) -> Result<u8> {
             task,
             split,
             group,
+            time,
             id,
             exclude,
             candidates,
@@ -339,6 +342,7 @@ pub fn dispatch(cli: Cli) -> Result<u8> {
                     positive,
                     split,
                     group,
+                    time,
                     id,
                     exclude: clean(exclude),
                     task,
@@ -376,13 +380,14 @@ pub fn dispatch(cli: Cli) -> Result<u8> {
                 || task.is_some()
                 || split.is_some()
                 || group.is_some()
+                || time.is_some()
                 || id.is_some()
                 || !exclude.is_empty()
             {
                 return Err(TabsmithError::new(
                     ErrorCode::ConfigInvalid,
                     Phase::Config,
-                    "--target/--positive/--task/--split/--group/--id/--exclude describe a data file; pass the file too",
+                    "--target/--positive/--task/--split/--group/--time/--id/--exclude describe a data file; pass the file too",
                 )
                 .next("tabsmith train <file> --target <column> ..."));
             }
@@ -605,7 +610,14 @@ pub fn dispatch(cli: Cli) -> Result<u8> {
                 .expected("cpu"));
             }
             let ws = workspace(&cli.project)?;
-            let r = ws.build_bundle(&run, &BundleOptions { out, allow_unevaluated })?;
+            let r = ws.build_bundle(
+                &run,
+                &BundleOptions {
+                    out,
+                    allow_unevaluated,
+                    conformal_alpha: None,
+                },
+            )?;
             if json {
                 print_json(&r);
                 return Ok(0);
@@ -623,6 +635,35 @@ pub fn dispatch(cli: Cli) -> Result<u8> {
                 r.check.examples_checked,
                 r.check.max_abs_probability_diff
             );
+            if let Some(c) = &r.assurance.conformal {
+                println!(
+                    "  conformal ({}): alpha {}, quantile {:.4} from {} validation rows; predictions carry {}",
+                    c.method,
+                    c.alpha,
+                    c.quantile,
+                    c.n_calibration,
+                    if c.method.contains("residual") {
+                        "an interval"
+                    } else {
+                        "a prediction set"
+                    }
+                );
+            }
+            if let Some(imp) = &r.assurance.importance {
+                let top: Vec<String> = imp
+                    .fields
+                    .iter()
+                    .take(5)
+                    .map(|f| format!("{} {:+.4}", f.name, f.importance))
+                    .collect();
+                println!(
+                    "  importance (drop of {} on {} validation rows when shuffled): {}{}",
+                    imp.metric,
+                    imp.n_rows,
+                    top.join(", "),
+                    if imp.fields.len() > 5 { ", …" } else { "" }
+                );
+            }
             println!(
                 "\nuse it from Rust:\n  let predictor = Predictor::load(\"{}\", LoadOptions::cpu())?;",
                 r.path
@@ -1260,6 +1301,7 @@ fn predict_file(bundle: &Path, input: &Path, output: Option<&Path>, keep: &[Stri
     let id_field = predictor.input_schema().passthrough_id.clone();
     let out_schema = predictor.output_schema().clone();
     let class_columns: Vec<String> = out_schema.classes.iter().map(|c| format!("p_{c}")).collect();
+    let has_conformal = predictor.bundle().conformal.is_some();
     let mut output_columns: Vec<String> = [
         "row",
         "label",
@@ -1269,6 +1311,9 @@ fn predict_file(bundle: &Path, input: &Path, output: Option<&Path>, keep: &[Stri
         "value",
         "prediction",
         "unseen_categories",
+        "interval_low",
+        "interval_high",
+        "prediction_set",
     ]
     .iter()
     .map(|s| s.to_string())
@@ -1424,6 +1469,12 @@ fn predict_file(bundle: &Path, input: &Path, output: Option<&Path>, keep: &[Stri
         if !p.unseen_categories.is_empty() {
             o.insert("unseen_categories".into(), serde_json::json!(p.unseen_categories));
         }
+        if let Some(i) = p.interval {
+            o.insert("interval".into(), serde_json::json!(i));
+        }
+        if let Some(s) = &p.prediction_set {
+            o.insert("prediction_set".into(), serde_json::json!(s));
+        }
         serde_json::Value::Object(o)
     };
     let warnings = unseen_warnings(&unseen, preds.len(), predictor.bundle().transform.unknown_category);
@@ -1453,6 +1504,12 @@ fn predict_file(bundle: &Path, input: &Path, output: Option<&Path>, keep: &[Stri
             }
             Task::Regression => header.push("prediction".to_string()),
         }
+        if has_conformal {
+            match out_schema.task {
+                Task::Regression => header.extend(["interval_low".to_string(), "interval_high".to_string()]),
+                _ => header.push("prediction_set".to_string()),
+            }
+        }
         if any_unseen {
             header.push("unseen_categories".into());
         }
@@ -1474,6 +1531,13 @@ fn predict_file(bundle: &Path, input: &Path, output: Option<&Path>, keep: &[Stri
                     cells.extend(probabilities.iter().map(|q| format!("{q:.6}")));
                 }
                 Outcome::Regression { value } => cells.push(value.to_string()),
+            }
+            if has_conformal {
+                match (&p.interval, &p.prediction_set) {
+                    (Some([lo, hi]), _) => cells.extend([lo.to_string(), hi.to_string()]),
+                    (None, Some(set)) => cells.push(csv_escape(&set.join("|"))),
+                    (None, None) => cells.push(String::new()),
+                }
             }
             if any_unseen {
                 cells.push(csv_escape(&p.unseen_categories.join(";")));

@@ -1,0 +1,57 @@
+{
+  "ok": true,
+  "result": {
+    "created_at": "2026-10-29T06:50:16Z",
+    "evaluation_id": "eval-002",
+    "latency": {
+      "batch_ms": 0.07200000000000001,
+      "rows": 200,
+      "single_row_p50_us": 1.7999999999999998,
+      "single_row_p95_us": 2.0
+    },
+    "metrics": {
+      "accuracy": 0.8149058149058149,
+      "balanced_accuracy": 0.8249685832464384,
+      "brier": 0.1251572984250459,
+      "confusion": {
+        "fn": 273,
+        "fp": 1083,
+        "tn": 4490,
+        "tp": 1480
+      },
+      "f1": 0.685820203892493,
+      "log_loss": 0.38418414352879615,
+      "metrics_version": "tabsmith.binary-metrics.v1",
+      "n": 7326,
+      "n_negative": 5573,
+      "n_positive": 1753,
+      "precision": 0.5774483027701912,
+      "recall": 0.8442669709070165,
+      "roc_auc": 0.9067218494679701,
+      "specificity": 0.8056701955858604,
+      "task": "binary",
+      "threshold": 0.5
+    },
+    "model_sha256": "6369f2c2bcde9f21bbfae5d6ef8b4d494389717e195da0784cf99d3ba70a20f4",
+    "model_snapshot_id": "s-99cb23335504",
+    "notes": [
+      "test rows reused (use #2): already used for run-003 (eval-001); this is no longer an unbiased estimate"
+    ],
+    "protocol": {
+      "metrics_version": "tabsmith.binary-metrics.v1",
+      "positive_label": ">50K",
+      "snapshot_id": "s-99cb23335504",
+      "split": "test",
+      "split_id": "sp-4a32b653aa70",
+      "target": "income",
+      "task": "binary",
+      "threshold": "0.5"
+    },
+    "subject": {
+      "kind": "run",
+      "run_id": "run-001"
+    },
+    "test_use_index": 2,
+    "unseen_rows_verified": true
+  }
+}

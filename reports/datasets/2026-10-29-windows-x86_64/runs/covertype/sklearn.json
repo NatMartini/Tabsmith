@@ -1,0 +1,55 @@
+{
+  "task": "multiclass",
+  "target": "cover_type",
+  "rows": 581012,
+  "train_rows": 406708,
+  "test_rows": 87152,
+  "features": {
+    "numeric": 54,
+    "categorical": 0
+  },
+  "versions": {
+    "python": "3.14.4",
+    "scikit-learn": "1.9.1",
+    "numpy": "2.5.4",
+    "pandas": "3.1.0"
+  },
+  "candidates": {
+    "linear": {
+      "fit_seconds": 26.481809428,
+      "weighted": true,
+      "test": {
+        "balanced_accuracy": 0.7037004335801311,
+        "accuracy": 0.5968652469249128,
+        "roc_auc": 0.9263592997261291,
+        "log_loss": 0.9220616561225087
+      },
+      "iterations": 345,
+      "tabsmith_epochs_or_rounds": 17
+    },
+    "small-mlp": {
+      "fit_seconds": 31.246584715999994,
+      "weighted": true,
+      "test": {
+        "balanced_accuracy": 0.8375572125606826,
+        "accuracy": 0.740671470534239,
+        "roc_auc": 0.9626547652039855,
+        "log_loss": 0.609793006984057
+      },
+      "iterations": 41,
+      "tabsmith_epochs_or_rounds": 41
+    },
+    "gbdt": {
+      "fit_seconds": 30.749768351,
+      "weighted": true,
+      "test": {
+        "balanced_accuracy": 0.9361035410278312,
+        "accuracy": 0.8984073802092896,
+        "roc_auc": 0.9921080099481187,
+        "log_loss": 0.263793326094134
+      },
+      "iterations": 400,
+      "tabsmith_epochs_or_rounds": 400
+    }
+  }
+}

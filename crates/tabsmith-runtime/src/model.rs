@@ -209,6 +209,33 @@ impl TreeEnsemble {
                 }
             }
         }
+        // The bundle claims monotone constraints: every tree must keep them. At each
+        // split on a constrained feature, every leaf of the lesser side is at most
+        // every leaf of the greater side; then the sum of the trees is monotone too.
+        // Children come after their parent, so one pass backwards gives every
+        // subtree's smallest and largest leaf.
+        if !spec.monotone.is_empty() {
+            let (mut lo, mut hi) = (vec![0f32; n], vec![0f32; n]);
+            for i in (0..n).rev() {
+                if feature[i] < 0 {
+                    (lo[i], hi[i]) = (value[i], value[i]);
+                    continue;
+                }
+                let (l, r) = (left[i] as usize, right[i] as usize);
+                (lo[i], hi[i]) = (lo[l].min(lo[r]), hi[l].max(hi[r]));
+                let broken = match spec.monotone[feature[i] as usize] {
+                    1 => hi[l] > lo[r],
+                    -1 => lo[l] < hi[r],
+                    _ => false,
+                };
+                if broken {
+                    return Err(corrupt(format!(
+                        "the split at node {i} breaks the monotone constraint on feature {}",
+                        feature[i]
+                    )));
+                }
+            }
+        }
         Ok(Self {
             config,
             roots,

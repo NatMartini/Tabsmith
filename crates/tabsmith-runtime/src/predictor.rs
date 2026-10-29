@@ -58,6 +58,47 @@ pub struct Prediction {
     /// encoding), so the prediction relies on the other fields only.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unseen_categories: Vec<String>,
+    /// Regression, when the bundle carries a conformal calibration: the interval
+    /// `[value − q, value + q]` that holds the true value with probability about
+    /// `1 − alpha` on rows like the calibration rows (`Bundle::conformal`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub interval: Option<[f64; 2]>,
+    /// Classification, when the bundle carries a conformal calibration: the labels
+    /// whose probability is at least `1 − q`. The true label is among them with
+    /// probability about `1 − alpha`; the set can be empty (nothing is likely enough)
+    /// or hold several labels (the model cannot tell them apart).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prediction_set: Option<Vec<String>>,
+}
+
+/// The interval or set a conformal bundle attaches to an outcome.
+fn conformal_extras(bundle: &Bundle, outcome: &Outcome) -> (Option<[f64; 2]>, Option<Vec<String>>) {
+    let Some(c) = &bundle.conformal else { return (None, None) };
+    let s = &bundle.output_schema;
+    let threshold = 1.0 - c.quantile;
+    match outcome {
+        Outcome::Regression { value } => (Some([value - c.quantile, value + c.quantile]), None),
+        Outcome::Binary { probability, .. } => {
+            let mut set = Vec::new();
+            if 1.0 - probability >= threshold {
+                set.push(s.negative_label.clone());
+            }
+            if *probability >= threshold {
+                set.push(s.positive_label.clone());
+            }
+            (None, Some(set))
+        }
+        Outcome::Multiclass { probabilities, .. } => {
+            let set = s
+                .classes
+                .iter()
+                .zip(probabilities)
+                .filter(|(_, p)| **p >= threshold)
+                .map(|(c, _)| c.clone())
+                .collect();
+            (None, Some(set))
+        }
+    }
 }
 
 impl Prediction {
@@ -252,7 +293,21 @@ impl Predictor {
             .pop()
             .expect("one record in, one prediction out"))
     }
+}
 
+/// [`Predictor::predict_one`], so that code written against the trait takes a loaded
+/// bundle or a model compiled with `tabsmith_macros::model!` alike.
+impl tabsmith_embedded::Model for Predictor {
+    type Input = Record;
+    type Prediction = Prediction;
+    type Error = TabsmithError;
+
+    fn predict(&self, input: &Record) -> Result<Prediction> {
+        self.predict_one(input)
+    }
+}
+
+impl Predictor {
     /// Predicts from a JSON object (one record) or array of objects.
     pub fn predict_json(&self, value: &serde_json::Value) -> Result<Vec<Prediction>> {
         let records = match value {
@@ -286,10 +341,13 @@ impl Predictor {
             .enumerate()
             .map(|(r, unseen_categories)| {
                 let (label, outcome) = decode(schema, outputs.row(r));
+                let (interval, prediction_set) = conformal_extras(&self.bundle, &outcome);
                 Prediction {
                     label,
                     outcome,
                     unseen_categories,
+                    interval,
+                    prediction_set,
                 }
             })
             .collect())

@@ -26,6 +26,10 @@ pub const SPLIT_ALGORITHM_CONTENT: &str = "tabsmith.split.v3-content-hash";
 /// hashed the key text as written).
 pub const SPLIT_ALGORITHM_STABLE: &str = "tabsmith.split.v4-stable-key";
 // Stratified with an id: per-class ordering by the stable hash, then exact cuts.
+/// Chronological split: rows ordered by the time column, the earliest `train_fraction`
+/// for training, then validation, the latest for test; rows with the same time stay
+/// together.
+pub const SPLIT_ALGORITHM_TIME: &str = "tabsmith.split.v1-time";
 
 /// Deterministic value in [0, 1) from (seed, domain, key): FNV-1a + SplitMix64 finaliser.
 pub fn stable_unit(seed: u64, domain: &str, key: &str) -> f64 {
@@ -85,24 +89,63 @@ fn strata(t: &Targets, target: &TargetInfo) -> Vec<(String, Vec<usize>)> {
     }
 }
 
-fn refuse_time_split(cfg: &DataConfig) -> Result<()> {
-    if cfg.split == SplitStrategy::Time || cfg.time_column.is_some() {
-        return Err(TabsmithError::new(
+/// A time split needs its column, and a declared time column needs a time split:
+/// Tabsmith never falls back to a random split for time-dependent data.
+fn check_time_config(cfg: &DataConfig) -> Result<()> {
+    match (cfg.split, &cfg.time_column) {
+        (SplitStrategy::Time, None) => Err(TabsmithError::new(
+            ErrorCode::ConfigInvalid,
+            Phase::Split,
+            "split = \"time\" needs data.time_column",
+        )
+        .field("data.time_column")
+        .next("set data.time_column to the column that orders the rows (a timestamp, a date, or a counter), or pass --time <column>")),
+        (split, Some(_)) if split != SplitStrategy::Time => Err(TabsmithError::new(
             ErrorCode::SplitUnsupported,
             Phase::Split,
-            "a chronological (time) split is required but not implemented in tabular-binary@0.1",
+            "data.time_column is declared but data.split is not \"time\": a random split would put future rows into training",
         )
-        .field(if cfg.split == SplitStrategy::Time { "data.split" } else { "data.time_column" })
-        .expected("split = \"stratified\" (independent rows) or \"group\" (repeated entities)")
-        .next("Tabsmith will not fall back to a random split for time-dependent data; split the file by time yourself into train/test files, or remove data.time_column if rows are truly independent"));
+        .field("data.split")
+        .expected("time")
+        .actual(split.to_string())
+        .next("set data.split = \"time\" (or pass --time <column>) for a chronological split, or remove data.time_column if rows are truly independent")),
+        _ => Ok(()),
     }
-    Ok(())
+}
+
+/// How a time column orders rows: numbers (an epoch, a counter) or text (ISO 8601
+/// dates sort as text). One column holds one kind.
+#[derive(Debug, Clone, PartialEq)]
+enum TimeKey {
+    Number(f64),
+    Text(String),
+}
+
+impl TimeKey {
+    fn of(v: tabsmith_runtime::ValueRef<'_>) -> Option<Self> {
+        use tabsmith_runtime::ValueRef;
+        match v {
+            ValueRef::Float(f) if f.is_finite() => Some(TimeKey::Number(f)),
+            ValueRef::Int(i) => Some(TimeKey::Number(i as f64)),
+            ValueRef::Text(t) if !t.trim().is_empty() => Some(TimeKey::Text(t.trim().to_string())),
+            _ => None,
+        }
+    }
+
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        match (self, other) {
+            (TimeKey::Number(a), TimeKey::Number(b)) => a.total_cmp(b),
+            (TimeKey::Text(a), TimeKey::Text(b)) => a.cmp(b),
+            (TimeKey::Number(_), TimeKey::Text(_)) => std::cmp::Ordering::Less,
+            (TimeKey::Text(_), TimeKey::Number(_)) => std::cmp::Ordering::Greater,
+        }
+    }
 }
 
 /// Computes the split manifest for a snapshot.
 pub fn make_split(snapshot_id: &str, table: &Table, target: &TargetInfo, cfg: &DataConfig) -> Result<SplitManifest> {
-    refuse_time_split(cfg)?;
-    if cfg.group_column.is_some() && cfg.split != SplitStrategy::Group {
+    check_time_config(cfg)?;
+    if cfg.group_column.is_some() && cfg.split == SplitStrategy::Stratified {
         return Err(TabsmithError::new(
             ErrorCode::LeakageDetected,
             Phase::Split,
@@ -256,7 +299,88 @@ pub fn make_split(snapshot_id: &str, table: &Table, target: &TargetInfo, cfg: &D
             }
             group_counts = Some(counts);
         }
-        (SplitStrategy::Time, _) => unreachable!("refused above"),
+        (SplitStrategy::Time, _) => {
+            let tname = cfg.time_column.as_deref().expect("checked above");
+            let col = table.column(tname).ok_or_else(|| {
+                TabsmithError::new(
+                    ErrorCode::SchemaMissingColumn,
+                    Phase::Split,
+                    format!("time column `{tname}` not found"),
+                )
+                .field("data.time_column")
+            })?;
+            let mut keys = Vec::with_capacity(n);
+            for i in 0..n {
+                let key = TimeKey::of(col.get(i)).ok_or_else(|| {
+                    TabsmithError::new(
+                        ErrorCode::DataUnsupported,
+                        Phase::Split,
+                        format!("time column `{tname}` is missing or not a time in row {i}"),
+                    )
+                    .field("data.time_column")
+                    .next("every row needs a time for a chronological split: a number or a date as text (ISO 8601 sorts as text)")
+                })?;
+                keys.push(key);
+            }
+            if keys.iter().any(|k| matches!(k, TimeKey::Number(_))) && keys.iter().any(|k| matches!(k, TimeKey::Text(_))) {
+                return Err(TabsmithError::new(
+                    ErrorCode::DataUnsupported,
+                    Phase::Split,
+                    format!("time column `{tname}` mixes numbers and text"),
+                )
+                .field("data.time_column")
+                .next("use one kind of time: numbers (an epoch, a counter) or dates as text"));
+            }
+            // Earliest rows train, the latest are the test; the same time never
+            // straddles a cut, so no row is predicted from rows of its own moment.
+            let mut idx: Vec<usize> = (0..n).collect();
+            idx.sort_by(|&a, &b| keys[a].cmp(&keys[b]).then(a.cmp(&b)));
+            let mut n_train = (n as f64 * cfg.train_fraction).round() as usize;
+            let mut n_valid = (n as f64 * cfg.valid_fraction).round() as usize;
+            if n >= 3 {
+                n_train = n_train.max(1);
+                n_valid = n_valid.max(1);
+            }
+            let extend = |mut cut: usize| {
+                while cut > 0 && cut < n && keys[idx[cut]] == keys[idx[cut - 1]] {
+                    cut += 1;
+                }
+                cut
+            };
+            n_train = extend(n_train);
+            n_valid = extend(n_train + n_valid).saturating_sub(n_train);
+            if n_train + n_valid >= n || n_train == 0 || n_valid == 0 {
+                return Err(TabsmithError::new(
+                    ErrorCode::SplitDegenerate,
+                    Phase::Split,
+                    format!(
+                        "{n} rows at {} distinct times: not enough for train, validation and test in time order",
+                        {
+                            let mut d = keys.clone();
+                            d.sort_by(TimeKey::cmp);
+                            d.dedup();
+                            d.len()
+                        }
+                    ),
+                )
+                .field("data.time_column")
+                .next("add more rows, or use finer times"));
+            }
+            for &i in &idx[n_train..n_train + n_valid] {
+                assignment[i] = SPLIT_VALID;
+            }
+            for &i in &idx[n_train + n_valid..] {
+                assignment[i] = SPLIT_TEST;
+            }
+            warnings.push(format!(
+                "chronological split on `{tname}`: the split moves as the data grows (later rows push earlier test rows into validation and training), and the classes are not balanced across splits"
+            ));
+            if let Some(g) = &cfg.group_column {
+                warnings.push(format!(
+                    "rows of one `{g}` can be in several splits, ordered by time: the test rows of an entity come after its training rows, as in a forecast"
+                ));
+            }
+        }
     }
     // Hash-based group assignment only approximates the fractions; check how far off it is.
     if cfg.split == SplitStrategy::Group {
@@ -367,7 +491,9 @@ pub fn make_split(snapshot_id: &str, table: &Table, target: &TargetInfo, cfg: &D
         }
     }
     let assignment = String::from_utf8(assignment).expect("ascii digits");
-    let algorithm = if cfg.split == SplitStrategy::Group || id_column.is_some() {
+    let algorithm = if cfg.split == SplitStrategy::Time {
+        SPLIT_ALGORITHM_TIME
+    } else if cfg.split == SplitStrategy::Group || id_column.is_some() {
         SPLIT_ALGORITHM_STABLE
     } else if content_keys.is_some() {
         SPLIT_ALGORITHM_CONTENT
@@ -385,10 +511,12 @@ pub fn make_split(snapshot_id: &str, table: &Table, target: &TargetInfo, cfg: &D
         &cfg.id_column,
         algorithm,
     );
-    // The key columns are part of the identity only for the content-keyed split
-    // (id/group split ids stay what they were).
+    // The key columns are part of the identity only for the content-keyed split, and
+    // the time column only for the time split (id/group split ids stay what they were).
     let identity = if algorithm == SPLIT_ALGORITHM_CONTENT {
         canonical_hash(&(base, &keyed_by))
+    } else if algorithm == SPLIT_ALGORITHM_TIME {
+        canonical_hash(&(base, &cfg.time_column))
     } else {
         canonical_hash(&base)
     };
@@ -401,6 +529,11 @@ pub fn make_split(snapshot_id: &str, table: &Table, target: &TargetInfo, cfg: &D
         target: target.name.clone(),
         positive_label: target.positive_label.clone(),
         group_column: cfg.group_column.clone(),
+        time_column: if cfg.split == SplitStrategy::Time {
+            cfg.time_column.clone()
+        } else {
+            None
+        },
         assignment,
         train,
         valid,
@@ -449,7 +582,7 @@ pub fn check_group_leakage(table: &Table, split: &SplitManifest) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tabsmith_runtime::{Column, ColumnData};
+    use tabsmith_runtime::{Column, ColumnData, Value};
 
     fn table(n: usize) -> (Table, TargetInfo) {
         let y: Vec<Option<i64>> = (0..n).map(|i| Some(i64::from(i % 5 == 0))).collect();
@@ -558,7 +691,7 @@ mod tests {
     }
 
     #[test]
-    fn refuses_time_and_undeclared_grouping() {
+    fn refuses_a_random_split_of_time_data_and_undeclared_grouping() {
         let (t, info) = table(100);
         let cfg = DataConfig {
             time_column: Some("ts".into()),
@@ -566,9 +699,72 @@ mod tests {
         };
         assert_eq!(make_split("s", &t, &info, &cfg).unwrap_err().code, ErrorCode::SplitUnsupported);
         let cfg = DataConfig {
+            split: SplitStrategy::Time,
+            ..Default::default()
+        };
+        assert_eq!(make_split("s", &t, &info, &cfg).unwrap_err().code, ErrorCode::ConfigInvalid);
+        let cfg = DataConfig {
             group_column: Some("g".into()),
             ..Default::default()
         };
         assert_eq!(make_split("s", &t, &info, &cfg).unwrap_err().code, ErrorCode::LeakageDetected);
+    }
+
+    /// A table whose `ts` column holds `time(i)`, with a label every fifth row.
+    fn timed(n: usize, time: impl Fn(usize) -> ColumnData) -> (Table, TargetInfo) {
+        let (base, info) = table(n);
+        let mut columns = vec![Column {
+            name: "ts".into(),
+            data: time(n),
+        }];
+        columns.extend(["y", "g"].iter().map(|c| Column {
+            name: (*c).into(),
+            data: base.column(c).unwrap().clone(),
+        }));
+        (Table::new(columns).unwrap(), info)
+    }
+
+    #[test]
+    fn time_split_puts_the_earliest_rows_in_training_and_the_latest_in_test() {
+        let cfg = DataConfig {
+            split: SplitStrategy::Time,
+            time_column: Some("ts".into()),
+            group_column: Some("g".into()),
+            ..Default::default()
+        };
+        // Numbers, in a scrambled row order; two rows share each time.
+        let numbers = |n: usize| ColumnData::Int((0..n).map(|i| Some(((i * 7919) % n / 2) as i64)).collect());
+        let (t, info) = timed(1000, numbers);
+        let s = make_split("s-1", &t, &info, &cfg).unwrap();
+        assert_eq!(s.algorithm, SPLIT_ALGORITHM_TIME);
+        assert_eq!(s.time_column.as_deref(), Some("ts"));
+        let code = s.assignment.as_bytes();
+        let time = |i: usize| ((i * 7919) % 1000 / 2) as i64;
+        let latest = |split: u8| (0..1000).filter(|&i| code[i] == split).map(time).max().unwrap();
+        let earliest = |split: u8| (0..1000).filter(|&i| code[i] == split).map(time).min().unwrap();
+        assert!(latest(SPLIT_TRAIN) < earliest(SPLIT_VALID));
+        assert!(latest(SPLIT_VALID) < earliest(SPLIT_TEST));
+        assert_eq!((s.train.rows, s.valid.rows, s.test.rows), (700, 150, 150));
+        assert!(s.warnings.iter().any(|w| w.contains("chronological")) && s.warnings.iter().any(|w| w.contains("`g`")));
+        // Dates as text sort the same way.
+        let dates = |n: usize| ColumnData::Text((0..n).map(|i| Some(format!("2026-{:02}-{:02}", 1 + i % 12, 1 + i % 28))).collect());
+        let (t, info) = timed(1000, dates);
+        let s = make_split("s-1", &t, &info, &cfg).unwrap();
+        let code = s.assignment.as_bytes();
+        let date = |i: usize| format!("2026-{:02}-{:02}", 1 + i % 12, 1 + i % 28);
+        let latest_train = (0..1000).filter(|&i| code[i] == SPLIT_TRAIN).map(date).max().unwrap();
+        let earliest_test = (0..1000).filter(|&i| code[i] == SPLIT_TEST).map(date).min().unwrap();
+        assert!(latest_train < earliest_test, "{latest_train} {earliest_test}");
+        // A missing time, or times of two kinds, is refused.
+        let (t, info) = timed(100, |n| ColumnData::Int((0..n).map(|i| (i != 7).then_some(i as i64)).collect()));
+        assert_eq!(make_split("s", &t, &info, &cfg).unwrap_err().code, ErrorCode::DataUnsupported);
+        let (t, info) = timed(100, |n| {
+            ColumnData::Mixed(
+                (0..n)
+                    .map(|i| if i == 7 { Value::Text("x".into()) } else { Value::Int(i as i64) })
+                    .collect(),
+            )
+        });
+        assert_eq!(make_split("s", &t, &info, &cfg).unwrap_err().code, ErrorCode::DataUnsupported);
     }
 }

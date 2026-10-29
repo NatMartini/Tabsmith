@@ -116,12 +116,16 @@ pub enum Command {
         /// sets the project's recipe.
         #[arg(long)]
         task: Option<String>,
-        /// stratified (default) or group.
+        /// stratified (default), group or time.
         #[arg(long)]
         split: Option<String>,
         /// Entity column (customer, device, patient): its rows never cross splits.
         #[arg(long)]
         group: Option<String>,
+        /// Time column (a timestamp, a date, a counter): the earliest rows train and the
+        /// latest are the test (implies --split time).
+        #[arg(long)]
+        time: Option<String>,
         /// Unique row id column (kept out of the features, copied to predictions).
         #[arg(long)]
         id: Option<String>,
@@ -236,12 +240,15 @@ pub enum DataCommand {
         /// binary, multiclass or regression; sets the project's recipe.
         #[arg(long)]
         task: Option<String>,
-        /// stratified (independent rows) or group (repeated entities).
+        /// stratified (independent rows), group (repeated entities) or time (rows in time order).
         #[arg(long)]
         split: Option<String>,
         /// Entity column for grouped splitting (implies --split group).
         #[arg(long)]
         group: Option<String>,
+        /// Time column for a chronological split (implies --split time).
+        #[arg(long)]
+        time: Option<String>,
         /// Unique row id column (never used as a feature).
         #[arg(long)]
         id: Option<String>,

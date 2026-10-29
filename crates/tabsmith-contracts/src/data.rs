@@ -166,6 +166,9 @@ pub struct SplitManifest {
     pub positive_label: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub group_column: Option<String>,
+    /// The column a chronological split ordered the rows by.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub time_column: Option<String>,
     /// One ASCII digit per snapshot row: '0' train, '1' valid, '2' test.
     pub assignment: String,
     pub train: SplitCounts,

@@ -35,8 +35,14 @@ A prediction follows the bundle's task. `label` is always set. `probability()` i
 probability of the positive label (binary) or of the predicted class (multiclass).
 `probabilities()` gives every class's probability, and `value()` the regression value
 in the target's units. `outcome` holds the task's fields as an enum, and the JSON
-form is flat. `Predictor::from_memory` loads a bundle from file names and bytes
-instead of a directory, which is how `examples/wasm-predict` runs in a browser.
+form is flat. When the bundle carries a conformal calibration (`conformal.json`,
+written by `tabsmith bundle build`), a prediction also has an `interval` (regression)
+or a `prediction_set` (classification): the truth lies inside with probability about
+`1 − alpha` on rows like the calibration rows. `Predictor::from_memory` loads a bundle
+from file names and bytes instead of a directory, which is how `examples/wasm-predict`
+runs in a browser. `Predictor` implements the `tabsmith_embedded::Model` trait, as a
+model compiled with `tabsmith-macros` does, so an application can be written once for
+both.
 
 Loading is all-or-nothing: the manifest, every file's SHA-256 and size, the
 bundle id, format versions and the consistency of schemas, transform and weights
@@ -57,7 +63,9 @@ Tabsmith 的轻量预测运行时：校验 bundle、执行与训练时相同的�
 FP32 的全连接网络与梯度提升树，并可原样编译为 WebAssembly。只依赖 `tabsmith-contracts`、
 `tabsmith-embedded`、`serde`、`serde_json` 和 `safetensors`，不包含 Burn、Polars 或 Python。
 想把模型直接编译进代码（输入是类型，推理不依赖 `std`，结果逐位相同），见 `tabsmith-macros`。预测结果随任务而定：
-`probability()`（二分类、多分类）、`probabilities()`（多分类）、`value()`（回归）。
+`probability()`（二分类、多分类）、`probabilities()`（多分类）、`value()`（回归）。模型包带有 conformal 校准（`conformal.json`）时，
+预测还附带 `interval`（回归）或 `prediction_set`（分类）：在与校准行同分布的行上，真值落在其中的概率约为 `1 − alpha`。
+`Predictor` 实现了 `tabsmith_embedded::Model` trait，用 `tabsmith-macros` 编译进代码的模型也实现了它，应用代码可以只写一份。
 中文文档见仓库中的 `README.zh-CN.md`。
 
 ## License

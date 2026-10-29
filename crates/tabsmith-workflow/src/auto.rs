@@ -114,7 +114,8 @@ impl Workspace {
             .bundle_with_weights(&chosen_sha)
             .filter(|(_, m)| report.test.is_none() || m.evaluation_status == EVALUATED);
         if let Some((dir, m)) = existing {
-            let check = Predictor::load(&dir, LoadOptions::cpu().with_self_check(true))?.self_check()?;
+            let kept = Predictor::load(&dir, LoadOptions::cpu().with_self_check(true))?;
+            let check = kept.self_check()?;
             report.notes.push(format!(
                 "{chosen} has the same weights as bundle {} (run {}): nothing changed since then, so that bundle is kept",
                 self.project.rel(&dir),
@@ -125,6 +126,10 @@ impl Workspace {
                 manifest: m,
                 check,
                 already_existed: true,
+                assurance: crate::assurance::Assurance {
+                    conformal: kept.bundle().conformal.clone(),
+                    importance: kept.bundle().importance.clone(),
+                },
             });
         } else {
             progress(Progress::Stage(format!("building the bundle of {chosen}")));
@@ -133,6 +138,7 @@ impl Workspace {
                 &BundleOptions {
                     out: None,
                     allow_unevaluated: report.test.is_none(),
+                    conformal_alpha: None,
                 },
             )?);
         }

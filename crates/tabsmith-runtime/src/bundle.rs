@@ -8,9 +8,9 @@ use std::path::{Component, Path, PathBuf};
 
 use serde::de::DeserializeOwned;
 use tabsmith_contracts::manifest::{
-    BundleEvaluation, BundleManifest, EVALUATION_FILE, EXAMPLES_EXPECTED_FILE, EXAMPLES_INPUT_FILE, ExampleExpected, ExampleInputs,
-    INPUT_SCHEMA_FILE, MANIFEST_FILE, MODEL_CONFIG_FILE, MODEL_WEIGHTS_FILE, OUTPUT_SCHEMA_FILE, REQUIRED_FILES, TRANSFORM_FILE,
-    version_at_least,
+    BundleEvaluation, BundleManifest, CONFORMAL_FILE, Conformal, EVALUATION_FILE, EXAMPLES_EXPECTED_FILE, EXAMPLES_INPUT_FILE,
+    ExampleExpected, ExampleInputs, IMPORTANCE_FILE, INPUT_SCHEMA_FILE, Importance, MANIFEST_FILE, MODEL_CONFIG_FILE, MODEL_WEIGHTS_FILE,
+    OUTPUT_SCHEMA_FILE, REQUIRED_FILES, TRANSFORM_FILE, version_at_least,
 };
 use tabsmith_contracts::model::{MODEL_FORMAT, ModelConfig, TREES_FORMAT};
 use tabsmith_contracts::schema::{InputSchema, OutputSchema};
@@ -144,6 +144,12 @@ pub struct Bundle {
     pub examples: ExampleInputs,
     /// `examples/expected.json`: the predictions the examples must reproduce.
     pub expected: ExampleExpected,
+    /// `conformal.json`, when the bundle carries a conformal calibration: every
+    /// prediction then has an interval (regression) or a prediction set.
+    pub conformal: Option<Conformal>,
+    /// `importance.json`, when the bundle carries the permutation importance of its
+    /// input fields.
+    pub importance: Option<Importance>,
 }
 
 fn bundle_err(code: ErrorCode, dir: &Path, msg: impl Into<String>) -> TabsmithError {
@@ -377,6 +383,24 @@ impl Bundle {
         let evaluation: BundleEvaluation = parse_json(&dir, EVALUATION_FILE, get(EVALUATION_FILE))?;
         let examples: ExampleInputs = parse_json(&dir, EXAMPLES_INPUT_FILE, get(EXAMPLES_INPUT_FILE))?;
         let expected: ExampleExpected = parse_json(&dir, EXAMPLES_EXPECTED_FILE, get(EXAMPLES_EXPECTED_FILE))?;
+        let conformal: Option<Conformal> = match contents.get(CONFORMAL_FILE) {
+            Some(b) => Some(parse_json(&dir, CONFORMAL_FILE, b)?),
+            None => None,
+        };
+        if let Some(c) = &conformal
+            && !(c.alpha > 0.0 && c.alpha < 1.0 && c.quantile >= 0.0 && c.quantile.is_finite())
+        {
+            return Err(bundle_err(
+                ErrorCode::BundleCorrupt,
+                &dir,
+                "conformal.json holds an impossible alpha or quantile",
+            )
+            .field(CONFORMAL_FILE));
+        }
+        let importance: Option<Importance> = match contents.get(IMPORTANCE_FILE) {
+            Some(b) => Some(parse_json(&dir, IMPORTANCE_FILE, b)?),
+            None => None,
+        };
 
         // Claims in the manifest must agree with the evidence they summarise.
         let test_id = evaluation.test.as_ref().map(|t| t.evaluation_id.clone());
@@ -455,6 +479,8 @@ impl Bundle {
             evaluation,
             examples,
             expected,
+            conformal,
+            importance,
         })
     }
 

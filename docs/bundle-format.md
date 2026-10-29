@@ -19,7 +19,20 @@ bundles/run-002/
   evaluation.json        held-out test evaluation of the source run + validation metrics
   examples/input.json    synthetic records built from transform statistics (no training rows)
   examples/expected.json outputs produced at build time, tolerance 1e-6
+  conformal.json         optional: split conformal calibration (alpha, quantile, method)
+  importance.json        optional: permutation importance of the input fields
 ```
+
+The two optional files are written when the project's data is still available at
+build time (they are computed on the validation split) and listed in the manifest like
+every other file. With `conformal.json`, every prediction carries an `interval`
+(regression: `value ± quantile`, in the target's units) or a `prediction_set`
+(classification: the labels whose probability is at least `1 − quantile`); on rows
+distributed like the calibration rows the truth lies inside with probability about
+`1 − alpha` (0.1 by default). The calibration rows also selected the model, so the
+guarantee is approximate; the test split is not touched. `importance.json` lists every
+input field with the drop of the selection metric when its values are shuffled across
+the validation rows (three shuffles, mean and spread), largest first.
 
 ## Models and outputs
 
@@ -27,6 +40,14 @@ bundles/run-002/
 |---|---|
 | `tabsmith.dense.v1` (`linear`, `small-mlp`) | F32 `layers.{i}.weight` `[out, in]` and `layers.{i}.bias` `[out]`; ReLU between layers |
 | `tabsmith.trees.v1` (`gbdt`) | All trees' nodes concatenated: `trees.roots` (I32, one root per tree), `trees.feature` (I32, −1 marks a leaf), `trees.threshold` (F32; `x[feature] <= threshold` goes left), `trees.left` / `trees.right` (I32 child indices, always greater than the parent's and inside the same tree), `trees.value` (F32 leaf values, already scaled by the learning rate) |
+
+A tree model's config may carry `monotone`, one sign per feature (`1` increasing, `-1`
+decreasing, `0` none; absent when there are none): the constraints the trees were
+trained under. A loader checks that every tree keeps them (at each split on a
+constrained feature, every leaf on the lesser side is at most every leaf on the greater
+side) and refuses the bundle otherwise, so the claim cannot be edited in. Such a bundle
+records `min_runtime_version` 0.2.0, because the 0.1.0 runtime rejects the unknown
+field; every other bundle keeps 0.1.0.
 
 A tree model's output starts from `base_score` (or `base_scores[k]`) and adds one leaf
 per tree; with K outputs, tree `t` adds to output `t % K`. The model config's `output`
@@ -108,6 +129,11 @@ ignored.
 3. schema、变换和模型彼此一致（维度、字段名、标签不同）；权重为有限值且形状符合声明。
 
 `tabsmith bundle check` / `Predictor::self_check` 还会运行 `examples/input.json`，并与 `examples/expected.json` 比对。
+
+两个可选文件在构建模型包时项目数据仍在的情况下写入，并像其他文件一样列入 manifest：`conformal.json`（在验证集上做的 split conformal 校准：alpha、分位数、方法）
+和 `importance.json`（各输入字段的置换重要性）。有 `conformal.json` 时，每条预测都带 `interval`（回归：`value ± quantile`，目标单位）或 `prediction_set`
+（分类：概率不低于 `1 − quantile` 的标签）；在与校准行同分布的行上，真值落在其中的概率约为 `1 − alpha`（默认 0.1）。校准行同时也选择了模型，所以这个保证是近似的；
+测试集不会被动用。树模型的 `model.config.json` 可以带 `monotone`（每个特征一个符号）：训练时遵守的单调约束，加载器会检查每棵树是否真的遵守，否则拒绝加载。
 
 `evaluation.json` 和 manifest 中的 `evaluation_status`：`evaluated`（在 `tabsmith evaluate --run <id> --split test` 之后构建，或者来自一个与同一数据版本上已评估 Run 权重完全相同的 Run）或 `unevaluated-candidate`（使用 `--allow-unevaluated` 构建）。不带 `--bundle` 时，`tabsmith predict` 和 `tabsmith serve` 使用项目中最新的 `evaluated` 模型包；只有在没有任何已评估模型包时才使用候选包。
 

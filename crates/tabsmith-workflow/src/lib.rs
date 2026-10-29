@@ -4,6 +4,7 @@
 //! fitted transform, training runs, evaluations and inference bundles — with
 //! one implementation shared by the CLI and the Rust SDK.
 
+pub mod assurance;
 pub mod auto;
 pub mod bundle;
 pub mod data;

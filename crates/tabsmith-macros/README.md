@@ -59,11 +59,46 @@ infinity and wrong types. A record that one of them refuses, the other refuses t
 A portability test compares the hash of 20,000 predictions per bundle with the value
 recorded on Windows x86_64; CI runs it on Linux x86_64 and macOS arm64 as well.
 
+## What the compiler knows about the model
+
+Beyond the weights, the generated module tells the compiler three things, all `const`:
+
+```rust
+defects::WORST_CASE.comparisons     // the most arithmetic one prediction takes
+defects::OUTPUT_BOUNDS              // [lo, hi] of the raw outputs over every input
+defects::PROBABILITY_BOUNDS         // the same through the logistic function
+const B: [[f32; 2]; 1] = {          // over a box: every numeric feature within
+    let [lo, hi] = defects::feature_box(4.0);   // 4 standard deviations of its mean
+    defects::output_bounds(&lo, &hi)
+};
+```
+
+For trees the bounds are the sums of the smallest and the largest leaf each tree can
+reach inside the box, summed as inference sums; rounding is monotone, so they are
+sound with no error margin. For a network they come from interval arithmetic through
+the layers, widened by the worst rounding error of the kernels. rustc's constant
+evaluator derives them from the generated constants, and the macro checks that it
+agrees, bit for bit, with the same kernels run at expansion time.
+
+`defects::Model` implements the `tabsmith_embedded::Model` trait, as the runtime's
+`Predictor` does, so an application can be written once for both.
+
 ## Proofs with Kani
 
-`model!(name, "path", kani)` derives `kani::Arbitrary` for the input types under
-`cfg(kani)`, so the [Kani](https://github.com/model-checking/kani) model checker can
-reason about every possible input. See `examples/embedded-predict` in the repository.
+`model!(name, "path", kani)` makes the module carry its own proofs for the
+[Kani](https://github.com/model-checking/kani) model checker: under `cfg(kani)`, the
+input types derive `kani::Arbitrary`, and `name::proofs` holds one harness per stage of
+`predict` (`features`, `outputs`, `decode`), each proving that the stage never panics
+for any value of its argument, with loop bounds taken from the model's shape. `cargo
+kani` runs them. The crate that invokes `model!` should declare the cfg:
+
+```toml
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(kani)"] }
+```
+
+`examples/embedded-predict` in the repository shows the recommended Kani settings, and
+`reports/kani/` the results: six proofs for two models in about a minute.
 
 Minimum supported Rust version: 1.88.
 

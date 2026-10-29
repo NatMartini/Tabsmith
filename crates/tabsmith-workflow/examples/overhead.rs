@@ -125,6 +125,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 checkpoint_dir: dir.clone(),
                 key,
                 device: tabsmith_workflow::device::EngineDevice::Cpu,
+                monotone: Vec::new(),
             };
             train(&inputs, &RunControl::default(), StartFrom::Scratch, &mut |_| {})?;
             let _ = std::fs::remove_dir_all(dir);

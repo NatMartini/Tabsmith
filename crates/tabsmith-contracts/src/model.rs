@@ -68,6 +68,11 @@ pub struct TreesSpec {
     /// Multiclass: the starting output of each class (log of its weighted share).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub base_scores: Vec<f64>,
+    /// Monotone constraints the trees were trained under, one entry per feature:
+    /// `1` (the output never decreases in the feature), `-1` (never increases) or `0`.
+    /// Empty when there are none. A loader checks that every tree keeps them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub monotone: Vec<i8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -180,6 +185,9 @@ impl ModelConfig {
             };
             if !outputs_ok || t.n_trees % t.n_outputs != 0 {
                 return Err("tree model outputs are inconsistent".into());
+            }
+            if !t.monotone.is_empty() && (t.monotone.len() != self.input_dim || t.monotone.iter().any(|&m| !(-1..=1).contains(&m))) {
+                return Err("tree model monotone constraints do not match its features".into());
             }
             return Ok(());
         }

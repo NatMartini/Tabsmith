@@ -81,6 +81,7 @@ fn multiclass_trains_evaluates_and_predicts_probabilities() {
         &BundleOptions {
             allow_unevaluated: false,
             out: Some(out.clone()),
+            conformal_alpha: None,
         },
     )
     .unwrap();
@@ -131,6 +132,7 @@ fn regression_trains_evaluates_and_predicts_values() {
         &BundleOptions {
             allow_unevaluated: true,
             out: Some(out.clone()),
+            conformal_alpha: None,
         },
     )
     .unwrap();

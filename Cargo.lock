@@ -7408,7 +7408,7 @@ dependencies = [
 
 [[package]]
 name = "tabsmith-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "clap",
  "ctrlc",
@@ -7423,7 +7423,7 @@ dependencies = [
 
 [[package]]
 name = "tabsmith-contracts"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -7434,14 +7434,14 @@ dependencies = [
 
 [[package]]
 name = "tabsmith-embedded"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "libm",
 ]
 
 [[package]]
 name = "tabsmith-macros"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "proc-macro2",
  "proptest",
@@ -7456,7 +7456,7 @@ dependencies = [
 
 [[package]]
 name = "tabsmith-runtime"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "safetensors 0.8.0",
  "serde",
@@ -7468,10 +7468,11 @@ dependencies = [
 
 [[package]]
 name = "tabsmith-workflow"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "burn",
  "cudarc",
+ "libm",
  "polars",
  "proptest",
  "safetensors 0.8.0",

@@ -23,7 +23,7 @@ recipe = "tabular-binary@0.1"
 source = "data/defects.csv"   # CSV or Parquet, relative to the project
 target = "defect"
 positive_label = "1"          # the class to detect, compared as text
-split = "group"               # "stratified" | "group" ("time" is refused in 0.1)
+split = "group"               # "stratified" | "group" | "time" (needs time_column)
 group_column = "device_id"    # rows of one entity never span two splits
 id_column = "unit_id"         # unique row id, copied to prediction output
 
@@ -55,10 +55,10 @@ group_column = "device_id"
 | `data.positive_label` | — (binary only, required there; `data bind` infers it for 0/1, false/true, no/yes) | Target value of the positive class |
 | `data.id_column` | none | Unique row id; never a feature. Rows keep their split across data versions and are copied to prediction output. Without it, the split is keyed by each row's full content (every column) plus its occurrence number among identical rows, and leakage checks recognise rows by their content (model inputs + target): an edited row counts as a new row, and adding or removing columns in the file re-splits the rows (the checks still exclude rows a model has seen). Id and group columns are always read as text and compared as keys: surrounding spaces and the leading zeros of all-digit values are ignored, so `00000001` and `1` (after a spreadsheet round trip) are the same row |
 | `data.group_column` | none | Entity column; requires `split = "group"` |
-| `data.time_column` | none | Declaring it means a time split is needed: refused in 0.1 (`E_SPLIT_UNSUPPORTED`) |
+| `data.time_column` | none | The column that orders the rows: a number (an epoch, a counter) or a date as text (ISO 8601 sorts as text); never a feature. Declaring it requires `split = "time"`: any other split is refused (`E_SPLIT_UNSUPPORTED`) rather than putting future rows into training. `--time <column>` on the command line sets both |
 | `data.exclude` | `[]` | Columns never used as features |
 | `data.columns.<name>` | inferred | `"numeric"`, `"categorical"` (read as text, keeps leading zeros) or `"ignore"` |
-| `data.split` | `"stratified"` | `stratified` (stable hash of the id, or of the row content without one), `group` (stable hash of the group key); `time` is refused |
+| `data.split` | `"stratified"` | `stratified` (stable hash of the id, or of the row content without one), `group` (stable hash of the group key), or `time` (chronological: the earliest `train_fraction` of the rows train, the next `valid_fraction` validate, the latest are the test; rows with the same time stay together; not stratified, and the split moves as the data grows) |
 | `data.seed` | `42` | Split seed |
 | `data.train_fraction` / `valid_fraction` / `test_fraction` | `0.7` / `0.15` / `0.15` | Must sum to 1 |
 | `data.snapshot` | `"copy"` | `copy`: the file is copied into `.tabsmith/` so runs are replayable; `reference`: hash only |
@@ -82,6 +82,7 @@ group_column = "device_id"
 | `train.small-mlp.*` | `hidden` [32, 16], `epochs` 60, `batch_size` 128, `learning_rate` 0.005, `l2` 1e-4, `early_stopping_patience` 8 | Small MLP (ReLU, Adam) |
 | `train.gbdt.*` | `epochs` 400, `learning_rate` 0.1, `l2` 1.0, `early_stopping_patience` 25, `checkpoint_every_epochs` 50 | Gradient-boosted trees. An epoch is one boosting round: one tree, or one per class for multiclass. `learning_rate` is the shrinkage and `l2` the penalty on leaf values. `hidden` and `batch_size` do not apply |
 | `train.gbdt.trees.*` | `max_leaves` 31, `max_depth` 8, `min_samples_leaf` 20, `max_bins` 255 | Tree shape. Trees grow best-first up to `max_leaves`. Split points come from the training rows, up to `max_bins` (2–256) per feature. Only `gbdt` takes a `trees` table |
+| `train.gbdt.trees.monotone` | `{}` | Monotone constraints by numeric column: `hours_in_service = "increasing"` (the output never decreases in the column) or `"decreasing"`. Kept by construction in every tree (a split on the column is taken only when it keeps the order, and the subtrees' leaves are bounded at its midpoint), recorded in the bundle (`model.config.json`), checked when the bundle loads, and checked by the compiler when the model is compiled with `model!`. A categorical column is refused. `--set 'train.gbdt.trees.monotone.hours_in_service="increasing"'` on the command line |
 | `train.<c>.class_weight` | `"balanced"` | Classification: `balanced` (n / (k·n_class) for k classes) or `none` |
 | `train.<c>.early_stopping_patience` | see above | Epochs without validation-loss improvement (0 = off) |
 | `train.<c>.checkpoint_every_epochs` | `1` | Checkpoint at most every N epochs |
@@ -125,7 +126,8 @@ Newton steps: each leaf value is `−Σg / (Σh + l2)`, times `learning_rate`.
 - `data.id_column` 是唯一行 id：数据增长时各行保持原切分，并被复制到预测输出中。没有 id 时，切分以每行的完整内容（所有列）加上它在相同行中的出现序号为键；泄漏检查按内容（模型输入 + 目标列）识别行：被修改过的行视为新行；文件增删列会导致重新切分（检查仍会排除模型见过的行）。id 列和分组列总是按文本读取，并作为键比较：忽略首尾空格和纯数字值的前导零，因此 `00000001` 与（经电子表格处理后的）`1` 是同一行。
 - Parquet：字典/类别列按文本读取，decimal 按数值读取，duration 按秒读取，日期、时间和时间戳（带时区的按 UTC）按文本读取，并被规划为日期列而不是特征。
 - `data.group_column` 要求 `split = "group"`：同一实体的行不会跨越两个子集。
-- 声明 `data.time_column` 表示需要按时间切分，0.1 版会拒绝（`E_SPLIT_UNSUPPORTED`），不会退回随机切分。
+- `data.time_column` 是给行排序的列（数值，或按文本排序的 ISO 8601 日期），永远不作为特征；声明它就必须 `split = "time"`：最早的行训练，最晚的行测试，相同时间的行不会被分开；用其他切分会被拒绝（`E_SPLIT_UNSUPPORTED`），不会退回随机切分。命令行上 `--time <列>` 同时设置两者。
+- `train.gbdt.trees.monotone` 按数值列声明单调约束（`hours_in_service = "increasing"` 或 `"decreasing"`）：每棵树在构造时就遵守，约束记录在模型包里，加载器和 `model!` 编译器都会检查；类别列会被拒绝。
 - `data.snapshot = "copy"` 会把数据文件复制进 `.tabsmith/`，使 Run 可以重放；`reference` 只记录哈希。
 - `preprocess.nan = "missing"` 时 NaN 与 null 一样被填补；`preprocess.unknown_category = "ignore"` 时未见过的类别编码为全零。
 - `execution.candidate_device` 可为 `cpu`、`vulkan`、`cuda` 或 `auto-certified`。`auto-certified` 只会选择经 `tools/gpu_certify.py` 认证、且成本模型预计至少快一倍的 GPU，否则用 CPU。GPU 后端只存在于启用了 `vulkan`/`cuda` 特性（CLI 为 `gpu`）的构建中；`gbdt` 始终在 CPU 上训练。

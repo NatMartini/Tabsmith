@@ -10,6 +10,7 @@ use tabsmith_contracts::config::{NanPolicy, Task, UnknownCategoryPolicy};
 use tabsmith_contracts::model::Activation;
 use tabsmith_contracts::schema::RawDtype;
 use tabsmith_contracts::transform::FeatureTransform;
+use tabsmith_embedded::{Work, kernels};
 use tabsmith_runtime::model::Model;
 use tabsmith_runtime::{LoadOptions, Outcome, Predictor, Record};
 
@@ -97,6 +98,8 @@ enum Network {
         right: Vec<u32>,
         value: Vec<f32>,
         base: Vec<f64>,
+        /// One sign per feature: 1 increasing, -1 decreasing, 0 unconstrained.
+        monotone: Vec<i8>,
     },
 }
 
@@ -145,6 +148,93 @@ struct Compiled {
     /// The runtime's prediction for each example: the probability (binary), every
     /// class's probability (multiclass) or the value (regression).
     expected: Vec<Vec<f64>>,
+    /// The bundle's conformal calibration, `(alpha, quantile)`, when it has one.
+    conformal: Option<(f64, f64)>,
+    /// Depth of the deepest tree; 0 for a network.
+    max_tree_depth: usize,
+    /// Upper bounds on the arithmetic of one prediction.
+    work: Work,
+    /// Bounds of the raw outputs over every input, `[lo, hi]` per output.
+    output_bounds: Vec<[f32; 2]>,
+}
+
+/// What the compiler will know about the model besides its weights: the deepest tree,
+/// the worst-case work of one prediction, and the bounds of its raw outputs over every
+/// input. The bounds are computed here with the kernels the generated code calls, and
+/// the generated code makes rustc's constant evaluator derive them again from the
+/// constants; the two must agree bit for bit.
+fn analyse(network: &Network, n_features: usize, n_outputs: usize, task: Task) -> (usize, Work, Vec<[f32; 2]>) {
+    let exponentials = match task {
+        Task::Binary => 1,
+        Task::Multiclass => n_outputs,
+        Task::Regression => 0,
+    };
+    let (mut lo, mut hi) = (vec![f32::NEG_INFINITY; n_features], vec![f32::INFINITY; n_features]);
+    match network {
+        Network::Dense(layers) => {
+            for l in layers {
+                let (mut lo_out, mut hi_out) = (vec![0f32; l.out_dim], vec![0f32; l.out_dim]);
+                kernels::dense_bounds(&l.weight, &l.bias, &lo, &hi, l.relu, &mut lo_out, &mut hi_out);
+                (lo, hi) = (lo_out, hi_out);
+            }
+            let work = Work {
+                comparisons: layers.iter().filter(|l| l.relu).map(|l| l.out_dim).sum(),
+                multiply_adds: layers.iter().map(|l| l.in_dim * l.out_dim).sum(),
+                additions: layers.iter().map(|l| l.out_dim).sum(),
+                exponentials,
+            };
+            (0, work, lo.into_iter().zip(hi).map(|(a, b)| [a, b]).collect())
+        }
+        Network::Trees {
+            roots,
+            feature,
+            threshold,
+            left,
+            right,
+            value,
+            base,
+            ..
+        } => {
+            // The runtime verified that children come after their parent, inside the
+            // same tree, so one pass in index order gives every node's depth.
+            let mut depths = Vec::with_capacity(roots.len());
+            for t in 0..roots.len() {
+                let start = roots[t] as usize;
+                let end = roots.get(t + 1).map_or(feature.len(), |&r| r as usize);
+                let mut depth = vec![0usize; end - start];
+                let mut deepest = 0;
+                for i in start..end {
+                    let d = depth[i - start];
+                    if feature[i] >= 0 {
+                        depth[left[i] as usize - start] = d + 1;
+                        depth[right[i] as usize - start] = d + 1;
+                    } else {
+                        deepest = deepest.max(d);
+                    }
+                }
+                depths.push(deepest);
+            }
+            let trees = kernels::Trees {
+                roots,
+                feature,
+                threshold,
+                left,
+                right,
+                value,
+                base,
+            };
+            let (mut lo_out, mut hi_out) = (vec![0f32; n_outputs], vec![0f32; n_outputs]);
+            trees.bounds(&lo, &hi, &mut vec![false; feature.len()], &mut lo_out, &mut hi_out);
+            let work = Work {
+                comparisons: depths.iter().sum(),
+                multiply_adds: 0,
+                additions: roots.len(),
+                exponentials,
+            };
+            let deepest = depths.iter().copied().max().unwrap_or(0);
+            (deepest, work, lo_out.into_iter().zip(hi_out).map(|(a, b)| [a, b]).collect())
+        }
+    }
 }
 
 impl Compiled {
@@ -189,6 +279,7 @@ impl Compiled {
             "Prediction",
             "Label",
             "Class",
+            "Model",
             "FieldValue",
             "FieldInfo",
             "FieldKind",
@@ -296,6 +387,11 @@ impl Compiled {
                     } else {
                         spec.base_scores.clone()
                     },
+                    monotone: if spec.monotone.is_empty() {
+                        vec![0; config.input_dim]
+                    } else {
+                        spec.monotone.clone()
+                    },
                 }
             }
         };
@@ -334,6 +430,7 @@ impl Compiled {
             }
         };
 
+        let (max_tree_depth, work, output_bounds) = analyse(&network, t.output_dim, config.n_outputs(), o.task);
         Ok(Compiled {
             path: path.to_string(),
             files,
@@ -345,6 +442,10 @@ impl Compiled {
             dropped: t.dropped.iter().map(|d| d.name.clone()).collect(),
             n_features: t.output_dim,
             n_outputs: config.n_outputs(),
+            conformal: b.conformal.as_ref().map(|c| (c.alpha, c.quantile)),
+            max_tree_depth,
+            work,
+            output_bounds,
             // The runtime's missing-value tokens (`MissingTokens::new`): every token is a
             // text token, and those that parse as a number also match numbers.
             text_tokens: t.missing_tokens.clone(),
@@ -411,6 +512,10 @@ impl Compiled {
         let examples: Vec<TokenStream> = self.examples.iter().map(|e| self.example(e)).collect();
         let n_examples = examples.len();
         let self_check = self.self_check();
+        let analysis = self.analysis();
+        let conformal = self.conformal();
+        let model_impl = self.model_impl();
+        let proofs = if kani { self.proofs(name) } else { quote!() };
 
         let dropped = if self.dropped.is_empty() {
             String::new()
@@ -425,8 +530,17 @@ impl Compiled {
              {n_fields} input fields → {n_features} features → {n_outputs} output(s).{dropped}\n\n\
              Generated by `tabsmith_macros::model!`. The bundle was verified when this crate was compiled, and \
              [`predict`] computes exactly what `tabsmith-runtime` computes for the same input, bit for bit; \
-             [`self_check`] confirms it on the bundle's examples. `no_std`, no allocation.",
-            self.path, self.summary
+             [`self_check`] confirms it on the bundle's examples. `no_std`, no allocation.\n\n\
+             The compiler also knows the model's cost ([`WORST_CASE`]) and the bounds of its raw outputs \
+             ([`OUTPUT_BOUNDS`] for every input, [`output_bounds`] for a box of feature values){}; \
+             [`Model`] implements the `tabsmith_embedded::Model` trait.",
+            self.path,
+            self.summary,
+            if kani {
+                ", and the module carries its own proofs for the Kani model checker ([`proofs`])"
+            } else {
+                ""
+            }
         );
 
         quote! {
@@ -514,6 +628,390 @@ impl Compiled {
                 pub const EXAMPLES: [Input; #n_examples] = [#(#examples),*];
 
                 #self_check
+
+                #analysis
+
+                #conformal
+
+                #model_impl
+
+                #proofs
+            }
+        }
+    }
+
+    /// `WORST_CASE`, `output_bounds`, `feature_box`, `OUTPUT_BOUNDS` and the bounds
+    /// derived from them for the task.
+    fn analysis(&self) -> TokenStream {
+        let Work {
+            comparisons,
+            multiply_adds,
+            additions,
+            exponentials,
+        } = self.work;
+        let n_outputs = self.n_outputs;
+        let pack = |lo: TokenStream, hi: TokenStream| {
+            quote! {
+                let mut out = [[0f32; 2]; N_OUTPUTS];
+                let mut o = 0;
+                while o < N_OUTPUTS {
+                    out[o] = [#lo[o], #hi[o]];
+                    o += 1;
+                }
+                out
+            }
+        };
+        let (work_doc, bounds_fn) = match &self.network {
+            Network::Dense(layers) => {
+                let mut steps = Vec::new();
+                for (i, l) in layers.iter().enumerate() {
+                    let (w, b) = (format_ident!("L{i}_WEIGHT"), format_ident!("L{i}_BIAS"));
+                    let (lo, hi) = (format_ident!("lo{i}"), format_ident!("hi{i}"));
+                    let (lo_in, hi_in) = if i == 0 {
+                        (quote!(lo), quote!(hi))
+                    } else {
+                        let (p, q) = (format_ident!("lo{}", i - 1), format_ident!("hi{}", i - 1));
+                        (quote!(&#p), quote!(&#q))
+                    };
+                    let (width, relu) = (l.out_dim, l.relu);
+                    steps.push(quote! {
+                        let (mut #lo, mut #hi) = ([0f32; #width], [0f32; #width]);
+                        kernels::dense_bounds(&#w, &#b, #lo_in, #hi_in, #relu, &mut #lo, &mut #hi);
+                    });
+                }
+                let last = layers.len() - 1;
+                let (lo, hi) = (format_ident!("lo{last}"), format_ident!("hi{last}"));
+                let packed = pack(quote!(#lo), quote!(#hi));
+                let doc = "Upper bounds on the arithmetic of one prediction (`outputs` and `decode`), from the \
+                           model's shape; for a dense network they are the exact count. No loop depends on the data.";
+                let f = quote! {
+                    /// Bounds of the raw [`outputs`] over every row of features with `lo[j] <= x[j] <= hi[j]`,
+                    /// `[lo, hi]` per output: interval arithmetic through the layers, widened by the worst
+                    /// rounding error of the kernels. Sound (no row of the box leaves the bounds) but not
+                    /// tight. An unbounded feature gives unbounded outputs; [`feature_box`] builds a bounded
+                    /// box. `const`, so `const B: [[f32; 2]; N_OUTPUTS] = output_bounds(&LO, &HI);` costs
+                    /// nothing at run time.
+                    pub const fn output_bounds(lo: &[f32; N_FEATURES], hi: &[f32; N_FEATURES]) -> [[f32; 2]; N_OUTPUTS] {
+                        #(#steps)*
+                        #packed
+                    }
+                };
+                (doc, f)
+            }
+            Network::Trees { feature, .. } => {
+                let n_nodes = feature.len();
+                let depth = self.max_tree_depth;
+                let packed = pack(quote!(lo_out), quote!(hi_out));
+                let doc = "Upper bounds on the arithmetic of one prediction (`outputs` and `decode`), from the \
+                           model's shape: the comparisons are the sum of the trees' depths. No loop depends on the data.";
+                let f = quote! {
+                    /// Depth of the deepest tree: the most comparisons one walk can take.
+                    pub const MAX_TREE_DEPTH: usize = #depth;
+
+                    /// Bounds of the raw [`outputs`] over every row of features with `lo[j] <= x[j] <= hi[j]`,
+                    /// `[lo, hi]` per output (a NaN bound lets the feature be NaN). Each tree contributes the
+                    /// smallest and the largest leaf the box can reach, summed as `outputs` sums; rounding is
+                    /// monotone, so the bounds are sound with no error margin, though not necessarily reached.
+                    /// `const`, so `const B: [[f32; 2]; N_OUTPUTS] = output_bounds(&LO, &HI);` costs nothing
+                    /// at run time.
+                    pub const fn output_bounds(lo: &[f32; N_FEATURES], hi: &[f32; N_FEATURES]) -> [[f32; 2]; N_OUTPUTS] {
+                        let mut reachable = [false; #n_nodes];
+                        let (mut lo_out, mut hi_out) = ([0f32; N_OUTPUTS], [0f32; N_OUTPUTS]);
+                        TREES.bounds(lo, hi, &mut reachable, &mut lo_out, &mut hi_out);
+                        #packed
+                    }
+                };
+                (doc, f)
+            }
+        };
+        let numeric_offsets: Vec<usize> = self
+            .fields
+            .iter()
+            .filter_map(|f| match f.spec {
+                Spec::Numeric { offset, .. } => Some(offset),
+                _ => None,
+            })
+            .collect();
+        let box_fn = if numeric_offsets.is_empty() {
+            quote! {
+                /// A box of feature values for [`output_bounds`]: every category slot anywhere between 0
+                /// and 1 (this model has no numeric field, so `sd` is unused). `[lo, hi]`.
+                pub const fn feature_box(sd: f32) -> [[f32; N_FEATURES]; 2] {
+                    let _ = sd;
+                    [[0f32; N_FEATURES], [1f32; N_FEATURES]]
+                }
+            }
+        } else {
+            quote! {
+                /// A box of feature values for [`output_bounds`]: every numeric feature within `sd`
+                /// standard deviations of its training mean (the features are standardised), every
+                /// category slot anywhere between 0 and 1. `[lo, hi]`.
+                pub const fn feature_box(sd: f32) -> [[f32; N_FEATURES]; 2] {
+                    let mut lo = [0f32; N_FEATURES];
+                    let mut hi = [1f32; N_FEATURES];
+                    #(lo[#numeric_offsets] = -sd; hi[#numeric_offsets] = sd;)*
+                    [lo, hi]
+                }
+            }
+        };
+        let expected = self.output_bounds.iter().map(|[a, b]| {
+            let (a, b) = (Literal::u32_unsuffixed(a.to_bits()), Literal::u32_unsuffixed(b.to_bits()));
+            quote!([#a, #b])
+        });
+        let shown: Vec<String> = self
+            .output_bounds
+            .iter()
+            .map(|[a, b]| format!("[{}, {}]", short(f64::from(*a)), short(f64::from(*b))))
+            .collect();
+        let bounds_doc = format!(
+            "Bounds of the raw [`outputs`] over every possible input, `[lo, hi]` per output: \
+             [`output_bounds`] of the unbounded box, evaluated by the compiler. For this model: {}.",
+            shown.join(", ")
+        );
+        let derived = match &self.output {
+            Output::Binary { .. } => {
+                let [lo, hi] = self.output_bounds[0];
+                let (p, q) = (f64_lit(kernels::sigmoid(f64::from(lo))), f64_lit(kernels::sigmoid(f64::from(hi))));
+                let doc = format!(
+                    "Bounds of the probability over every possible input: the logistic function of \
+                     [`OUTPUT_BOUNDS`], which it maps monotonically ({} to {}), up to the rounding of `exp`.",
+                    short(kernels::sigmoid(f64::from(lo))),
+                    short(kernels::sigmoid(f64::from(hi)))
+                );
+                quote! {
+                    #[doc = #doc]
+                    pub const PROBABILITY_BOUNDS: [f64; 2] = [#p, #q];
+                }
+            }
+            Output::Regression { mean, std } => {
+                let [lo, hi] = self.output_bounds[0];
+                let (p, q) = (kernels::unscale(lo, *mean, *std), kernels::unscale(hi, *mean, *std));
+                let (pl, ql) = (f64_lit(p), f64_lit(q));
+                let doc = format!(
+                    "Bounds of the predicted value over every possible input, in the target's units: \
+                     [`OUTPUT_BOUNDS`] unscaled ({} to {}). Every operation rounds monotonically, so the \
+                     bounds are exact.",
+                    short(p),
+                    short(q)
+                );
+                quote! {
+                    #[doc = #doc]
+                    pub const VALUE_BOUNDS: [f64; 2] = [#pl, #ql];
+                }
+            }
+            Output::Multiclass { .. } => quote!(),
+        };
+        quote! {
+            #[doc = #work_doc]
+            pub const WORST_CASE: ::tabsmith_embedded::Work = ::tabsmith_embedded::Work {
+                comparisons: #comparisons,
+                multiply_adds: #multiply_adds,
+                additions: #additions,
+                exponentials: #exponentials,
+            };
+
+            #bounds_fn
+
+            #box_fn
+
+            #[doc = #bounds_doc]
+            pub const OUTPUT_BOUNDS: [[f32; 2]; N_OUTPUTS] =
+                output_bounds(&[f32::NEG_INFINITY; N_FEATURES], &[f32::INFINITY; N_FEATURES]);
+
+            // The host that expanded `model!` computed the same bounds with the same kernels:
+            // the constant evaluator must agree bit for bit.
+            const _: () = {
+                const EXPECTED: [[u32; 2]; #n_outputs] = [#(#expected),*];
+                let mut o = 0;
+                while o < N_OUTPUTS {
+                    assert!(
+                        OUTPUT_BOUNDS[o][0].to_bits() == EXPECTED[o][0] && OUTPUT_BOUNDS[o][1].to_bits() == EXPECTED[o][1],
+                        "the output bounds differ from the ones computed when the macro expanded"
+                    );
+                    o += 1;
+                }
+            };
+
+            #derived
+        }
+    }
+
+    /// `CONFORMAL`, and the interval or prediction set it gives a prediction.
+    fn conformal(&self) -> TokenStream {
+        let value = match self.conformal {
+            Some((alpha, quantile)) => {
+                let (a, q) = (f64_lit(alpha), f64_lit(quantile));
+                quote!(Some(::tabsmith_embedded::Conformal { alpha: #a, quantile: #q }))
+            }
+            None => quote!(None),
+        };
+        let doc = format!(
+            "The bundle's split conformal calibration (`conformal.json`), or `None` when it has none{}. \
+             On rows distributed like the calibration rows (the validation split, which also selected the \
+             model, so this is approximate), the interval or set below holds the truth with probability \
+             about `1 − alpha`.",
+            match self.conformal {
+                Some((alpha, quantile)) => format!(": here alpha {} and quantile {}", short(alpha), short(quantile)),
+                None => String::new(),
+            }
+        );
+        let per_task = match &self.output {
+            Output::Regression { .. } => quote! {
+                /// `[value − quantile, value + quantile]`, in the target's units; `None` without a calibration.
+                pub fn interval(p: &Prediction) -> Option<[f64; 2]> {
+                    match CONFORMAL {
+                        Some(c) => Some([p.value - c.quantile, p.value + c.quantile]),
+                        None => None,
+                    }
+                }
+            },
+            Output::Binary { .. } => quote! {
+                /// Whether `[Label::Negative, Label::Positive]` are in the prediction set: a label is in
+                /// it when its probability is at least `1 − quantile`. The set can be empty or hold
+                /// both. `None` without a calibration.
+                pub fn prediction_set(p: &Prediction) -> Option<[bool; 2]> {
+                    match CONFORMAL {
+                        Some(c) => Some([1.0 - p.probability >= 1.0 - c.quantile, p.probability >= 1.0 - c.quantile]),
+                        None => None,
+                    }
+                }
+            },
+            Output::Multiclass { .. } => quote! {
+                /// Whether each class of [`Class::ALL`] is in the prediction set: a class is in it when
+                /// its probability is at least `1 − quantile`. `None` without a calibration.
+                pub fn prediction_set(p: &Prediction) -> Option<[bool; N_OUTPUTS]> {
+                    match CONFORMAL {
+                        Some(c) => {
+                            let mut set = [false; N_OUTPUTS];
+                            let mut k = 0;
+                            while k < N_OUTPUTS {
+                                set[k] = p.probabilities[k] >= 1.0 - c.quantile;
+                                k += 1;
+                            }
+                            Some(set)
+                        }
+                        None => None,
+                    }
+                }
+            },
+        };
+        quote! {
+            #[doc = #doc]
+            pub const CONFORMAL: Option<::tabsmith_embedded::Conformal> = #value;
+
+            #per_task
+        }
+    }
+
+    fn model_impl(&self) -> TokenStream {
+        quote! {
+            /// [`predict`] as a value: the unit struct implements `tabsmith_embedded::Model`, so
+            /// code written against the trait takes this model or the runtime's `Predictor` alike.
+            #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+            pub struct Model;
+
+            impl ::tabsmith_embedded::Model for Model {
+                type Input = Input;
+                type Prediction = Prediction;
+                type Error = InputError;
+
+                fn predict(&self, input: &Input) -> ::core::result::Result<Prediction, InputError> {
+                    predict(input)
+                }
+            }
+        }
+    }
+
+    /// The harnesses for the Kani model checker: prediction never panics, for every
+    /// possible input, proved stage by stage with loop bounds from the model's shape.
+    fn proofs(&self, name: &Ident) -> TokenStream {
+        let features = format_ident!("{name}_features_are_total");
+        let decode = format_ident!("{name}_decode_is_total");
+        // `kernels::numeric` scans the numeric missing-value tokens; nothing else in
+        // `features` loops.
+        let u_features = Literal::usize_unsuffixed(self.numeric_tokens.len() + 2);
+        let outputs = match &self.network {
+            Network::Trees { .. } => {
+                let walk = format_ident!("{name}_tree_walk_is_total");
+                let u = Literal::usize_unsuffixed(self.max_tree_depth + 2);
+                quote! {
+                    /// Walking any tree with any feature values stays inside the arrays and ends at
+                    /// a leaf. `outputs` adds one walk per tree to each output's starting score:
+                    /// `value` has one entry per node, and the compiler checks that there is one
+                    /// starting score per output, so with every walk in range the sum cannot panic
+                    /// either. (All the walks in one proof need more memory than a CI runner has.)
+                    #[kani::proof]
+                    #[kani::unwind(#u)]
+                    fn #walk() {
+                        let t: usize = kani::any();
+                        kani::assume(t < TREES.roots.len());
+                        let x: [f32; N_FEATURES] = kani::any();
+                        let leaf = TREES.leaf(t, &x);
+                        assert!(TREES.feature[leaf] < 0);
+                    }
+                }
+            }
+            Network::Dense(layers) => {
+                let layers_total = format_ident!("{name}_layers_are_total");
+                // The loops of `dense` and `dot`: the outputs of a layer, the chunks of
+                // eight of its inputs, the eight of a chunk, and the tail.
+                let longest = layers
+                    .iter()
+                    .map(|l| l.out_dim.max(l.in_dim / 8).max(8).max(l.in_dim % 8))
+                    .max()
+                    .unwrap_or(0);
+                let u = Literal::usize_unsuffixed(longest + 2);
+                quote! {
+                    /// The dense layers stay inside their weight arrays, for any feature values.
+                    /// No check depends on the arithmetic, which Kani therefore slices away.
+                    #[kani::proof]
+                    #[kani::unwind(#u)]
+                    fn #layers_total() {
+                        let x: [f32; N_FEATURES] = kani::any();
+                        let _ = outputs(&x);
+                    }
+                }
+            }
+        };
+        let u_decode = if self.task == Task::Multiclass {
+            let u = Literal::usize_unsuffixed(self.n_outputs + 2);
+            quote!(#[kani::unwind(#u)])
+        } else {
+            quote!()
+        };
+        let doc = format!(
+            "Proofs for the [Kani](https://github.com/model-checking/kani) model checker (`cargo kani`): \
+             prediction never panics, for every possible input. `predict` is `decode(&outputs(&features(input)?))`, \
+             and each stage is proved total for every value of its argument's type, a superset of what the \
+             stage before it can return: any number (NaN and infinities included), any category, any missing \
+             value. Proving the stages apart keeps each proof small. The loop bounds come from the model's \
+             shape. Harness names start with `{name}_`, so several models can share a crate; \
+             `examples/embedded-predict` in the Tabsmith repository shows the recommended settings."
+        );
+        quote! {
+            #[doc = #doc]
+            #[cfg(kani)]
+            pub mod proofs {
+                use super::*;
+
+                /// Encoding any input returns features or an `InputError`.
+                #[kani::proof]
+                #[kani::unwind(#u_features)]
+                fn #features() {
+                    let input: Input = kani::any();
+                    let _ = features(&input);
+                }
+
+                #outputs
+
+                /// The decision for any model output: the logistic function or softmax (and
+                /// its `exp`), or the unscaling, never panics.
+                #[kani::proof]
+                #u_decode
+                fn #decode() {
+                    let z: [f32; N_OUTPUTS] = kani::any();
+                    let _ = decode(&z);
+                }
             }
         }
     }
@@ -1037,8 +1535,33 @@ impl Compiled {
                 right,
                 value,
                 base,
+                monotone,
             } => {
                 let (n_trees, n_nodes, n_base) = (roots.len(), feature.len(), base.len());
+                let constrained: Vec<String> = self
+                    .fields
+                    .iter()
+                    .filter_map(|f| match f.spec {
+                        Spec::Numeric { offset, .. } if monotone[offset] != 0 => Some(format!(
+                            "{} in `{}`",
+                            if monotone[offset] > 0 { "increasing" } else { "decreasing" },
+                            f.name
+                        )),
+                        _ => None,
+                    })
+                    .collect();
+                let monotone_doc = format!(
+                    "Monotone constraints the trees were trained under, one per feature: 1 (the output never \
+                     decreases in the feature), -1 (never increases) or 0. This model: {}. The compiler checks \
+                     that every tree keeps them: at each split on a constrained feature, every leaf on the lesser \
+                     side is at most every leaf on the greater side, so the sum of the trees is monotone too.",
+                    if constrained.is_empty() {
+                        "none".to_string()
+                    } else {
+                        constrained.join(", ")
+                    }
+                );
+                let monotone = monotone.iter().map(|&v| Literal::i8_unsuffixed(v));
                 let roots = roots.iter().map(|&v| Literal::u32_unsuffixed(v));
                 let feature = feature.iter().map(|&v| Literal::i32_unsuffixed(v));
                 let threshold = threshold.iter().map(|&v| f32_lit(v));
@@ -1054,6 +1577,30 @@ impl Compiled {
                     const TREE_RIGHT: [u32; #n_nodes] = [#(#right),*];
                     const TREE_VALUE: [f32; #n_nodes] = [#(#value),*];
                     const TREE_BASE: [f64; #n_base] = [#(#base),*];
+
+                    #[doc = #monotone_doc]
+                    pub const MONOTONE: [i8; N_FEATURES] = [#(#monotone),*];
+
+                    // Children come after their parent, so one pass backwards gives every
+                    // subtree's smallest and largest leaf, and checks each constrained split.
+                    const _: () = {
+                        let (mut lo, mut hi) = ([0f32; #n_nodes], [0f32; #n_nodes]);
+                        let mut i = #n_nodes;
+                        while i > 0 {
+                            i -= 1;
+                            if TREE_FEATURE[i] < 0 {
+                                lo[i] = TREE_VALUE[i];
+                                hi[i] = TREE_VALUE[i];
+                            } else {
+                                let (l, r) = (TREE_LEFT[i] as usize, TREE_RIGHT[i] as usize);
+                                lo[i] = if lo[l] < lo[r] { lo[l] } else { lo[r] };
+                                hi[i] = if hi[l] > hi[r] { hi[l] } else { hi[r] };
+                                let c = MONOTONE[TREE_FEATURE[i] as usize];
+                                assert!(c <= 0 || hi[l] <= lo[r], "a tree breaks an increasing monotone constraint");
+                                assert!(c >= 0 || lo[l] >= hi[r], "a tree breaks a decreasing monotone constraint");
+                            }
+                        }
+                    };
 
                     /// The ensemble that [`outputs`] evaluates. `TREES.leaf(t, &x)` is the walk
                     /// through tree `t`; the Kani proofs check one walk at a time.

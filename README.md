@@ -10,6 +10,7 @@
 **Train a model from a CSV and ship it inside your Rust application — one tool, no Python.**
 
 [![CI](https://github.com/NatMartini/Tabsmith/actions/workflows/ci.yml/badge.svg)](https://github.com/NatMartini/Tabsmith/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/NatMartini/Tabsmith?include_prereleases)](https://github.com/NatMartini/Tabsmith/releases)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 [![Rust 1.95+](https://img.shields.io/badge/rust-1.95%2B-orange.svg)](#install)
 
@@ -74,8 +75,9 @@ yet, and the [design decisions](docs/design-decisions.md) and
 - **Or compile the model in.** `tabsmith_macros::model!` turns a bundle into Rust code while your crate builds: typed inputs, no allocation, no `std`, and the same bits as the runtime on every platform. In the embedded example, the Kani model checker proves that prediction never panics, for every possible input ([below](#compiled-into-your-code)).
 - **Fast where it matters in production.** Single-record prediction in microseconds, about a millisecond from process start to first prediction, about 12 MB of memory ([numbers below](#tabsmith-vs-python)).
 - **Same quality as scikit-learn.** Preprocessing matches scikit-learn's to about 2e-7, the linear model lands within about 0.1 % of scikit-learn's optimum of the same objective, and metrics match to 1e-12 ([measured](reports/implementation-acceptance.md#reference-check-against-scikit-learn); CI guards 1e-5, 1 % and 1e-12 with [frozen goldens](fixtures/reference/)).
-- **Deterministic, to the bit.** Same data and settings, same weights: an interrupted run resumes to exactly the weights of an uninterrupted one, on the CPU and on certified GPUs ([why that took work on GPUs](docs/design-decisions.md#d5-determinism-is-a-contract)).
-- **Mistakes are hard to make.** No train/test leakage by construction, one use of the test set per data version, entity-aware splits, refusal instead of silent fallback, integrity-checked bundles, and errors that say what to do next.
+- **Deterministic, to the bit.** Same data and settings, same weights: an interrupted run resumes to exactly the weights of an uninterrupted one, on the CPU and on certified GPUs ([why that took work on GPUs](docs/design-decisions.md#d5-determinism-is-a-contract)). The trees are the same on every operating system: [measured](reports/reproducibility/) on Windows and Linux, same weight hash, same history.
+- **Mistakes are hard to make.** No train/test leakage by construction, one use of the test set per data version, entity-aware and chronological splits, refusal instead of silent fallback, integrity-checked bundles, and errors that say what to do next.
+- **Says what it knows.** Every bundle carries a conformal calibration, so each prediction comes with an interval or a prediction set at a stated coverage, and the permutation importance of its inputs. Trees can be trained under monotone constraints, which the bundle loader and the compiler both verify. `tabsmith serve` reports input drift against the training statistics.
 - **Updates you can trust.** New data → new runs; the old bundle is scored on the same unseen rows; applications swap bundles only after the new one passes its self-check, and can roll back.
 
 ## Install
@@ -207,6 +209,9 @@ proves that its prediction never panics, for every possible input.
 The same runtime, unchanged, compiled to WebAssembly: [examples/wasm-predict](examples/wasm-predict)
 loads a bundle in the browser, verifies every file's SHA-256, replays its self-check,
 builds a form from the input schema and predicts in microseconds. Nothing is uploaded.
+Try it at <https://natmartini.github.io/Tabsmith/> (built by the
+[Pages workflow](.github/workflows/pages.yml); the page is live once GitHub Pages is
+enabled for the repository).
 
 ### As an HTTP service
 
@@ -217,9 +222,12 @@ curl -s localhost:8080/predict --data-binary @bundles/run-002/examples/input.jso
 ```
 
 Endpoints: `POST /predict` (one record, an array, or `{"records": [...]}`),
-`GET /schema`, `GET /health`, and `POST /reload` with `--allow-reload` (bundles in the
-served bundle's folder only). The server has no authentication or timeouts and listens
-on `127.0.0.1` by default; see [SECURITY.md](SECURITY.md) before exposing it.
+`GET /schema`, `GET /health`, `GET /stats` (the inputs seen since the bundle was loaded
+against the training statistics it carries: standardised means and spreads per numeric
+field, unseen categories per categorical field, and the fields that drifted), and
+`POST /reload` with `--allow-reload` (bundles in the served bundle's folder only). The
+server has no authentication or timeouts and listens on `127.0.0.1` by default; see
+[SECURITY.md](SECURITY.md) before exposing it.
 
 ## When new data arrives
 
@@ -289,13 +297,21 @@ Machine: AMD Ryzen 9 9950X3D2 16-Core Processor, 32 logical CPUs, Linux 6.6.87.2
 What the table says: quality is on par. The trees match `HistGradientBoostingClassifier`
 (ROC AUC 0.8188 against 0.8184), and the small MLP did better than `MLPClassifier` here.
 Training takes about a second or less on both sides. scikit-learn's lbfgs fits the
-linear model faster than Tabsmith's minibatch Adam. Tabsmith's single-threaded trees
-trained faster than HGB on all 32 threads on this small problem; on large data, expect
-the parallel implementation to win.
+linear model faster than Tabsmith's minibatch Adam. Tabsmith's trees, which ran on one
+thread when this benchmark was made, trained faster than HGB on all 32 threads on this
+small problem; the trees now use every core, with sums merged in a fixed order so that
+the result is the same on any machine.
 The difference is in **shipping the model**:
 - single-record prediction in an application takes about 2.5 µs instead of 2–3 ms;
 - a new process predicts after 1 ms instead of 0.6 s, in 12 MB instead of 160 MB;
 - the application is a 1.7 MB binary instead of a 354 MB Python environment.
+
+On three public datasets (UCI Adult, California Housing, UCI Covertype), every
+candidate matches its scikit-learn equivalent on the same rows and split to within the
+noise of the test split; the trees agree to the third decimal. Where Tabsmith loses is
+the training time of its trees on the larger problems: 17 to 21 times slower than
+`HistGradientBoosting`, because each leaf's histogram is rebuilt from its rows and the
+sums keep a fixed order ([reports/datasets](reports/datasets/)).
 
 ### What you would otherwise write yourself
 
@@ -308,6 +324,15 @@ The difference is in **shipping the model**:
 | Model + preprocessing + schema + label mapping + evidence in one verified artifact | the bundle | pickle/joblib + conventions |
 | Exact, bit-identical resume after a crash | `tabsmith resume` | rarely available |
 | Actionable errors with a stable code and the next command | every error | stack traces |
+
+### How it relates to other tools
+
+| | What it is | Where Tabsmith differs |
+|---|---|---|
+| **scikit-learn, LightGBM, XGBoost** | the reference training libraries, in Python and C++ | Tabsmith is one tool for the whole job, from the CSV to a verified bundle, and ships the model without Python. Its trees are a plain histogram GBDT (no sampling, no native categorical splits); against scikit-learn's `HistGradientBoostingClassifier` they match in quality on the README problem ([above](#tabsmith-vs-python)). LightGBM and XGBoost are faster trainers on large data and were not measured here |
+| **[linfa](https://github.com/rust-ml/linfa), [smartcore](https://github.com/smartcorelib/smartcore)** | machine-learning algorithm collections in Rust, in the spirit of scikit-learn | They give you algorithms; Tabsmith gives you the workflow around them: splits without leakage, one preprocessing implementation, the test-set ledger, bundles, exact resume, conformal intervals, and a model compiled into `no_std` code with proofs. Tabsmith does not aim to offer every algorithm |
+| **[Burn](https://burn.dev), [candle](https://github.com/huggingface/candle)** | deep-learning frameworks in Rust | Tabsmith trains its networks with Burn and would be a user of either. Its runtime depends on neither: inference is 200 lines of kernels shared with the compiled models |
+| **[PyO3](https://pyo3.rs), ONNX runtimes** | call Python from Rust, or run exported models | Both keep the model outside Rust's type system. Tabsmith's `model!` makes the model's contract types and its weights constants, so a misspelled field or category does not compile, and the compiler can bound the outputs and generate the proofs |
 
 ## How it works
 
@@ -333,20 +358,22 @@ Every step has a step-by-step command too (`tabsmith plan`, `run`, `compare`,
 
 ## Status
 
-Tabsmith 0.1 is young. What is solid and tested (140 automated tests and 6 doctests,
+Tabsmith 0.1 is young. What is solid and tested (179 automated tests and 7 doctests,
 including process-level ones that drive the real binary, and property tests): the
 workflow above for all three tasks, exact resume, bundles and the runtime, models
 compiled into code (with [Kani proofs](reports/kani/) that their prediction never panics), and
 reference checks against scikit-learn. The
 [acceptance report](reports/implementation-acceptance.md) has measured evidence for
 each of these. Three GPU paths are [certified](reports/gpu/), and the bundle loader was
-[fuzzed](reports/fuzz/) for 5.3 million inputs without a crash.
+[fuzzed](reports/fuzz/) for 5.3 million inputs without a crash. The trees train
+[1,000,000 rows](reports/scaling/) end to end in 42 s with 1.6 GB of memory, and give
+[the same model on Windows and Linux](reports/reproducibility/).
 
 Not done yet, by design or for lack of hardware:
 
 - **GPU**: an opt-in build. GPU paths are certified only where they were run (an RTX 5090 and an AMD integrated GPU on Windows, [reports/gpu](reports/gpu/)); CUDA trains in TF32, which must be requested explicitly (`execution.precision = "tf32"`), because the matmul library has no fp32 switch. Asking for a GPU that is not there is an error, never a silent fallback.
 - **Platforms**: certified on Linux x86_64, where the acceptance run above was made. The full test suite also passes on Windows x86_64 and, in CI, on macOS (Apple Silicon); both are reported as "not certified" by design in 0.1. The Linux arm64 and macOS Intel binaries are built but not tested.
-- **Tasks**: binary, multiclass and regression on one table. Time-based splits are refused rather than faked; ranking, survival and multi-table data are not supported.
+- **Tasks**: binary, multiclass and regression on one table, with stratified, grouped (`--group`) or chronological (`--time`) splits. Ranking, survival and multi-table data are not supported.
 - **macOS**: checked only by CI's Apple Silicon runners; nobody has run Tabsmith on a Mac by hand. The Linux results in the reports come from WSL on the development machine.
 - **Users**: no formal user study yet — feedback and issues are very welcome.
 

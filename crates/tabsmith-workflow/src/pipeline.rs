@@ -697,6 +697,11 @@ impl Workspace {
             checkpoint_dir: run_dir.join("checkpoints"),
             key,
             device: plan.engine.clone(),
+            monotone: if candidate == Candidate::Gbdt {
+                crate::gbdt::monotone_constraints(&tcfg, &p.fitted.transform)?
+            } else {
+                Vec::new()
+            },
         };
         crate::device::reset_peak_rss();
         let t0 = Instant::now();

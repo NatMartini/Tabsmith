@@ -12,16 +12,43 @@
 //!
 //! On the device, [`power_on_self_test`] replays the bundles' examples and checks every
 //! prediction bit for bit against what `tabsmith-runtime` predicted when the crate was
-//! compiled, and [`defect_risk`] predicts. Under the Kani model checker
-//! (`cargo kani`), the proofs at the end of this file show that prediction never
-//! panics, for every possible input: each stage of `predict` (features, outputs,
-//! decode) is proved total on its own.
+//! compiled, and [`defect_risk`] predicts.
+//!
+//! Before the firmware runs, the compiler already knows three things about each model:
+//! the bounds of its outputs ([`TREE_PROBABILITY_BOUNDS`], [`NETWORK_LOGIT_BOUNDS`]), the
+//! most arithmetic one prediction can take (`defects::WORST_CASE`), and, under the Kani
+//! model checker (`cargo kani`), that prediction never panics, for every possible input.
+//! The `kani` option of `model!` makes each module carry its own proofs
+//! (`defects::proofs`, `defects_mlp::proofs`): each stage of `predict` (features,
+//! outputs, decode) is proved total on its own, with loop bounds taken from the model's
+//! shape. Nothing in this file is written by hand for the proofs.
 #![cfg_attr(not(test), no_std)]
 
 tabsmith_macros::model!(defects, "../../fixtures/bundles/binary-gbdt", kani);
 tabsmith_macros::model!(defects_mlp, "../../fixtures/bundles/binary-mlp", kani);
 
 pub use tabsmith_embedded::{InputError, SelfCheckError};
+
+/// The trees' probability of a defect lies within these bounds for every possible
+/// input: the compiler summed the smallest and the largest leaf of every tree.
+pub const TREE_PROBABILITY_BOUNDS: [f64; 2] = defects::PROBABILITY_BOUNDS;
+
+/// The network's logit for every plausible reading: each numeric feature within four
+/// standard deviations of its training mean, each category slot anywhere between 0
+/// and 1. Interval arithmetic through the layers, widened for rounding, evaluated by
+/// the compiler. (Over all inputs a network is unbounded, unlike the trees.)
+pub const NETWORK_LOGIT_BOUNDS: [f32; 2] = {
+    let [lo, hi] = defects_mlp::feature_box(4.0);
+    defects_mlp::output_bounds(&lo, &hi)[0]
+};
+
+// The bounds are finite, so the firmware can size its fixed-point output from them,
+// and one walk never takes more comparisons than the whole prediction allows.
+const _: () = {
+    assert!(TREE_PROBABILITY_BOUNDS[0] > 0.0 && TREE_PROBABILITY_BOUNDS[1] < 1.0);
+    assert!(NETWORK_LOGIT_BOUNDS[0] > -1e4 && NETWORK_LOGIT_BOUNDS[1] < 1e4);
+    assert!(defects::WORST_CASE.comparisons >= defects::MAX_TREE_DEPTH);
+};
 
 /// Checks both models against the runtime's predictions recorded at compile time.
 /// Run it once at start-up: it fails on a platform whose floating point differs.
@@ -37,71 +64,6 @@ pub fn defect_risk(input: &defects::Input, same_reading: &defects_mlp::Input) ->
     Ok(0.5 * (trees.probability + network.probability))
 }
 
-/// Prediction never panics, for every input. A model's `predict` is
-/// `decode(&outputs(&features(input)?))`, and each stage is proved total for every value
-/// of its argument's type: a superset of what the stage before it can return. Together
-/// the three proofs cover every input (any number, NaN and infinities included, any
-/// category, any missing value). Proving the stages apart keeps each proof small: no
-/// array index depends on the network's arithmetic, so Kani slices it away, and `exp`
-/// is checked once, in `decode`. The trees' `outputs` is proved one walk at a time:
-/// all 14 walks in one proof ran out of memory with 14 GB, and a CI runner has 16 GB.
-#[cfg(kani)]
-mod proofs {
-    use super::*;
-
-    /// Encoding any input returns features or an `InputError`.
-    #[kani::proof]
-    #[kani::unwind(40)]
-    fn tree_features_are_total() {
-        let input: defects::Input = kani::any();
-        let _ = defects::features(&input);
-    }
-
-    /// Walking any tree with any feature values stays inside the arrays and ends at a
-    /// leaf. `outputs` adds one walk per tree to each output's starting score: `value`
-    /// has one entry per node, and the compiler checks that there is one starting score
-    /// per output, so with every walk in range the sum cannot panic either.
-    #[kani::proof]
-    #[kani::unwind(10)]
-    fn tree_walk_is_total() {
-        let t: usize = kani::any();
-        kani::assume(t < defects::TREES.roots.len());
-        let x: [f32; defects::N_FEATURES] = kani::any();
-        let leaf = defects::TREES.leaf(t, &x);
-        assert!(defects::TREES.feature[leaf] < 0);
-    }
-
-    /// The decision for any logit: the sigmoid (and its `exp`) never panics.
-    #[kani::proof]
-    fn tree_decode_is_total() {
-        let z: [f32; defects::N_OUTPUTS] = kani::any();
-        let _ = defects::decode(&z);
-    }
-
-    /// Encoding any input returns features or an `InputError`.
-    #[kani::proof]
-    #[kani::unwind(40)]
-    fn network_features_are_total() {
-        let input: defects_mlp::Input = kani::any();
-        let _ = defects_mlp::features(&input);
-    }
-
-    /// The dense layers stay inside their weight arrays, for any feature values.
-    #[kani::proof]
-    #[kani::unwind(40)]
-    fn network_layers_are_total() {
-        let x: [f32; defects_mlp::N_FEATURES] = kani::any();
-        let _ = defects_mlp::outputs(&x);
-    }
-
-    /// The decision for any logit.
-    #[kani::proof]
-    fn network_decode_is_total() {
-        let z: [f32; defects_mlp::N_OUTPUTS] = kani::any();
-        let _ = defects_mlp::decode(&z);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -115,5 +77,23 @@ mod tests {
     fn risk_is_a_probability() {
         let risk = defect_risk(&defects::EXAMPLES[0], &defects_mlp::EXAMPLES[0]).unwrap();
         assert!((0.0..=1.0).contains(&risk));
+    }
+
+    #[test]
+    fn the_examples_stay_inside_what_the_compiler_promised() {
+        let [lo, hi] = TREE_PROBABILITY_BOUNDS;
+        for input in &defects::EXAMPLES {
+            let p = defects::predict(input).unwrap().probability;
+            assert!(lo <= p && p <= hi, "{p} outside {lo}..{hi}");
+        }
+        let [lo, hi] = NETWORK_LOGIT_BOUNDS;
+        let [box_lo, box_hi] = defects_mlp::feature_box(4.0);
+        for input in &defects_mlp::EXAMPLES {
+            let x = defects_mlp::features(input).unwrap();
+            if x.iter().enumerate().all(|(j, v)| box_lo[j] <= *v && *v <= box_hi[j]) {
+                let [z] = defects_mlp::outputs(&x);
+                assert!(lo <= z && z <= hi, "{z} outside {lo}..{hi}");
+            }
+        }
     }
 }

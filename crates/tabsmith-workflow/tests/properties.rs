@@ -269,6 +269,7 @@ fn fixture() -> &'static Fixture {
             &BundleOptions {
                 allow_unevaluated: true,
                 out: Some(out.clone()),
+                conformal_alpha: None,
             },
         )
         .unwrap();

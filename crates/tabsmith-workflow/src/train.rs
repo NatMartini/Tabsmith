@@ -327,6 +327,9 @@ pub struct TrainInputs<'a> {
     pub key: ResumeKey,
     /// Where to train, as planned by [`crate::device::plan_device`].
     pub device: EngineDevice,
+    /// Monotone constraints of the `gbdt` candidate, one sign per feature
+    /// ([`crate::gbdt::monotone_constraints`]); empty for the networks or without any.
+    pub monotone: Vec<i8>,
 }
 
 // Returned once per run and immediately taken apart; boxing the model buys nothing.
@@ -344,6 +347,8 @@ pub enum TrainOutcome {
 }
 
 /// Where training starts from.
+// Built once per run and consumed at once; boxing the warm-start weights buys nothing.
+#[allow(clippy::large_enum_variant)]
 pub enum StartFrom {
     Scratch,
     /// R2: continue exactly from a checkpoint.
@@ -405,7 +410,7 @@ pub fn task_loss(outputs: &Matrix, t: &Targets, output: &OutputSchema, weights: 
             for (r, &c) in y.iter().enumerate() {
                 let z: Vec<f64> = outputs.row(r).iter().map(|&v| f64::from(v)).collect();
                 let max = z.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-                let lse = max + z.iter().map(|v| (v - max).exp()).sum::<f64>().ln();
+                let lse = max + libm::log(z.iter().map(|v| libm::exp(v - max)).sum::<f64>());
                 s += (lse - z[c as usize]) * f64::from(weights[c as usize]);
             }
             s / y.len().max(1) as f64
@@ -438,12 +443,14 @@ pub(crate) fn class_weights(y: &[bool], mode: ClassWeight) -> (f32, f32) {
     }
 }
 
-/// Class-weighted mean binary cross-entropy computed from logits (stable).
+/// Class-weighted mean binary cross-entropy computed from logits (stable). `exp` and
+/// `log1p` come from `libm`, so the loss, and the early stopping it drives, are the
+/// same on every operating system.
 pub fn weighted_bce_from_logits(logits: &[f32], y: &[bool], w_neg: f32, w_pos: f32) -> f64 {
     let mut s = 0.0;
     for (&z, &t) in logits.iter().zip(y) {
         let z = f64::from(z);
-        let l = z.max(0.0) - if t { z } else { 0.0 } + (-z.abs()).exp().ln_1p();
+        let l = z.max(0.0) - if t { z } else { 0.0 } + libm::log1p(libm::exp(-z.abs()));
         s += l * f64::from(if t { w_pos } else { w_neg });
     }
     s / y.len().max(1) as f64
@@ -987,7 +994,7 @@ mod tests {
             }
             let z = h[0];
             let t = f64::from(y[i]);
-            total += f64::from(w[i]) * (z.max(0.0) - t * z + (-z.abs()).exp().ln_1p());
+            total += f64::from(w[i]) * (z.max(0.0) - t * z + libm::log1p(libm::exp(-z.abs())));
         }
         let reg: f64 = m
             .layers

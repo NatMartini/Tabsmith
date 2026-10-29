@@ -10,6 +10,7 @@
 **用一个 CSV 训练模型，并直接放进你的 Rust 应用——一个工具，不需要 Python。**
 
 [![CI](https://github.com/NatMartini/Tabsmith/actions/workflows/ci.yml/badge.svg)](https://github.com/NatMartini/Tabsmith/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/NatMartini/Tabsmith?include_prereleases)](https://github.com/NatMartini/Tabsmith/releases)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#许可)
 [![Rust 1.95+](https://img.shields.io/badge/rust-1.95%2B-orange.svg)](#安装)
 
@@ -67,8 +68,9 @@ GPU（Vulkan、CUDA）上训练；运行时还能编译成 WebAssembly 在网页
 - **也可以把模型编译进代码。** `tabsmith_macros::model!` 在你的 crate 编译时把模型包变成 Rust 代码：输入是类型，不分配内存，不依赖 `std`，在所有平台上与运行时逐位相同。在嵌入式示例中，Kani 模型检查器证明了它的预测对任何可能的输入都不会 panic（[见下文](#编译进你的代码)）。
 - **在生产中真正重要的地方够快。** 单条预测在微秒级，从进程启动到第一次预测约 1 毫秒，内存约 12 MB（[见下方数字](#tabsmith-与-python-对比)）。
 - **质量与 scikit-learn 一致。** 预处理与 scikit-learn 相差约 2e-7，线性模型与 scikit-learn 在同一目标函数上的最优值相差约 0.1%，指标相差在 1e-12 以内（[实测](reports/implementation-acceptance.md#reference-check-against-scikit-learn)；CI 用[冻结的参考值](fixtures/reference/)以 1e-5、1% 和 1e-12 为界检查）。
-- **逐位确定。** 同样的数据和设置得到同样的权重：中断的训练续训后与不中断的训练逐位相同，在 CPU 和经过认证的 GPU 上都是如此（[GPU 上为此做了什么](docs/design-decisions.md#d5-determinism-is-a-contract)）。
-- **很难犯错。** 结构上杜绝训练/测试泄漏，每个数据版本的测试集只用一次，按实体切分，拒绝而不是静默回退，模型包经过完整性校验，错误信息告诉你下一步该做什么。
+- **逐位确定。** 同样的数据和设置得到同样的权重：中断的训练续训后与不中断的训练逐位相同，在 CPU 和经过认证的 GPU 上都是如此（[GPU 上为此做了什么](docs/design-decisions.md#d5-determinism-is-a-contract)）。树模型在任何操作系统上都相同：在 Windows 和 Linux 上[实测](reports/reproducibility/)，权重哈希和训练历史完全一致。
+- **很难犯错。** 结构上杜绝训练/测试泄漏，每个数据版本的测试集只用一次，按实体和按时间切分，拒绝而不是静默回退，模型包经过完整性校验，错误信息告诉你下一步该做什么。
+- **知道自己知道多少。** 每个模型包都带有 conformal 校准，因此每条预测都附带指定覆盖率的区间或预测集，还带有各输入的置换重要性。树模型可以在单调约束下训练，模型包加载器和编译器都会验证这一约束。`tabsmith serve` 会对照训练统计量报告输入漂移。
 - **可信的更新。** 新数据 → 新的 Run；旧模型包和新模型在同一批没见过的行上打分；应用只在新包通过自检后才切换，并且可以回退。
 
 ## 安装
@@ -189,7 +191,8 @@ Kani 模型检查器证明了它的预测对任何可能的输入都不会 panic
 ### 在网页中
 
 同一个运行时，原样编译成 WebAssembly：[examples/wasm-predict](examples/wasm-predict) 在浏览器中加载模型包，校验每个文件的
-SHA-256、执行自检，按输入 schema 生成表单，并在微秒级完成预测。数据不会上传。
+SHA-256、执行自检，按输入 schema 生成表单，并在微秒级完成预测。数据不会上传。在线试用：<https://natmartini.github.io/Tabsmith/>
+（由 [Pages 工作流](.github/workflows/pages.yml)构建；仓库启用 GitHub Pages 后页面即可访问）。
 
 ### 作为 HTTP 服务
 
@@ -199,7 +202,8 @@ curl -s localhost:8080/predict --data-binary @bundles/run-002/examples/input.jso
 # {"bundle_id":"b-…","predictions":[{"is_positive":false,"label":"0","probability":…},…]}
 ```
 
-接口：`POST /predict`（一条记录、一个数组或 `{"records": [...]}`）、`GET /schema`、`GET /health`，
+接口：`POST /predict`（一条记录、一个数组或 `{"records": [...]}`）、`GET /schema`、`GET /health`、
+`GET /stats`（模型包加载以来收到的输入与它自带的训练统计量的对比：每个数值字段标准化后的均值和离散度、每个类别字段未见过的类别比例，以及发生漂移的字段），
 以及带 `--allow-reload` 时的 `POST /reload`（只能加载同一目录下的模型包）。服务没有身份认证和超时，默认只监听 `127.0.0.1`；
 对外开放前请先看 [SECURITY.md](SECURITY.md)。
 
@@ -266,9 +270,13 @@ Machine: AMD Ryzen 9 9950X3D2 16-Core Processor, 32 logical CPUs, Linux 6.6.87.2
 
 结论：质量相当——梯度提升树与 `HistGradientBoostingClassifier` 持平（ROC AUC 0.8188 对 0.8184），小 MLP 在这里比
 `MLPClassifier` 更好。两边的训练都在一秒左右或更短：scikit-learn 的 lbfgs 拟合线性模型比 Tabsmith 的小批量 Adam 更快，而在这个小问题上
-Tabsmith 的单线程梯度提升树反而快于使用 32 个线程的 HGB（数据量大时，预计并行实现会更快）。真正的差别在于**交付模型**：在应用中单条预测约
+Tabsmith 的梯度提升树（做这次基准时还是单线程）反而快于使用 32 个线程的 HGB；现在树会用上所有核心，求和按固定顺序合并，结果在任何机器上都一样。真正的差别在于**交付模型**：在应用中单条预测约
 2.5 µs 而不是 2–3 ms，新进程 1 ms 就能给出预测而不是 0.6 s，内存 12 MB 而不是 160 MB，应用是一个 1.7 MB 的二进制文件而不是
 354 MB 的 Python 环境。
+
+在三个公开数据集（UCI Adult、California Housing、UCI Covertype）上，每个候选在同样的行和切分上都与 scikit-learn 的对应模型持平，
+差异在测试集噪声以内，树模型一致到小数点后三位。Tabsmith 输的地方是较大问题上树的训练时间：比 `HistGradientBoosting` 慢 17 到 21 倍，
+原因是每个叶子的直方图都从自己的行重新构建，而且求和顺序固定（[reports/datasets](reports/datasets/)）。
 
 ### 否则你需要自己写的部分
 
@@ -281,6 +289,15 @@ Tabsmith 的单线程梯度提升树反而快于使用 32 个线程的 HGB（数
 | 模型 + 预处理 + schema + 标签映射 + 证据，在一个经过校验的产物里 | 模型包（bundle） | pickle/joblib + 约定 |
 | 崩溃后精确、逐位一致地续训 | `tabsmith resume` | 很少有 |
 | 带稳定错误码和下一条命令的可操作错误 | 每个错误都有 | 堆栈跟踪 |
+
+### 与其他工具的关系
+
+| | 它们是什么 | Tabsmith 的不同之处 |
+|---|---|---|
+| **scikit-learn、LightGBM、XGBoost** | Python 和 C++ 的参考训练库 | Tabsmith 是一个工具做完整件事：从 CSV 到经过校验的模型包，并且不带 Python 交付。它的树是朴素的直方图 GBDT（没有采样，没有原生类别分裂）；在 README 的问题上与 scikit-learn 的 `HistGradientBoostingClassifier` 质量相当（[见上](#tabsmith-与-python-对比)）。LightGBM 和 XGBoost 在大数据上训练更快，这里没有测量 |
+| **[linfa](https://github.com/rust-ml/linfa)、[smartcore](https://github.com/smartcorelib/smartcore)** | Rust 里仿 scikit-learn 的算法集合 | 它们给你算法；Tabsmith 给你算法周围的工作流：不泄漏的切分、唯一的一份预处理实现、测试集台账、模型包、精确续训、conformal 区间，以及带证明的、编译成 `no_std` 代码的模型。Tabsmith 不打算提供所有算法 |
+| **[Burn](https://burn.dev)、[candle](https://github.com/huggingface/candle)** | Rust 的深度学习框架 | Tabsmith 用 Burn 训练神经网络，也可以是二者的用户。它的运行时不依赖任何一个：推理只是 200 行内核，和编译进代码的模型共用 |
+| **[PyO3](https://pyo3.rs)、ONNX 运行时** | 从 Rust 调 Python，或运行导出的模型 | 两者都把模型留在 Rust 类型系统之外。Tabsmith 的 `model!` 把模型的契约变成类型、权重变成常量，字段或类别写错编译不过，编译器还能给出输出范围并生成证明 |
 
 ## 工作原理
 
@@ -302,15 +319,16 @@ GPU 训练需要单独构建（`cargo install tabsmith-cli --features gpu`）；
 
 ## 状态
 
-Tabsmith 0.1 还很年轻。已经可靠且有测试覆盖的部分（140 个自动测试和 6 个文档测试，其中包括驱动真实二进制的进程级测试和性质测试）：
+Tabsmith 0.1 还很年轻。已经可靠且有测试覆盖的部分（179 个自动测试和 7 个文档测试，其中包括驱动真实二进制的进程级测试和性质测试）：
 上面三种任务的工作流、精确续训、模型包与运行时、编译进代码的模型（并用 [Kani 证明](reports/kani/)其预测不会 panic），以及与 scikit-learn 的参考对照。[验收报告](reports/implementation-acceptance.md)
 为每一项提供了实测证据。三条 GPU 路径已[认证](reports/gpu/)，模型包加载器经过 530 万次输入的[模糊测试](reports/fuzz/)，没有崩溃。
+树模型在 [100 万行](reports/scaling/)上端到端训练 42 秒、内存 1.6 GB，并且在 [Windows 和 Linux 上得到同一个模型](reports/reproducibility/)。
 
 尚未完成的部分（有的是有意为之，有的是缺少硬件）：
 
 - **GPU**：需要单独构建。GPU 路径只在实际运行过的硬件上认证（Windows 上的 RTX 5090 和 AMD 核显，见 [reports/gpu](reports/gpu/)）；CUDA 用 TF32 训练，必须显式声明（`execution.precision = "tf32"`），因为矩阵乘法库没有 fp32 开关。请求不存在的 GPU 会报错，绝不会静默回退。
 - **平台**：在 Linux x86_64 上认证，上面的验收运行就在该平台上完成。完整测试套件也在 Windows x86_64 上通过，并在 CI 的 macOS（Apple Silicon）上通过；按 0.1 版的设计，这两者都报告为“未认证”。Linux arm64 和 macOS Intel 二进制只构建、未测试。
-- **任务**：单表上的二分类、多分类和回归。按时间切分会被拒绝，而不是假装支持；不支持排序、生存分析和多表数据。
+- **任务**：单表上的二分类、多分类和回归，支持分层、按实体（`--group`）和按时间（`--time`）切分。不支持排序、生存分析和多表数据。
 - **macOS**：只由 CI 的 Apple Silicon runner 检查，还没有人在 Mac 上手动运行过 Tabsmith。报告里 Linux 上的结果来自开发机上的 WSL。
 - **用户**：还没有正式的用户研究——非常欢迎反馈和 issue。
 

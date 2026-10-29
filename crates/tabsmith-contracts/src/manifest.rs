@@ -27,6 +27,11 @@ pub const EVALUATION_FILE: &str = "evaluation.json";
 pub const EXAMPLES_INPUT_FILE: &str = "examples/input.json";
 pub const EXAMPLES_EXPECTED_FILE: &str = "examples/expected.json";
 
+/// Optional: split conformal prediction, calibrated when the bundle was built.
+pub const CONFORMAL_FILE: &str = "conformal.json";
+/// Optional: permutation importance of the input fields on the validation split.
+pub const IMPORTANCE_FILE: &str = "importance.json";
+
 /// Files every bundle of format 1 must contain.
 pub const REQUIRED_FILES: &[&str] = &[
     INPUT_SCHEMA_FILE,
@@ -38,6 +43,61 @@ pub const REQUIRED_FILES: &[&str] = &[
     EXAMPLES_INPUT_FILE,
     EXAMPLES_EXPECTED_FILE,
 ];
+
+/// `conformal.json`: split conformal prediction. On rows distributed like the
+/// calibration rows, a regression interval `[value − quantile, value + quantile]`
+/// contains the true value, and a classification set (the labels whose probability
+/// is at least `1 − quantile`) contains the true label, with probability about
+/// `1 − alpha`. The calibration rows are the validation split, which also selected
+/// the model, so the guarantee is approximate rather than exact.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Conformal {
+    /// The target miscoverage (0.1: 90 % coverage).
+    pub alpha: f64,
+    /// Which split calibrated it (`valid`).
+    pub calibration_split: String,
+    /// Rows the quantile was taken from.
+    pub n_calibration: usize,
+    /// Regression: the half-width of the interval, in the target's units.
+    /// Classification: a label is in the set when its probability is at least `1 - quantile`.
+    pub quantile: f64,
+    /// The share of calibration rows their own interval or set covers (at least
+    /// `1 - alpha` by construction).
+    pub calibration_coverage: f64,
+    /// `split-conformal/absolute-residual` (regression) or `split-conformal/lac`
+    /// (classification: least ambiguous sets).
+    pub method: String,
+    pub note: String,
+}
+
+/// `importance.json`: how much the model's quality on the validation split drops
+/// when one input field is shuffled (permutation importance), per field.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Importance {
+    /// The selection metric the drop is measured in.
+    pub metric: String,
+    /// Which split (`valid`).
+    pub split: String,
+    pub n_rows: usize,
+    /// Shuffles per field; `importance` is their mean and `std` their spread.
+    pub repeats: usize,
+    /// The metric without shuffling.
+    pub baseline: f64,
+    /// Every input field the model uses, largest drop first.
+    pub fields: Vec<FieldImportance>,
+    pub note: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FieldImportance {
+    pub name: String,
+    /// The drop of the metric (in its own units, positive when shuffling hurts).
+    pub importance: f64,
+    pub std: f64,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

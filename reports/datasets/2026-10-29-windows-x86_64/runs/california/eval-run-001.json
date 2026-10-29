@@ -1,0 +1,43 @@
+{
+  "ok": true,
+  "result": {
+    "created_at": "2026-10-29T06:50:17Z",
+    "evaluation_id": "eval-002",
+    "latency": {
+      "batch_ms": 0.023,
+      "rows": 200,
+      "single_row_p50_us": 0.3,
+      "single_row_p95_us": 0.3
+    },
+    "metrics": {
+      "mae": 51077.72754265784,
+      "mean": 207233.2728446884,
+      "metrics_version": "tabsmith.binary-metrics.v1",
+      "n": 3097,
+      "r2": 0.6433233168964179,
+      "rmse": 69225.21760715169,
+      "task": "regression"
+    },
+    "model_sha256": "4f084fd40e261dce633324da6caaa54e206acc889c6f85feef2a33c3dce2d699",
+    "model_snapshot_id": "s-2eb201ef77bb",
+    "notes": [
+      "test rows reused (use #2): already used for run-003 (eval-001); this is no longer an unbiased estimate"
+    ],
+    "protocol": {
+      "metrics_version": "tabsmith.binary-metrics.v1",
+      "positive_label": "",
+      "snapshot_id": "s-2eb201ef77bb",
+      "split": "test",
+      "split_id": "sp-c19890a19d64",
+      "target": "median_house_value",
+      "task": "regression",
+      "threshold": "0"
+    },
+    "subject": {
+      "kind": "run",
+      "run_id": "run-001"
+    },
+    "test_use_index": 2,
+    "unseen_rows_verified": true
+  }
+}

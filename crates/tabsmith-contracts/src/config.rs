@@ -430,6 +430,27 @@ pub enum ClassWeight {
     None,
 }
 
+/// The direction a monotone constraint imposes on a numeric column.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Monotone {
+    /// A larger value never lowers the model's output.
+    Increasing,
+    /// A larger value never raises the model's output.
+    Decreasing,
+}
+
+impl Monotone {
+    /// `1` for increasing, `-1` for decreasing: the sign stored per feature in a
+    /// tree model's config.
+    pub fn sign(self) -> i8 {
+        match self {
+            Monotone::Increasing => 1,
+            Monotone::Decreasing => -1,
+        }
+    }
+}
+
 /// Tree shape and binning of the `gbdt` candidate (`train.gbdt.trees`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -441,6 +462,11 @@ pub struct TreeParams {
     pub min_samples_leaf: usize,
     /// Histogram bins per feature (2 to 256); split points come from the training rows.
     pub max_bins: usize,
+    /// Monotone constraints by numeric column (`hours_in_service = "increasing"`): every
+    /// tree keeps the output non-decreasing (or non-increasing) in the column, so the
+    /// whole model does. The constraint is recorded in the bundle, checked when the
+    /// bundle loads, and checked by the compiler when the model is compiled into code.
+    pub monotone: BTreeMap<String, Monotone>,
 }
 
 impl Default for TreeParams {
@@ -450,6 +476,7 @@ impl Default for TreeParams {
             max_depth: 8,
             min_samples_leaf: 20,
             max_bins: 255,
+            monotone: BTreeMap::new(),
         }
     }
 }
@@ -1192,6 +1219,12 @@ impl ProjectConfig {
         }
         if !(2..=256).contains(&t.max_bins) {
             return Err(config_invalid("max_bins must be between 2 and 256", "train.gbdt.trees.max_bins"));
+        }
+        if t.monotone.keys().any(|c| c.trim().is_empty()) {
+            return Err(config_invalid(
+                "monotone constraints are keyed by column name",
+                "train.gbdt.trees.monotone",
+            ));
         }
         if self.execution.max_memory_mb == 0 {
             return Err(config_invalid("max_memory_mb must be > 0", "execution.max_memory_mb"));

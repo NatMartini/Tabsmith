@@ -1,0 +1,52 @@
+{
+  "task": "binary",
+  "target": "income",
+  "rows": 48842,
+  "train_rows": 34190,
+  "test_rows": 7326,
+  "features": {
+    "numeric": 6,
+    "categorical": 8
+  },
+  "versions": {
+    "python": "3.14.4",
+    "scikit-learn": "1.9.1",
+    "numpy": "2.5.4",
+    "pandas": "3.1.0"
+  },
+  "candidates": {
+    "linear": {
+      "fit_seconds": 1.631672779000013,
+      "weighted": true,
+      "test": {
+        "balanced_accuracy": 0.8243700348504099,
+        "roc_auc": 0.9067310618417438,
+        "log_loss": 0.3940899902822539
+      },
+      "iterations": 69,
+      "tabsmith_epochs_or_rounds": 24
+    },
+    "small-mlp": {
+      "fit_seconds": 1.1454707420000148,
+      "weighted": true,
+      "test": {
+        "balanced_accuracy": 0.8204893735780316,
+        "roc_auc": 0.9041060471147409,
+        "log_loss": 0.39372051672663555
+      },
+      "iterations": 21,
+      "tabsmith_epochs_or_rounds": 21
+    },
+    "gbdt": {
+      "fit_seconds": 0.77363792700001,
+      "weighted": true,
+      "test": {
+        "balanced_accuracy": 0.8442339599009936,
+        "roc_auc": 0.9297187492994758,
+        "log_loss": 0.33086991651426684
+      },
+      "iterations": 180,
+      "tabsmith_epochs_or_rounds": 180
+    }
+  }
+}

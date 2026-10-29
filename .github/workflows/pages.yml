@@ -1,0 +1,75 @@
+name: Pages
+
+# Builds examples/wasm-predict (the runtime compiled to WebAssembly, with one sample
+# bundle per task trained by the CLI) and publishes its www/ folder with GitHub Pages:
+# https://natmartini.github.io/Tabsmith/ once Pages is enabled for the repository
+# (Settings > Pages > Source: GitHub Actions).
+on:
+  push:
+    branches: [main]
+    paths:
+      - "crates/**"
+      - "examples/wasm-predict/**"
+      - "Cargo.lock"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build the demo
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust (stable) with the wasm32 target
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update --target wasm32-unknown-unknown
+          rustup default stable
+
+      # The crate pins wasm-bindgen 0.2.129, and the CLI must be the same version.
+      - name: Install wasm-bindgen-cli
+        run: cargo install wasm-bindgen-cli --version 0.2.129 --locked
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+            examples/wasm-predict/target
+          key: pages-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'examples/wasm-predict/Cargo.lock') }}
+
+      - name: Build the tabsmith binary (trains the sample bundles)
+        run: cargo build --release --locked -p tabsmith-cli
+
+      - name: Build the WebAssembly demo
+        working-directory: examples/wasm-predict
+        run: python3 -B build.py --tabsmith ../../target/release/tabsmith
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: examples/wasm-predict/www
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

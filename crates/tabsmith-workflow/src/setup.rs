@@ -130,6 +130,7 @@ pub fn init_project(dir: &Path, recipe: &str, sample_data: bool) -> Result<InitR
             positive: (task == Task::Binary).then(|| "1".into()),
             split: Some("group".into()),
             group: Some("device_id".into()),
+            time: None,
             id: Some("unit_id".into()),
             exclude: vec![],
             task: Some(task),
@@ -146,6 +147,8 @@ pub struct BindRequest {
     pub positive: Option<String>,
     pub split: Option<String>,
     pub group: Option<String>,
+    /// The column that orders the rows; implies a chronological split.
+    pub time: Option<String>,
     pub id: Option<String>,
     pub exclude: Vec<String>,
     /// Sets the project's recipe to this task's (`None` keeps the current one).
@@ -181,6 +184,7 @@ fn as_flag_error(mut e: TabsmithError) -> TabsmithError {
         Some("data.target") => Some("--target"),
         Some("data.positive_label") => Some("--positive"),
         Some("data.group_column") => Some("--group"),
+        Some("data.time_column") => Some("--time"),
         Some("data.id_column") => Some("--id"),
         Some("data.split") => Some("--split"),
         Some("data.exclude") => Some("--exclude"),
@@ -316,16 +320,20 @@ impl Workspace {
                 // A different target means different labels.
                 data.remove("positive_label");
             }
-            match (&req.split, &req.group) {
-                (Some(sp), _) => data["split"] = value(sp.clone()),
-                (None, Some(_)) => data["split"] = value("group"),
-                (None, None) => {}
+            match (&req.split, &req.time, &req.group) {
+                (Some(sp), _, _) => data["split"] = value(sp.clone()),
+                (None, Some(_), _) => data["split"] = value("time"),
+                (None, None, Some(_)) => data["split"] = value("group"),
+                (None, None, None) => {}
             }
             if let Some(p) = &req.positive {
                 data["positive_label"] = value(p.clone());
             }
             if let Some(g) = &req.group {
                 data["group_column"] = value(g.clone());
+            }
+            if let Some(t) = &req.time {
+                data["time_column"] = value(t.clone());
             }
             if let Some(i) = &req.id {
                 data["id_column"] = value(i.clone());
@@ -356,8 +364,10 @@ impl Workspace {
             // has those columns; the report lists what was kept or dropped.
             let has = |c: &str| snap.snapshot.column(c).is_some();
             let data = data_table(&mut doc);
-            for key in ["id_column", "group_column", "time_column"] {
-                let given = (key == "id_column" && req.id.is_some()) || (key == "group_column" && req.group.is_some());
+            for (key, split_needing_it) in [("id_column", ""), ("group_column", "group"), ("time_column", "time")] {
+                let given = (key == "id_column" && req.id.is_some())
+                    || (key == "group_column" && req.group.is_some())
+                    || (key == "time_column" && req.time.is_some());
                 if let Some(col) = data.get(key).and_then(|v| v.as_str()).map(str::to_string) {
                     if given {
                         continue;
@@ -367,9 +377,15 @@ impl Workspace {
                     } else {
                         data.remove(key);
                         kept_notes.push(format!("dropped data.{key} = \"{col}\" (no such column in the new file)"));
-                        if key == "group_column" && data.get("split").and_then(|v| v.as_str()) == Some("group") && req.split.is_none() {
+                        if !split_needing_it.is_empty()
+                            && data.get("split").and_then(|v| v.as_str()) == Some(split_needing_it)
+                            && req.split.is_none()
+                        {
                             data.remove("split");
-                            kept_notes.push("split reset to the default (stratified) because the group column is gone".into());
+                            kept_notes.push(format!(
+                                "split reset to the default (stratified) because the {} column is gone",
+                                split_needing_it
+                            ));
                         }
                     }
                 }

@@ -13,7 +13,7 @@ members = [
 exclude = ["examples/predict-app"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 # Minimum supported Rust version of the workspace: Burn 0.22.1 declares 1.95, the
 # highest requirement in the dependency graph. tabsmith-contracts and tabsmith-runtime
@@ -26,11 +26,11 @@ repository = "https://github.com/NatMartini/Tabsmith"
 homepage = "https://github.com/NatMartini/Tabsmith"
 
 [workspace.dependencies]
-tabsmith-contracts = { path = "crates/tabsmith-contracts", version = "0.1.0" }
-tabsmith-embedded = { path = "crates/tabsmith-embedded", version = "0.1.0" }
-tabsmith-macros = { path = "crates/tabsmith-macros", version = "0.1.0" }
-tabsmith-runtime = { path = "crates/tabsmith-runtime", version = "0.1.0" }
-tabsmith-workflow = { path = "crates/tabsmith-workflow", version = "0.1.0" }
+tabsmith-contracts = { path = "crates/tabsmith-contracts", version = "0.2.0" }
+tabsmith-embedded = { path = "crates/tabsmith-embedded", version = "0.2.0" }
+tabsmith-macros = { path = "crates/tabsmith-macros", version = "0.2.0" }
+tabsmith-runtime = { path = "crates/tabsmith-runtime", version = "0.2.0" }
+tabsmith-workflow = { path = "crates/tabsmith-workflow", version = "0.2.0" }
 
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = { version = "1.0.145", features = ["float_roundtrip"] }

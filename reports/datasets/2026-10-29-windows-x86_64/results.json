@@ -1,0 +1,212 @@
+{
+  "adult": {
+    "task": "binary",
+    "target": "income",
+    "rows": 48842,
+    "train_rows": 34190,
+    "test_rows": 7326,
+    "features": {
+      "numeric": 6,
+      "categorical": 8
+    },
+    "chosen": "run-003",
+    "candidates": {
+      "tabsmith:linear": {
+        "test": {
+          "roc_auc": 0.9067218494679701,
+          "balanced_accuracy": 0.8249685832464384,
+          "log_loss": 0.38418414352879615
+        },
+        "train_seconds": 0.2758065,
+        "epochs": 24
+      },
+      "sklearn:linear": {
+        "test": {
+          "balanced_accuracy": 0.8243700348504099,
+          "roc_auc": 0.9067310618417438,
+          "log_loss": 0.3940899902822539
+        },
+        "fit_seconds": 1.631672779000013,
+        "iterations": 69
+      },
+      "tabsmith:small-mlp": {
+        "test": {
+          "roc_auc": 0.9156545765179254,
+          "balanced_accuracy": 0.8289014991500562,
+          "log_loss": 0.36932662142447165
+        },
+        "train_seconds": 0.8776809,
+        "epochs": 21
+      },
+      "sklearn:small-mlp": {
+        "test": {
+          "balanced_accuracy": 0.8204893735780316,
+          "roc_auc": 0.9041060471147409,
+          "log_loss": 0.39372051672663555
+        },
+        "fit_seconds": 1.1454707420000148,
+        "iterations": 21
+      },
+      "tabsmith:gbdt": {
+        "test": {
+          "roc_auc": 0.930135046234345,
+          "balanced_accuracy": 0.8433528475293796,
+          "log_loss": 0.33080494708769964
+        },
+        "train_seconds": 17.08267,
+        "epochs": 180
+      },
+      "sklearn:gbdt": {
+        "test": {
+          "balanced_accuracy": 0.8442339599009936,
+          "roc_auc": 0.9297187492994758,
+          "log_loss": 0.33086991651426684
+        },
+        "fit_seconds": 0.77363792700001,
+        "iterations": 180
+      }
+    }
+  },
+  "california": {
+    "task": "regression",
+    "target": "median_house_value",
+    "rows": 20640,
+    "train_rows": 14446,
+    "test_rows": 3097,
+    "features": {
+      "numeric": 8,
+      "categorical": 0
+    },
+    "chosen": "run-003",
+    "candidates": {
+      "tabsmith:linear": {
+        "test": {
+          "rmse": 69225.21760715169,
+          "mae": 51077.72754265784,
+          "r2": 0.6433233168964179
+        },
+        "train_seconds": 0.2403771,
+        "epochs": 32
+      },
+      "sklearn:linear": {
+        "test": {
+          "rmse": 69285.59370211727,
+          "mae": 50857.961635312844,
+          "r2": 0.6427008808245535
+        },
+        "fit_seconds": 0.011082970000018122,
+        "iterations": 32
+      },
+      "tabsmith:small-mlp": {
+        "test": {
+          "rmse": 53307.86036390158,
+          "mae": 36614.04274540288,
+          "r2": 0.7884911407342166
+        },
+        "train_seconds": 0.5258555,
+        "epochs": 40
+      },
+      "sklearn:small-mlp": {
+        "test": {
+          "rmse": 54712.227537067054,
+          "mae": 37832.68052999199,
+          "r2": 0.7772001706747492
+        },
+        "fit_seconds": 0.5671238410000115,
+        "iterations": 40
+      },
+      "tabsmith:gbdt": {
+        "test": {
+          "rmse": 45817.471576267715,
+          "mae": 30663.707368408628,
+          "r2": 0.8437542193382573
+        },
+        "train_seconds": 2.0695457,
+        "epochs": 334
+      },
+      "sklearn:gbdt": {
+        "test": {
+          "rmse": 45816.6593166394,
+          "mae": 30629.67438907201,
+          "r2": 0.8437597591906497
+        },
+        "fit_seconds": 0.5135798720000082,
+        "iterations": 334
+      }
+    }
+  },
+  "covertype": {
+    "task": "multiclass",
+    "target": "cover_type",
+    "rows": 581012,
+    "train_rows": 406708,
+    "test_rows": 87152,
+    "features": {
+      "numeric": 54,
+      "categorical": 0
+    },
+    "chosen": "run-003",
+    "candidates": {
+      "tabsmith:linear": {
+        "test": {
+          "roc_auc": 0.9205634146806618,
+          "balanced_accuracy": 0.6977155517327682,
+          "accuracy": 0.5773820451624747,
+          "log_loss": 0.9794789765147975
+        },
+        "train_seconds": 2.9513913,
+        "epochs": 17
+      },
+      "sklearn:linear": {
+        "test": {
+          "balanced_accuracy": 0.7037004335801311,
+          "accuracy": 0.5968652469249128,
+          "roc_auc": 0.9263592997261291,
+          "log_loss": 0.9220616561225087
+        },
+        "fit_seconds": 26.481809428,
+        "iterations": 345
+      },
+      "tabsmith:small-mlp": {
+        "test": {
+          "roc_auc": 0.9633591811799214,
+          "balanced_accuracy": 0.8353328960784785,
+          "accuracy": 0.7474297778593721,
+          "log_loss": 0.5928682950879804
+        },
+        "train_seconds": 16.88841,
+        "epochs": 41
+      },
+      "sklearn:small-mlp": {
+        "test": {
+          "balanced_accuracy": 0.8375572125606826,
+          "accuracy": 0.740671470534239,
+          "roc_auc": 0.9626547652039855,
+          "log_loss": 0.609793006984057
+        },
+        "fit_seconds": 31.246584715999994,
+        "iterations": 41
+      },
+      "tabsmith:gbdt": {
+        "test": {
+          "roc_auc": 0.9923525548856463,
+          "balanced_accuracy": 0.9355474298302051,
+          "accuracy": 0.8995089039838443,
+          "log_loss": 0.2609684058989773
+        },
+        "train_seconds": 513.0840579,
+        "epochs": 400
+      },
+      "sklearn:gbdt": {
+        "test": {
+          "balanced_accuracy": 0.9361035410278312,
+          "accuracy": 0.8984073802092896,
+          "roc_auc": 0.9921080099481187,
+          "log_loss": 0.263793326094134
+        },
+        "fit_seconds": 30.749768351,
+        "iterations": 400
+      }
+    }
+  }
+}
