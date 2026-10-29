@@ -8,7 +8,7 @@ Before 1.0, minor versions may contain breaking changes.
 
 ## [Unreleased]
 
-## [0.1.0] - Unreleased
+## [0.1.0] - 2026-10-28
 
 First public release: supervised learning on one table (binary classification,
 multiclass classification and regression) from a local CSV/Parquet file to a

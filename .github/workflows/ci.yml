@@ -123,7 +123,8 @@ jobs:
   # Kani, a bit-precise model checker, runs the proofs at the end of
   # examples/embedded-predict/src/lib.rs: prediction never panics, for every possible
   # input, stage by stage. The check settings are in that crate's Cargo.toml. With Kani
-  # 0.68 on Linux, each of the six proofs takes between 1 s and 7 min.
+  # 0.68 on Linux, the six proofs take about a minute together, and none needs 2 GB of
+  # memory (a GitHub-hosted runner has 16 GB).
   kani:
     name: kani
     runs-on: ubuntu-latest

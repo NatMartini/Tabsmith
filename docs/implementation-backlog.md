@@ -81,7 +81,7 @@ asked for. They are recorded here as engineering work, not as validated demand:
 | P4-02 | Gradient-boosted trees | Accepted (engineering) | `gbdt` candidate, `tabsmith.trees.v1`; deterministic, exact resume, engine Δ = 0. Tests: `gbdt.rs`; compared with scikit-learn's HistGradientBoosting in [reports/benchmarks](../reports/benchmarks/). |
 | P4-03 | Runtime in WebAssembly | Accepted (engineering) | `examples/wasm-predict`; CI builds the runtime for `wasm32-unknown-unknown`. |
 | P4-04 | Assurance: no `unsafe`, property tests, fuzzing | Accepted (engineering) | `unsafe_code = "forbid"`; `properties.rs`; `fuzz/` and [reports/fuzz](../reports/fuzz/). |
-| P4-05 | Models compiled into Rust code (`no_std`) | In progress | `tabsmith-embedded` (kernels shared with the runtime) and `tabsmith-macros` (`model!`). Compiled and runtime predictions are bit-identical on seven bundles (`equivalence.rs`, 3,000 random records each). `portable.rs` records the prediction hashes on Windows x86_64; CI checks them on Linux and macOS too. `examples/embedded-predict` builds for `thumbv7em-none-eabihf` and `wasm32`. Six Kani proofs (prediction never panics, stage by stage) pass with Kani 0.68 on Linux. Gap: no CI run yet, and nothing has run on macOS. |
+| P4-05 | Models compiled into Rust code (`no_std`) | In progress | `tabsmith-embedded` (kernels shared with the runtime) and `tabsmith-macros` (`model!`). Compiled and runtime predictions are bit-identical on seven bundles (`equivalence.rs`, 3,000 random records each). `portable.rs` records the prediction hashes on Windows x86_64; CI checks them on Linux and macOS too. `examples/embedded-predict` builds for `thumbv7em-none-eabihf` and `wasm32`. Six Kani proofs (prediction never panics, stage by stage) pass with Kani 0.68 on Linux, each under 2 GB of memory. CI: the tests pass on Linux, macOS and Windows, hashes included. Gap: the Kani job has not passed in CI yet; its first runs stopped on the old proof that walked all 14 trees at once, which needs more memory than a runner has. |
 
 CNN / sequence / BERT / LLM only with real demand. The LLM contract walkthrough
 (P2-08) is the only work done there; it now records what the tabular tasks
@@ -157,7 +157,7 @@ generalised.
 
 ## P4 及以后
 
-计划把相邻任务放在二分类被反复使用之后。它们被提前实现了：这是维护者的决定，并没有计划所要求的用户证据，因此这里只记作工程工作，而不是已验证的需求——P4-01 多分类与回归 recipe、P4-02 梯度提升树、P4-03 WebAssembly 中的运行时、P4-04 保障措施（禁止 `unsafe`、性质测试、模糊测试），均为“已验收（工程）”，证据见上方英文表格。P4-05 编译进 Rust 代码的模型（`no_std`）为“进行中”：编译模型与运行时在 7 个模型包上逐位相同，Windows 上记录了预测哈希；6 个 Kani 证明（逐段证明预测不会 panic）已在 Linux 上用 Kani 0.68 通过；缺口是 CI 还没跑过，也还没在 macOS 上跑过。CNN / 序列 / BERT / LLM 只在有真实需求时才做；这方面唯一完成的工作是 LLM 契约走查（P2-08），它现在也记录了表格任务泛化了哪些部分。
+计划把相邻任务放在二分类被反复使用之后。它们被提前实现了：这是维护者的决定，并没有计划所要求的用户证据，因此这里只记作工程工作，而不是已验证的需求——P4-01 多分类与回归 recipe、P4-02 梯度提升树、P4-03 WebAssembly 中的运行时、P4-04 保障措施（禁止 `unsafe`、性质测试、模糊测试），均为“已验收（工程）”，证据见上方英文表格。P4-05 编译进 Rust 代码的模型（`no_std`）为“进行中”：编译模型与运行时在 7 个模型包上逐位相同，Windows 上记录了预测哈希；6 个 Kani 证明（逐段证明预测不会 panic）已在 Linux 上用 Kani 0.68 通过，每个用的内存都不到 2 GB；CI 上的测试在 Linux、macOS 和 Windows 上都通过（包括预测哈希）；缺口是 kani 任务还没在 CI 上通过过：头几次运行停在旧的那个一次走完 14 棵树的证明上，它需要的内存超过 runner 的容量。CNN / 序列 / BERT / LLM 只在有真实需求时才做；这方面唯一完成的工作是 LLM 契约走查（P2-08），它现在也记录了表格任务泛化了哪些部分。
 
 ## 什么会改变这些状态
 

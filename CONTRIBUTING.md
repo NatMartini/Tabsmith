@@ -2,7 +2,7 @@
 
 [中文](#中文)
 
-Thank you for helping. Tabsmith is an early, CPU-only release; bug reports with a
+Thank you for helping. Tabsmith is an early release; bug reports with a
 reproduction, tests, and careful fixes are the most valuable contributions.
 
 ## Ground rules
@@ -12,9 +12,12 @@ reproduction, tests, and careful fixes are the most valuable contributions.
   request, must point to a test, a command whose output anyone can reproduce, or
   a checked-in report. If you cannot show it, write it as a limitation or a
   question instead.
-- **GPU paths are not certified.** No GPU backend is compiled in or tested. Do not
-  describe GPU support as working, and keep the rule that an unavailable or
-  uncertified device is an error, never a silent fallback to the CPU.
+- **GPU support goes only as far as its certification.** GPU training is an opt-in
+  build. Only the GPUs in `certified_devices.json`, each with its evidence in
+  `reports/gpu/`, count as supported, and only they are chosen automatically. Keep
+  the rules that a requested device that is not available is an error, never a
+  silent fallback to the CPU, and that a run on an uncertified GPU says its results
+  are not claimed reproducible.
 - Keep "what is not done yet" honest: when a change narrows or widens what works,
   update the documentation that lists it.
 - User-facing documentation is written in English with a Chinese translation
@@ -168,20 +171,29 @@ without any additional terms or conditions.
    with `cargo package --list -p <crate>`; the packages contain only `src/`,
    the crate README and the license files (warnings about skipped tests and
    examples are expected).
+5. Once, after the first release and the first crates.io publish: put these two
+   badges back in `README.md`, between CI and License. Before that they show
+   "no releases found" and "not found", so they were left out.
+
+   ```markdown
+   [![Release](https://img.shields.io/github/v/release/NatMartini/Tabsmith?include_prereleases)](https://github.com/NatMartini/Tabsmith/releases)
+   [![crates.io](https://img.shields.io/crates/v/tabsmith-runtime.svg?label=tabsmith-runtime)](https://crates.io/crates/tabsmith-runtime)
+   ```
 
 ---
 
 ## 中文
 
-感谢参与。Tabsmith 目前是早期的、仅支持 CPU 的版本；附带复现步骤的问题报告、测试和谨慎的修复最有价值。
+感谢参与。Tabsmith 目前是早期版本；附带复现步骤的问题报告、测试和谨慎的修复最有价值。
 
 ### 基本规则
 
 - **没有证据就不下结论。** 代码注释、文档、README、变更日志或 Pull Request 中关于行为、
   准确度、速度或内存的任何说法，都必须对应一个测试、一条任何人都能复现输出的命令，或一份已提交的报告。
   无法证明的内容请写成限制或待确认的问题。
-- **GPU 路径未经认证。** 目前没有编译或测试任何 GPU 后端。不要把 GPU 支持描述为可用；
-  并保持现有规则：设备不可用或未经认证时报错，绝不悄悄回退到 CPU。
+- **GPU 支持以认证为界。** GPU 训练需要单独启用的构建。只有 `certified_devices.json` 中、在 `reports/gpu/`
+  有证据的 GPU 才算受支持，也只有它们会被自动选用。请保持两条规则：请求的设备不可用时报错，绝不悄悄回退到 CPU；
+  在未认证的 GPU 上训练时，运行记录要注明结果不保证可复现。
 - 如实维护“尚未完成”的内容：如果改动扩大或缩小了可用范围，请同步更新列出这些内容的文档。
 - 面向用户的文档以英文撰写并附中文翻译（`README.md` / `README.zh-CN.md`，其他文档中附 `中文` 小节）。
   如果你只能写其中一种语言，请在 Pull Request 中说明，维护者会协助。
@@ -267,3 +279,10 @@ Tabsmith 采用 [MIT](LICENSE-MIT) 与 [Apache-2.0](LICENSE-APACHE) 双许可。
    并发布 GitHub Release（附 `install.sh`、`install.ps1` 和每个压缩包的 `.sha256`）。带 `-` 的标签（如 `v0.2.0-rc.1`）会作为预发布。
 4. 按依赖顺序发布 crate：`tabsmith-contracts`、`tabsmith-embedded`、`tabsmith-runtime`、`tabsmith-macros`、`tabsmith-workflow`、`tabsmith-cli`（`cargo publish -p <crate>`）。
    发布前可用 `cargo package --list -p <crate>` 检查；包中只含 `src/`、crate 的 README 和许可证文件（关于跳过测试和示例的警告属正常）。
+5. 首次发布 GitHub Release 并发布到 crates.io 之后（只需一次）：把下面两个徽章加回 `README.md`，放在 CI 和 License 之间。
+   在此之前它们只会显示 “no releases found” 和 “not found”，所以先拿掉了。
+
+   ```markdown
+   [![Release](https://img.shields.io/github/v/release/NatMartini/Tabsmith?include_prereleases)](https://github.com/NatMartini/Tabsmith/releases)
+   [![crates.io](https://img.shields.io/crates/v/tabsmith-runtime.svg?label=tabsmith-runtime)](https://crates.io/crates/tabsmith-runtime)
+   ```

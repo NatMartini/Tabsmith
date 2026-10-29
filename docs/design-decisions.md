@@ -387,7 +387,9 @@ while the application builds:
   WebAssembly. Six Kani proofs show that its prediction never panics, for every input.
   `predict` is `decode(outputs(features(input)?))`, and each stage is proved total for
   every value of its argument type, a superset of what the stage before it returns.
-  With Kani 0.68 on Linux each proof takes under a second to 7 minutes. Kani's
+  With Kani 0.68 on Linux the six take 69 s together, each under 2 GB of memory. The
+  trees' `outputs` is proved one walk at a time, through any tree: all 14 walks in one
+  proof ran out of memory with 14 GB, and a CI runner has 16 GB. Kani's
   additional floating-point checks are off, for three reasons:
   - they are not about panics;
   - CBMC treats any division by an infinity as a possible NaN, which flags `exp(-inf)`

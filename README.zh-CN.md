@@ -1,12 +1,26 @@
 <div align="center">
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.svg">
+  <img src="docs/assets/logo-light.svg" alt="Tabsmith 标志：铁砧上的一张小表格" width="112">
+</picture>
+
 # Tabsmith
 
 **用一个 CSV 训练模型，并直接放进你的 Rust 应用——一个工具，不需要 Python。**
 
-[English](README.md) · [安装](#安装) · [快速上手](#快速上手) · [Tabsmith 与 Python 对比](#tabsmith-与-python-对比) · [文档](#文档)
+[![CI](https://github.com/NatMartini/Tabsmith/actions/workflows/ci.yml/badge.svg)](https://github.com/NatMartini/Tabsmith/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#许可)
+[![Rust 1.95+](https://img.shields.io/badge/rust-1.95%2B-orange.svg)](#安装)
+
+[English](README.md) · [安装](#安装) · [快速上手](#快速上手) · [四种交付方式](#四种交付方式) · [Tabsmith 与 Python 对比](#tabsmith-与-python-对比) · [文档](#文档)
 
 </div>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/pipeline-zh-dark.svg">
+  <img src="docs/assets/pipeline-zh-light.svg" alt="CSV 或 Parquet 文件进入 tabsmith train：不泄漏地切分，只在训练行上拟合预处理，训练线性、MLP 和 GBDT 模型，在验证集上选择，在没见过的行上测试一次。结果是一个经过校验的模型包，有四种交付方式：用 tabsmith-runtime 放进 Rust 应用，用 model! 编译进代码，编译成 WebAssembly 在网页中运行，或用 tabsmith serve 作为 HTTP 服务。">
+</picture>
 
 ```console
 $ tabsmith sample-data machines.csv
@@ -50,7 +64,7 @@ GPU（Vulkan、CUDA）上训练；运行时还能编译成 WebAssembly 在网页
 
 - **一条命令，默认安全。** `tabsmith train data.csv --target y` 依次完成切分 → 预处理 → 训练三个模型 → 在验证集上比较 → 测试一次 → 打包。每一步都有记录、可复现。
 - **交付时不需要 Python。** 你的应用只依赖 `tabsmith-runtime`（没有 Burn、没有 Polars、没有 Python）。示例应用是一个 1.7 MB 的二进制文件。
-- **也可以把模型编译进代码。** `tabsmith_macros::model!` 在你的 crate 编译时把模型包变成 Rust 代码：输入是类型，不分配内存，不依赖 `std`，在所有平台上与运行时逐位相同（[见下文](#或者编译进你的代码)）。
+- **也可以把模型编译进代码。** `tabsmith_macros::model!` 在你的 crate 编译时把模型包变成 Rust 代码：输入是类型，不分配内存，不依赖 `std`，在所有平台上与运行时逐位相同。在嵌入式示例中，Kani 模型检查器证明了它的预测对任何可能的输入都不会 panic（[见下文](#编译进你的代码)）。
 - **在生产中真正重要的地方够快。** 单条预测在微秒级，从进程启动到第一次预测约 1 毫秒，内存约 12 MB（[见下方数字](#tabsmith-与-python-对比)）。
 - **质量与 scikit-learn 一致。** 预处理与 scikit-learn 相差约 2e-7，线性模型与 scikit-learn 在同一目标函数上的最优值相差约 0.1%，指标相差在 1e-12 以内（[实测](reports/implementation-acceptance.md#reference-check-against-scikit-learn)；CI 用[冻结的参考值](fixtures/reference/)以 1e-5、1% 和 1e-12 为界检查）。
 - **逐位确定。** 同样的数据和设置得到同样的权重：中断的训练续训后与不中断的训练逐位相同，在 CPU 和经过认证的 GPU 上都是如此（[GPU 上为此做了什么](docs/design-decisions.md#d5-determinism-is-a-contract)）。
@@ -106,7 +120,16 @@ tabsmith sample-data hours.csv --task regression        # 目标列 `remaining_h
 tabsmith train hours.csv --target remaining_hours --group device_id --task regression
 ```
 
-### 在 Rust 应用中使用模型
+## 四种交付方式
+
+| 交付方式 | 用法 | 由什么运行模型 |
+|---|---|---|
+| [在 Rust 应用中](#在-rust-应用中) | `Predictor::load` | `tabsmith-runtime`，一个很小的依赖：没有 Burn、没有 Polars、没有 Python |
+| [编译进你的代码](#编译进你的代码) | `tabsmith_macros::model!` | 基于 `tabsmith-embedded` 生成的 Rust 代码：`no_std`，不分配内存 |
+| [在网页中](#在网页中) | 编译成 WebAssembly 的运行时 | 浏览器标签页；数据不会上传 |
+| [作为 HTTP 服务](#作为-http-服务) | `tabsmith serve` | `tabsmith` 命令，通过 HTTP 收发 JSON |
+
+### 在 Rust 应用中
 
 ```toml
 [dependencies]
@@ -142,12 +165,7 @@ fn main() -> Result<(), tabsmith_runtime::TabsmithError> {
 `{:?}` 会打印完整报告。在运行中的服务里热切换模型：`PredictorHandle::try_update` 只在新包加载并通过自检后才切换
 （输入/输出契约发生变化时默认拒绝，除非你显式允许）；`rollback_to` 可以切回旧包。见 [examples/predict-app](examples/predict-app)。
 
-### ……或者在网页里
-
-同一个运行时，原样编译成 WebAssembly：[examples/wasm-predict](examples/wasm-predict) 在浏览器中加载模型包，校验每个文件的
-SHA-256、执行自检，按输入 schema 生成表单，并在微秒级完成预测。数据不会上传。
-
-### ……或者编译进你的代码
+### 编译进你的代码
 
 用 [`tabsmith-macros`](crates/tabsmith-macros)，模型包会在你的 crate 编译时变成 Rust 代码：不需要加载文件，不分配内存，
 也不需要标准库：
@@ -168,7 +186,12 @@ let p = defects::predict(&reading)?;
 [examples/embedded-predict](examples/embedded-predict) 可以为 Cortex-M4F 微控制器构建，上电时重放模型包的示例；
 Kani 模型检查器证明了它的预测对任何可能的输入都不会 panic。
 
-### 通过 HTTP 提供服务
+### 在网页中
+
+同一个运行时，原样编译成 WebAssembly：[examples/wasm-predict](examples/wasm-predict) 在浏览器中加载模型包，校验每个文件的
+SHA-256、执行自检，按输入 schema 生成表单，并在微秒级完成预测。数据不会上传。
+
+### 作为 HTTP 服务
 
 ```sh
 tabsmith serve --port 8080              # 最新的已评估模型包，或 --bundle <目录>
@@ -180,7 +203,7 @@ curl -s localhost:8080/predict --data-binary @bundles/run-002/examples/input.jso
 以及带 `--allow-reload` 时的 `POST /reload`（只能加载同一目录下的模型包）。服务没有身份认证和超时，默认只监听 `127.0.0.1`；
 对外开放前请先看 [SECURITY.md](SECURITY.md)。
 
-### 新数据到来时
+## 新数据到来时
 
 在文件末尾追加（或替换文件），然后再次运行 `tabsmith train`：
 
@@ -209,6 +232,14 @@ bundle: bundles/run-008 (b-…, evaluated; self-check passed)
 `HistGradientBoostingClassifier`）完成同一任务：相同的行、切分、特征和训练设置，同一台机器。用
 [`tools/bench/bench.py`](tools/bench/bench.py) 复现；完整结果和日志见
 [reports/benchmarks](reports/benchmarks/2026-10-27-linux-x86_64-v2/)。
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/bench-zh-dark.svg">
+  <img src="docs/assets/bench-zh-light.svg" alt="Tabsmith 的小型 MLP 与 scikit-learn 的 MLPClassifier 对比，越低越好：冷启动 1 ms 对 612 ms，应用内单次预测 2.6 µs 对 2.0 ms，内存峰值 12 MB 对 161 MB，应用交付 1.7 MB 对 354 MB 的 Python 环境。">
+</picture>
+
+*小型 MLP 与 scikit-learn 的 `MLPClassifier` 对比，每一行各用自己的线性刻度；三对模型的全部数字见下表。
+图由 [`tools/readme_assets.py`](tools/readme_assets.py) 根据报告的 `results.json` 绘制。*
 
 <!-- BENCH:START -->
 Machine: AMD Ryzen 9 9950X3D2 16-Core Processor, 32 logical CPUs, Linux 6.6.87.2-microsoft-standard-WSL2. Data: 10000 rows (synthetic equipment-defect sample), same split, features and settings on both sides. Python 3.14.4, scikit-learn 1.9.1, pandas 3.1.0, numpy 2.5.4. Tabsmith's linear, small-mlp and gbdt candidates stand next to scikit-learn's LogisticRegression, MLPClassifier and HistGradientBoostingClassifier (HGB). Tabsmith trains on one thread; scikit-learn runs with its defaults (HGB uses every core).
@@ -278,12 +309,17 @@ Tabsmith 0.1 还很年轻。已经可靠且有测试覆盖的部分（140 个自
 尚未完成的部分（有的是有意为之，有的是缺少硬件）：
 
 - **GPU**：需要单独构建。GPU 路径只在实际运行过的硬件上认证（Windows 上的 RTX 5090 和 AMD 核显，见 [reports/gpu](reports/gpu/)）；CUDA 用 TF32 训练，必须显式声明（`execution.precision = "tf32"`），因为矩阵乘法库没有 fp32 开关。请求不存在的 GPU 会报错，绝不会静默回退。
-- **平台**：在 Linux x86_64 上认证，上面的验收运行就在该平台上完成。完整测试套件也在 Windows x86_64 上通过，CI 也配置为在 macOS（Apple Silicon）上运行它；按 0.1 版的设计，这两者都报告为“未认证”。Linux arm64 和 macOS Intel 二进制只构建、未测试。
+- **平台**：在 Linux x86_64 上认证，上面的验收运行就在该平台上完成。完整测试套件也在 Windows x86_64 上通过，并在 CI 的 macOS（Apple Silicon）上通过；按 0.1 版的设计，这两者都报告为“未认证”。Linux arm64 和 macOS Intel 二进制只构建、未测试。
 - **任务**：单表上的二分类、多分类和回归。按时间切分会被拒绝，而不是假装支持；不支持排序、生存分析和多表数据。
 - **macOS**：只由 CI 的 Apple Silicon runner 检查，还没有人在 Mac 上手动运行过 Tabsmith。报告里 Linux 上的结果来自开发机上的 WSL。
 - **用户**：还没有正式的用户研究——非常欢迎反馈和 issue。
 
 [实施待办](docs/implementation-backlog.md)列出了每个计划条目的状态。
+
+## 参与贡献
+
+附带复现步骤的问题报告、测试和谨慎的修复最有价值。[贡献指南](CONTRIBUTING.md#中文)写明了基本规则，以及如何在本地跑完 CI
+的全部检查。问题和想法欢迎提到 [issues](https://github.com/NatMartini/Tabsmith/issues)。
 
 ## 文档
 

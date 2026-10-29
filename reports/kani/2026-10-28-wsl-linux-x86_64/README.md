@@ -9,12 +9,18 @@ category, any missing value.
 
 **How.** `predict` is `decode(&outputs(&features(input)?))`. Each stage is proved total
 for every value of its argument's type, which is a superset of what the stage before it
-can return. The harnesses are at the end of
+can return. For the trees, `outputs` is proved one walk at a time: walking any tree with
+any feature values stays inside the arrays and ends at a leaf. `outputs` adds one walk per
+tree to each output's starting score. `value` has one entry per node, and the generated
+code asserts at compile time that there is one starting score per output, so with every
+walk in range the sum cannot panic either. The harnesses are at the end of
 [`examples/embedded-predict/src/lib.rs`](../../../examples/embedded-predict/src/lib.rs).
 
 **Where.** The development machine (AMD Ryzen 9 9950X3D2), WSL2 Ubuntu 26.04 (Linux
 6.6.87.2). Kani 0.68.0 with CBMC 6.11.0 and its pinned toolchain nightly-2026-08-21.
-The verified working tree was committed afterwards as `166698d`.
+The results are one plain `cargo kani`, the way CI runs it, on a fresh copy of the code of
+the commit that brings this version of the report. Every process was limited to 14 GB of
+address space (`ulimit -v`), because a GitHub-hosted Linux runner has 16 GB of memory.
 
 ## Settings
 
@@ -30,21 +36,31 @@ overflow. They are not about panics, and one of them is a false positive here (b
 
 ## Results
 
-| Harness | Settings | Checks failed / total (unreachable) | Verification time | Result |
+| Harness | Checks failed / total (unreachable) | Verification time | Peak CBMC memory | Result |
 |---|---|---|---|---|
-| `tree_features_are_total` | final | 0 / 415 (8) | 11.1 s | SUCCESSFUL |
-| `tree_traversal_is_total` | default (stricter) | 0 failed | 412 s (whole run) | SUCCESSFUL |
-| `tree_decode_is_total` | final | 0 / 93 (17) | 0.4 s | SUCCESSFUL |
-| `network_features_are_total` | default (stricter) | 0 / 421 (8) | 20.0 s | SUCCESSFUL |
-| `network_layers_are_total` | final | 0 / 187 (1) | 26.1 s | SUCCESSFUL |
-| `network_decode_is_total` | final | 0 / 93 (17) | 0.4 s | SUCCESSFUL |
+| `tree_features_are_total` | 0 / 415 (8) | 11.3 s | 526 MB | SUCCESSFUL |
+| `tree_walk_is_total` | 0 / 130 | 11.4 s | 1,689 MB | SUCCESSFUL |
+| `tree_decode_is_total` | 0 / 93 (17) | 0.3 s | — | SUCCESSFUL |
+| `network_features_are_total` | 0 / 415 (8) | 11.7 s | 545 MB | SUCCESSFUL |
+| `network_layers_are_total` | 0 / 187 (1) | 26.3 s | 1,476 MB | SUCCESSFUL |
+| `network_decode_is_total` | 0 / 93 (17) | 0.3 s | — | SUCCESSFUL |
 
-The final settings only remove checks from the default ones. The two proofs that
-passed with the default settings therefore also hold with the final ones. Their reruns
-with the final settings were cut off: something outside this run shut the WSL virtual
-machine down four times that afternoon.
+The whole run took 69 s, compilation included. Memory was sampled once a second, and the
+two decode proofs end before the first sample. `network_features_are_total` also passes
+with Kani's default checks, which are stricter: 0 of 421 failed, in 20.0 s.
 
 ## Findings on the way
+
+**Walking all the trees in one proof needs too much memory.** The first tree proof,
+`tree_traversal_is_total`, ran `outputs` on any features: all 14 walks in one formula.
+With Kani's default checks it passed on this machine, which has 63 GB of memory, in
+412 s. Limited to 14 GB, the run stops 30 s in with "Solver ran out of memory during
+propositional reduction", with either settings. In CI, the `kani` job stopped after about
+3 minutes. Every array index in a walk depends on the comparisons
+before it, so Kani can slice nothing away, and each step reads the node arrays of all 14
+trees. One walk, through any tree, is 130 checks, 1.7 GB and 11 s. The earlier reruns of
+the all-trees proof with the final settings were cut off when the WSL virtual machine
+shut down, each time at that same step; it was most likely out of memory too.
 
 **Proving the whole network did not finish.** An earlier single harness for the
 network (`predict` on any input) was still solving after about 20 minutes. With the
@@ -81,11 +97,17 @@ cargo kani                              # all six; or --harness proofs::<name>
 `defects_mlp`）。对任何可能的输入（任何数值，包括 NaN 和无穷大；任何类别；任何缺失值），它们的预测都不会 panic。
 
 **方法。** `predict` 就是 `decode(&outputs(&features(input)?))`。每一段都对其参数类型的所有取值证明是全函数，
-而这个取值范围包含了前一段所有可能的输出。6 个证明全部通过：4 个用最终配置，2 个用更严格的默认配置（最终配置只是去掉了一些检查，
-所以结论同样成立）。用最终配置重跑这 2 个时，WSL 虚拟机被外部关闭打断了。
+而这个取值范围包含了前一段所有可能的输出。梯度提升树的 `outputs` 按单棵树证明：任意一棵树、任意特征值，都只在数组范围内走，
+最后停在叶子上。`outputs` 把每棵树的叶子值加到各输出的初始分上；`value` 每个节点一项，生成的代码又在编译期断言每个输出正好有一个初始分，
+所以只要每次遍历都不越界，求和也不会 panic。6 个证明在一次普通的 `cargo kani` 里全部通过，跑法和 CI 相同，
+每个进程限制 14 GB 地址空间（GitHub 的 Linux runner 有 16 GB 内存）。连编译共 69 秒，每个证明的 CBMC 内存都不到 2 GB。
 
 **配置。** Rust 自己的检查全部保留：整数溢出、除以零、移位和数组越界都会 panic，Kani 也检查内存安全和循环展开。关掉的是 CBMC 额外的
 浮点 NaN、溢出和类型转换检查：它们和 panic 无关，其中 NaN 检查在这里还是误报。CBMC 把“任何数除以无穷大”都当成可能产生 NaN，
 因此在 `libm` 的 `exp(−∞)` 里报错；但按 IEEE 754，有限数除以无穷大等于 0，`exp(−∞)` 返回 0，这条路径既不会 panic，也不会产生 NaN。
 
-**发现。** 把整个网络作为一个证明时，30 分钟内都没有解完；分段之后，没有任何检查依赖网络的浮点运算，CBMC 把它们切掉，网络层只用 26 秒。
+**发现。** 最初的树证明 `tree_traversal_is_total` 把 14 棵树的遍历放进一个公式：在这台 63 GB 内存的机器上用默认配置跑了 412 秒才通过；
+限制在 14 GB 时，30 秒就报内存不足；CI 的 kani 任务大约 3 分钟就中断了。遍历中每个数组下标都取决于前面的比较，
+Kani 切不掉任何部分，而且每一步都要读全部 14 棵树的节点数组。改成任意一棵树的单次遍历后，只有 130 个检查，1.7 GB，11 秒。
+之前用最终配置重跑它时，WSL 虚拟机几次关机，每次都停在同一步，多半也是内存耗尽。
+把整个网络作为一个证明时，30 分钟内都没有解完；分段之后，没有任何检查依赖网络的浮点运算，CBMC 把它们切掉，网络层只用 26 秒。

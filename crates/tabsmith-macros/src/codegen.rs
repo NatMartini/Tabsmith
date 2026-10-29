@@ -1055,10 +1055,24 @@ impl Compiled {
                     const TREE_VALUE: [f32; #n_nodes] = [#(#value),*];
                     const TREE_BASE: [f64; #n_base] = [#(#base),*];
 
-                    // The trees' structure, checked by the compiler: the first root is node 0,
-                    // roots ascend, and every split reads a real feature and points forward to
-                    // a node of its own tree. Inference can then neither leave a tree nor loop.
+                    /// The ensemble that [`outputs`] evaluates. `TREES.leaf(t, &x)` is the walk
+                    /// through tree `t`; the Kani proofs check one walk at a time.
+                    pub(crate) const TREES: kernels::Trees<'static> = kernels::Trees {
+                        roots: &TREE_ROOTS,
+                        feature: &TREE_FEATURE,
+                        threshold: &TREE_THRESHOLD,
+                        left: &TREE_LEFT,
+                        right: &TREE_RIGHT,
+                        value: &TREE_VALUE,
+                        base: &TREE_BASE,
+                    };
+
+                    // The trees' structure, checked by the compiler: one starting score per
+                    // output, the first root is node 0, roots ascend, and every split reads a
+                    // real feature and points forward to a node of its own tree. Inference can
+                    // then neither leave a tree nor loop.
                     const _: () = {
+                        assert!(TREE_BASE.len() == N_OUTPUTS, "one starting score per output");
                         assert!(TREE_ROOTS[0] == 0, "the first tree starts at node 0");
                         let mut t = 0;
                         while t < TREE_ROOTS.len() {
@@ -1078,17 +1092,8 @@ impl Compiled {
                     };
                 };
                 let body = quote! {
-                    let trees = kernels::Trees {
-                        roots: &TREE_ROOTS,
-                        feature: &TREE_FEATURE,
-                        threshold: &TREE_THRESHOLD,
-                        left: &TREE_LEFT,
-                        right: &TREE_RIGHT,
-                        value: &TREE_VALUE,
-                        base: &TREE_BASE,
-                    };
                     let mut out = [0f32; N_OUTPUTS];
-                    trees.outputs(x, &mut out);
+                    TREES.outputs(x, &mut out);
                     out
                 };
                 (consts, body)

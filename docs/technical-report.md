@@ -392,8 +392,11 @@ indexing. Kani's additional floating-point checks are off. They are not about pa
 and CBMC treats any division by an infinity as a possible NaN, which flags `exp(-∞)` in
 `libm` although IEEE 754 defines that quotient as 0. Without them, no check depends on
 the network's arithmetic, so Kani slices it away. The layers then take 26 s; with
-those checks on, they had not finished after 32 minutes. All six proofs pass with Kani
-0.68 (CBMC 6.11), the slowest, tree traversal, in 7 minutes (`reports/kani/`).
+those checks on, they had not finished after 32 minutes. For the trees, `outputs` is
+proved one walk at a time, through any tree; it adds the walks' leaf values, so it cannot
+panic once every walk stays in range. All 14 walks in one proof ran out of memory with
+14 GB. All six proofs pass with Kani 0.68 (CBMC 6.11), in 69 s together and under 2 GB
+of memory each (`reports/kani/`).
 
 ## 7. Evaluation
 

@@ -11,7 +11,7 @@ next to it are the evidence itself, with local paths replaced by `<work>` /
 | [benchmarks/](benchmarks/) | Tabsmith vs the equivalent pandas + scikit-learn workflow on the same rows, split, features and settings: quality, training time, prediction latency, cold start, memory, deployment size. The newest run includes the gradient-boosted trees against `HistGradientBoostingClassifier` | [`tools/bench/bench.py`](../tools/bench/bench.py) |
 | [gpu/](gpu/) | Certification of each GPU path on real hardware: determinism across processes, exact resume, agreement with the CPU, bundle self-check, and training time against the CPU | [`tools/gpu_certify.py`](../tools/gpu_certify.py) |
 | [fuzz/](fuzz/) | Fuzzing of the bundle loader with libFuzzer: duration, executions, coverage, seeds, result | [`fuzz/`](../fuzz/) |
-| [kani/](kani/) | Kani proofs that the models compiled into code never panic, for every input: each proof's checks, time and result, and a false positive in CBMC's NaN check | `cargo kani` in [`examples/embedded-predict`](../examples/embedded-predict/) |
+| [kani/](kani/) | Kani proofs that the models compiled into code never panic, for every input: each proof's checks, time, memory and result, why the trees are proved one walk at a time, and a false positive in CBMC's NaN check | `cargo kani` in [`examples/embedded-predict`](../examples/embedded-predict/) |
 
 Numbers depend on the machine. Re-run the tools on yours rather than comparing
 absolute values across machines; a new report goes into a new dated directory,

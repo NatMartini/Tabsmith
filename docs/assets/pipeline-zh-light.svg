@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 384" width="1000" height="384" role="img" aria-label="从一个 CSV 到经过校验的模型包，再以四种方式交付">
+<title>从一个 CSV 到经过校验的模型包，再以四种方式交付</title>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#59636e"/></marker></defs>
+<rect x="0" y="132" width="150" height="120" rx="12" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1"/>
+<g fill="none" stroke="#1f2328" stroke-width="2" stroke-linejoin="round"><path d="M58 148H82L92 158V194H58Z"/><path d="M82 148V158H92"/></g><path d="M63 168H87M63 176H87M63 184H87M72 164V189" stroke="#59636e" stroke-width="1.5"/>
+<text x="75" y="220" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="15" font-weight="700" fill="#1f2328" text-anchor="middle">CSV 或 Parquet</text>
+<text x="75" y="239" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="13.5" font-weight="400" fill="#59636e" text-anchor="middle">单张表</text>
+<path d="M150 192H190" fill="none" stroke="#59636e" stroke-width="1.5" marker-end="url(#arrow)"/>
+<rect x="194" y="52" width="280" height="280" rx="12" fill="#f6f8fa" stroke="#c2410c" stroke-width="2"/>
+<text x="216" y="90" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="17" font-weight="700" fill="#c2410c" text-anchor="start">tabsmith train</text>
+<circle cx="228" cy="127" r="11" fill="#fff1e7" stroke="#c2410c" stroke-width="1.5"/>
+<text x="228" y="132" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="12" font-weight="700" fill="#c2410c" text-anchor="middle">1</text>
+<text x="250" y="132" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="14.5" font-weight="400" fill="#1f2328" text-anchor="start">不泄漏地切分</text>
+<circle cx="228" cy="169" r="11" fill="#fff1e7" stroke="#c2410c" stroke-width="1.5"/>
+<text x="228" y="174" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="12" font-weight="700" fill="#c2410c" text-anchor="middle">2</text>
+<text x="250" y="174" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="14.5" font-weight="400" fill="#1f2328" text-anchor="start">只在训练行上拟合预处理</text>
+<circle cx="228" cy="211" r="11" fill="#fff1e7" stroke="#c2410c" stroke-width="1.5"/>
+<text x="228" y="216" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="12" font-weight="700" fill="#c2410c" text-anchor="middle">3</text>
+<text x="250" y="216" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="14.5" font-weight="400" fill="#1f2328" text-anchor="start">训练线性、MLP、GBDT</text>
+<circle cx="228" cy="253" r="11" fill="#fff1e7" stroke="#c2410c" stroke-width="1.5"/>
+<text x="228" y="258" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="12" font-weight="700" fill="#c2410c" text-anchor="middle">4</text>
+<text x="250" y="258" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="14.5" font-weight="400" fill="#1f2328" text-anchor="start">在验证集上选择</text>
+<circle cx="228" cy="295" r="11" fill="#fff1e7" stroke="#c2410c" stroke-width="1.5"/>
+<text x="228" y="300" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="12" font-weight="700" fill="#c2410c" text-anchor="middle">5</text>
+<text x="250" y="300" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="14.5" font-weight="400" fill="#1f2328" text-anchor="start">在没见过的行上测试一次</text>
+<path d="M474 192H514" fill="none" stroke="#59636e" stroke-width="1.5" marker-end="url(#arrow)"/>
+<rect x="518" y="102" width="180" height="180" rx="12" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1"/>
+<path d="M608 118L632 130L608 142L584 130Z" fill="#ea580c"/><path d="M608 118L632 130V158L608 170L584 158V130ZM584 130L608 142L632 130M608 142V170" fill="none" stroke="#1f2328" stroke-width="2" stroke-linejoin="round"/>
+<text x="608" y="198" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="16" font-weight="700" fill="#1f2328" text-anchor="middle">模型包</text>
+<text x="608" y="220" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="13" font-weight="400" fill="#59636e" text-anchor="middle">权重、预处理、</text>
+<text x="608" y="238" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="13" font-weight="400" fill="#59636e" text-anchor="middle">schema 和证据，</text>
+<text x="608" y="256" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="13" font-weight="400" fill="#59636e" text-anchor="middle">SHA-256 校验</text>
+<path d="M698 192C720 192 720 45 742 45" fill="none" stroke="#59636e" stroke-width="1.5" marker-end="url(#arrow)"/>
+<rect x="746" y="6" width="254" height="78" rx="12" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1"/>
+<text x="764" y="33" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="15" font-weight="700" fill="#1f2328" text-anchor="start">在 Rust 应用中</text>
+<text x="764" y="53" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" font-weight="600" fill="#c2410c" text-anchor="start">tabsmith-runtime</text>
+<text x="764" y="72" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="13" font-weight="400" fill="#59636e" text-anchor="start">很小的依赖，不需要 Python</text>
+<path d="M698 192C720 192 720 143 742 143" fill="none" stroke="#59636e" stroke-width="1.5" marker-end="url(#arrow)"/>
+<rect x="746" y="104" width="254" height="78" rx="12" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1"/>
+<text x="764" y="131" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="15" font-weight="700" fill="#1f2328" text-anchor="start">编译进你的代码</text>
+<text x="764" y="151" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" font-weight="600" fill="#c2410c" text-anchor="start">tabsmith_macros::model!</text>
+<text x="764" y="170" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="13" font-weight="400" fill="#59636e" text-anchor="start">no_std，不分配内存</text>
+<path d="M698 192C720 192 720 241 742 241" fill="none" stroke="#59636e" stroke-width="1.5" marker-end="url(#arrow)"/>
+<rect x="746" y="202" width="254" height="78" rx="12" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1"/>
+<text x="764" y="229" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="15" font-weight="700" fill="#1f2328" text-anchor="start">在网页中</text>
+<text x="764" y="249" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" font-weight="600" fill="#c2410c" text-anchor="start">WebAssembly</text>
+<text x="764" y="268" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="13" font-weight="400" fill="#59636e" text-anchor="start">在浏览器里校验</text>
+<path d="M698 192C720 192 720 339 742 339" fill="none" stroke="#59636e" stroke-width="1.5" marker-end="url(#arrow)"/>
+<rect x="746" y="300" width="254" height="78" rx="12" fill="#f6f8fa" stroke="#d1d9e0" stroke-width="1"/>
+<text x="764" y="327" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="15" font-weight="700" fill="#1f2328" text-anchor="start">作为 HTTP 服务</text>
+<text x="764" y="347" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" font-weight="600" fill="#c2410c" text-anchor="start">tabsmith serve</text>
+<text x="764" y="366" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="13" font-weight="400" fill="#59636e" text-anchor="start">JSON 进，JSON 出</text>
+</svg>

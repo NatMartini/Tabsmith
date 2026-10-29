@@ -43,7 +43,8 @@ pub fn defect_risk(input: &defects::Input, same_reading: &defects_mlp::Input) ->
 /// the three proofs cover every input (any number, NaN and infinities included, any
 /// category, any missing value). Proving the stages apart keeps each proof small: no
 /// array index depends on the network's arithmetic, so Kani slices it away, and `exp`
-/// is checked once, in `decode`.
+/// is checked once, in `decode`. The trees' `outputs` is proved one walk at a time:
+/// all 14 walks in one proof ran out of memory with 14 GB, and a CI runner has 16 GB.
 #[cfg(kani)]
 mod proofs {
     use super::*;
@@ -56,12 +57,18 @@ mod proofs {
         let _ = defects::features(&input);
     }
 
-    /// Tree traversal stays inside the arrays and terminates, for any feature values.
+    /// Walking any tree with any feature values stays inside the arrays and ends at a
+    /// leaf. `outputs` adds one walk per tree to each output's starting score: `value`
+    /// has one entry per node, and the compiler checks that there is one starting score
+    /// per output, so with every walk in range the sum cannot panic either.
     #[kani::proof]
-    #[kani::unwind(20)]
-    fn tree_traversal_is_total() {
+    #[kani::unwind(10)]
+    fn tree_walk_is_total() {
+        let t: usize = kani::any();
+        kani::assume(t < defects::TREES.roots.len());
         let x: [f32; defects::N_FEATURES] = kani::any();
-        let _ = defects::outputs(&x);
+        let leaf = defects::TREES.leaf(t, &x);
+        assert!(defects::TREES.feature[leaf] < 0);
     }
 
     /// The decision for any logit: the sigmoid (and its `exp`) never panics.

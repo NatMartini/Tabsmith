@@ -1,17 +1,26 @@
 <div align="center">
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.svg">
+  <img src="docs/assets/logo-light.svg" alt="Tabsmith logo: a small table on an anvil" width="112">
+</picture>
+
 # Tabsmith
 
 **Train a model from a CSV and ship it inside your Rust application — one tool, no Python.**
 
 [![CI](https://github.com/NatMartini/Tabsmith/actions/workflows/ci.yml/badge.svg)](https://github.com/NatMartini/Tabsmith/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/NatMartini/Tabsmith?include_prereleases)](https://github.com/NatMartini/Tabsmith/releases)
-[![crates.io](https://img.shields.io/crates/v/tabsmith-runtime.svg?label=tabsmith-runtime)](https://crates.io/crates/tabsmith-runtime)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
+[![Rust 1.95+](https://img.shields.io/badge/rust-1.95%2B-orange.svg)](#install)
 
-[中文说明](README.zh-CN.md) · [Install](#install) · [Quick start](#quick-start) · [Tabsmith vs Python](#tabsmith-vs-python) · [Docs](#documentation)
+[中文说明](README.zh-CN.md) · [Install](#install) · [Quick start](#quick-start) · [Ship it](#ship-it-four-ways) · [Tabsmith vs Python](#tabsmith-vs-python) · [Docs](#documentation)
 
 </div>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/pipeline-dark.svg">
+  <img src="docs/assets/pipeline-light.svg" alt="A CSV or Parquet file goes into tabsmith train, which splits without leakage, preprocesses on training rows, trains linear, MLP and GBDT models, chooses on validation and tests once. The result is a verified bundle that ships four ways: in a Rust application with tabsmith-runtime, compiled into your code with model!, in a web page as WebAssembly, or as an HTTP service with tabsmith serve.">
+</picture>
 
 ```console
 $ tabsmith sample-data machines.csv
@@ -62,7 +71,7 @@ yet, and the [design decisions](docs/design-decisions.md) and
 
 - **One command, safe defaults.** `tabsmith train data.csv --target y` does split → preprocess → train three models → compare on validation → test once → bundle. Every step is recorded and reproducible.
 - **Ship without Python.** Your application depends on `tabsmith-runtime` only (no Burn, no Polars, no Python). The example app is a 1.7 MB binary.
-- **Or compile the model in.** `tabsmith_macros::model!` turns a bundle into Rust code while your crate builds: typed inputs, no allocation, no `std`, and the same bits as the runtime on every platform ([below](#or-compiled-into-your-code)).
+- **Or compile the model in.** `tabsmith_macros::model!` turns a bundle into Rust code while your crate builds: typed inputs, no allocation, no `std`, and the same bits as the runtime on every platform. In the embedded example, the Kani model checker proves that prediction never panics, for every possible input ([below](#compiled-into-your-code)).
 - **Fast where it matters in production.** Single-record prediction in microseconds, about a millisecond from process start to first prediction, about 12 MB of memory ([numbers below](#tabsmith-vs-python)).
 - **Same quality as scikit-learn.** Preprocessing matches scikit-learn's to about 2e-7, the linear model lands within about 0.1 % of scikit-learn's optimum of the same objective, and metrics match to 1e-12 ([measured](reports/implementation-acceptance.md#reference-check-against-scikit-learn); CI guards 1e-5, 1 % and 1e-12 with [frozen goldens](fixtures/reference/)).
 - **Deterministic, to the bit.** Same data and settings, same weights: an interrupted run resumes to exactly the weights of an uninterrupted one, on the CPU and on certified GPUs ([why that took work on GPUs](docs/design-decisions.md#d5-determinism-is-a-contract)).
@@ -119,7 +128,16 @@ tabsmith sample-data hours.csv --task regression        # target `remaining_hour
 tabsmith train hours.csv --target remaining_hours --group device_id --task regression
 ```
 
-### Use the model in your Rust application
+## Ship it four ways
+
+| Ship the bundle | With | What runs the model |
+|---|---|---|
+| [In your Rust application](#in-your-rust-application) | `Predictor::load` | `tabsmith-runtime`, a small dependency: no Burn, no Polars, no Python |
+| [Compiled into your code](#compiled-into-your-code) | `tabsmith_macros::model!` | generated Rust code on `tabsmith-embedded`: `no_std`, no allocation |
+| [In a web page](#in-a-web-page) | the runtime compiled to WebAssembly | the browser tab; nothing is uploaded |
+| [As an HTTP service](#as-an-http-service) | `tabsmith serve` | the `tabsmith` binary, JSON over HTTP |
+
+### In your Rust application
 
 ```toml
 [dependencies]
@@ -159,13 +177,7 @@ switches only after the new bundle loads and passes its self-check (and refuses 
 changed input/output contract unless you allow it); `rollback_to` goes back.
 See [examples/predict-app](examples/predict-app).
 
-### …or in a web page
-
-The same runtime, unchanged, compiled to WebAssembly: [examples/wasm-predict](examples/wasm-predict)
-loads a bundle in the browser, verifies every file's SHA-256, replays its self-check,
-builds a form from the input schema and predicts in microseconds. Nothing is uploaded.
-
-### …or compiled into your code
+### Compiled into your code
 
 With [`tabsmith-macros`](crates/tabsmith-macros), the bundle becomes Rust code while your
 crate builds. There is no file to load, nothing is allocated, and the standard library is
@@ -190,7 +202,13 @@ of random records each, and CI runs them on Linux, macOS and Windows. A predicti
 microcontroller and replays the bundle's examples at power-on. The Kani model checker
 proves that its prediction never panics, for every possible input.
 
-### Serve it over HTTP
+### In a web page
+
+The same runtime, unchanged, compiled to WebAssembly: [examples/wasm-predict](examples/wasm-predict)
+loads a bundle in the browser, verifies every file's SHA-256, replays its self-check,
+builds a form from the input schema and predicts in microseconds. Nothing is uploaded.
+
+### As an HTTP service
 
 ```sh
 tabsmith serve --port 8080              # the newest evaluated bundle, or --bundle <dir>
@@ -203,7 +221,7 @@ Endpoints: `POST /predict` (one record, an array, or `{"records": [...]}`),
 served bundle's folder only). The server has no authentication or timeouts and listens
 on `127.0.0.1` by default; see [SECURITY.md](SECURITY.md) before exposing it.
 
-### When new data arrives
+## When new data arrives
 
 Append to (or replace) the file and run `tabsmith train` again:
 
@@ -235,6 +253,15 @@ The same task done with the standard Python stack (pandas + scikit-learn
 `HistGradientBoostingClassifier`), on the same rows, split, features and training
 settings, same machine. Reproduce with [`tools/bench/bench.py`](tools/bench/bench.py);
 full results and logs in [reports/benchmarks](reports/benchmarks/2026-10-27-linux-x86_64-v2/).
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/bench-dark.svg">
+  <img src="docs/assets/bench-light.svg" alt="Tabsmith's small MLP against scikit-learn's MLPClassifier, lower is better: cold start 1 ms against 612 ms, one prediction in an app 2.6 µs against 2.0 ms, peak memory 12 MB against 161 MB, and the application ships 1.7 MB against a 354 MB Python environment.">
+</picture>
+
+*The small MLP against scikit-learn's `MLPClassifier`; each row has its own linear scale.
+All three pairs of models are in the table below. The chart is drawn from the report's
+`results.json` by [`tools/readme_assets.py`](tools/readme_assets.py).*
 
 <!-- BENCH:START -->
 Machine: AMD Ryzen 9 9950X3D2 16-Core Processor, 32 logical CPUs, Linux 6.6.87.2-microsoft-standard-WSL2. Data: 10000 rows (synthetic equipment-defect sample), same split, features and settings on both sides. Python 3.14.4, scikit-learn 1.9.1, pandas 3.1.0, numpy 2.5.4. Tabsmith's linear, small-mlp and gbdt candidates stand next to scikit-learn's LogisticRegression, MLPClassifier and HistGradientBoostingClassifier (HGB). Tabsmith trains on one thread; scikit-learn runs with its defaults (HGB uses every core).
@@ -318,13 +345,20 @@ each of these. Three GPU paths are [certified](reports/gpu/), and the bundle loa
 Not done yet, by design or for lack of hardware:
 
 - **GPU**: an opt-in build. GPU paths are certified only where they were run (an RTX 5090 and an AMD integrated GPU on Windows, [reports/gpu](reports/gpu/)); CUDA trains in TF32, which must be requested explicitly (`execution.precision = "tf32"`), because the matmul library has no fp32 switch. Asking for a GPU that is not there is an error, never a silent fallback.
-- **Platforms**: certified on Linux x86_64, where the acceptance run above was made. The full test suite also passes on Windows x86_64, and CI is set up to run it on macOS (Apple Silicon); both are reported as "not certified" by design in 0.1. The Linux arm64 and macOS Intel binaries are built but not tested.
+- **Platforms**: certified on Linux x86_64, where the acceptance run above was made. The full test suite also passes on Windows x86_64 and, in CI, on macOS (Apple Silicon); both are reported as "not certified" by design in 0.1. The Linux arm64 and macOS Intel binaries are built but not tested.
 - **Tasks**: binary, multiclass and regression on one table. Time-based splits are refused rather than faked; ranking, survival and multi-table data are not supported.
 - **macOS**: checked only by CI's Apple Silicon runners; nobody has run Tabsmith on a Mac by hand. The Linux results in the reports come from WSL on the development machine.
 - **Users**: no formal user study yet — feedback and issues are very welcome.
 
 The [implementation backlog](docs/implementation-backlog.md) lists the status of
 every planned item.
+
+## Contributing
+
+Bug reports with a reproduction, tests and careful fixes are the most valuable
+contributions. [CONTRIBUTING.md](CONTRIBUTING.md) has the ground rules and the commands
+that run every check CI runs. Questions and ideas are welcome as
+[issues](https://github.com/NatMartini/Tabsmith/issues).
 
 ## Documentation
 
