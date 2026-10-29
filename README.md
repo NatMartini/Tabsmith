@@ -11,6 +11,7 @@
 
 [![CI](https://github.com/NatMartini/Tabsmith/actions/workflows/ci.yml/badge.svg)](https://github.com/NatMartini/Tabsmith/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/NatMartini/Tabsmith?include_prereleases)](https://github.com/NatMartini/Tabsmith/releases)
+[![crates.io](https://img.shields.io/crates/v/tabsmith-runtime.svg?label=tabsmith-runtime)](https://crates.io/crates/tabsmith-runtime)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 [![Rust 1.95+](https://img.shields.io/badge/rust-1.95%2B-orange.svg)](#install)
 
@@ -60,7 +61,7 @@ once, and packages the winner with its preprocessing, schema and evidence. When 
 it retrains and tells you whether the new model beats the one you shipped,
 on rows neither of them has seen.
 
-Release 0.1 does **tabular binary classification, multiclass classification and
+Release 0.2 does **tabular binary classification, multiclass classification and
 regression** (churn, defect, fraud, failure mode, remaining life, …). It trains on the
 CPU, and optionally the neural networks on a GPU (Vulkan, CUDA). The runtime also
 runs in a web page, compiled to WebAssembly, and a model can be compiled into your Rust
@@ -358,7 +359,7 @@ Every step has a step-by-step command too (`tabsmith plan`, `run`, `compare`,
 
 ## Status
 
-Tabsmith 0.1 is young. What is solid and tested (179 automated tests and 7 doctests,
+Tabsmith 0.2 is young. What is solid and tested (179 automated tests and 7 doctests,
 including process-level ones that drive the real binary, and property tests): the
 workflow above for all three tasks, exact resume, bundles and the runtime, models
 compiled into code (with [Kani proofs](reports/kani/) that their prediction never panics), and
@@ -372,7 +373,7 @@ each of these. Three GPU paths are [certified](reports/gpu/), and the bundle loa
 Not done yet, by design or for lack of hardware:
 
 - **GPU**: an opt-in build. GPU paths are certified only where they were run (an RTX 5090 and an AMD integrated GPU on Windows, [reports/gpu](reports/gpu/)); CUDA trains in TF32, which must be requested explicitly (`execution.precision = "tf32"`), because the matmul library has no fp32 switch. Asking for a GPU that is not there is an error, never a silent fallback.
-- **Platforms**: certified on Linux x86_64, where the acceptance run above was made. The full test suite also passes on Windows x86_64 and, in CI, on macOS (Apple Silicon); both are reported as "not certified" by design in 0.1. The Linux arm64 and macOS Intel binaries are built but not tested.
+- **Platforms**: certified on Linux x86_64, where the acceptance run above was made. The full test suite also passes on Windows x86_64 and, in CI, on macOS (Apple Silicon); both are reported as "not certified" by design in 0.2. The Linux arm64 and macOS Intel binaries are built but not tested.
 - **Tasks**: binary, multiclass and regression on one table, with stratified, grouped (`--group`) or chronological (`--time`) splits. Ranking, survival and multi-table data are not supported.
 - **macOS**: checked only by CI's Apple Silicon runners; nobody has run Tabsmith on a Mac by hand. The Linux results in the reports come from WSL on the development machine.
 - **Users**: no formal user study yet — feedback and issues are very welcome.

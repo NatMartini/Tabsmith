@@ -11,6 +11,7 @@
 
 [![CI](https://github.com/NatMartini/Tabsmith/actions/workflows/ci.yml/badge.svg)](https://github.com/NatMartini/Tabsmith/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/NatMartini/Tabsmith?include_prereleases)](https://github.com/NatMartini/Tabsmith/releases)
+[![crates.io](https://img.shields.io/crates/v/tabsmith-runtime.svg?label=tabsmith-runtime)](https://crates.io/crates/tabsmith-runtime)
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#许可)
 [![Rust 1.95+](https://img.shields.io/badge/rust-1.95%2B-orange.svg)](#安装)
 
@@ -56,7 +57,7 @@ Tabsmith 把一个 CSV 或 Parquet 文件变成一个**经过测试、自包含�
 再把胜出的模型连同预处理、schema 和评价证据一起打包。新数据到来时，它会重新训练，并在两个模型都没见过的行上
 告诉你新模型是否比已经交付的模型更好。
 
-0.1 版支持**表格二分类、多分类和回归**（流失、缺陷、欺诈、故障类型、剩余寿命……）。在 CPU 上训练，也可以把神经网络放到
+0.2 版支持**表格二分类、多分类和回归**（流失、缺陷、欺诈、故障类型、剩余寿命……）。在 CPU 上训练，也可以把神经网络放到
 GPU（Vulkan、CUDA）上训练；运行时还能编译成 WebAssembly 在网页中运行，模型也可以直接编译进你的 Rust 代码，
 一直用到没有标准库的微控制器上。尚未完成的部分见[状态](#状态)；为什么这样设计，见
 [设计决策](docs/design-decisions.md)和[技术报告](docs/technical-report.md)。
@@ -319,7 +320,7 @@ GPU 训练需要单独构建（`cargo install tabsmith-cli --features gpu`）；
 
 ## 状态
 
-Tabsmith 0.1 还很年轻。已经可靠且有测试覆盖的部分（179 个自动测试和 7 个文档测试，其中包括驱动真实二进制的进程级测试和性质测试）：
+Tabsmith 0.2 还很年轻。已经可靠且有测试覆盖的部分（179 个自动测试和 7 个文档测试，其中包括驱动真实二进制的进程级测试和性质测试）：
 上面三种任务的工作流、精确续训、模型包与运行时、编译进代码的模型（并用 [Kani 证明](reports/kani/)其预测不会 panic），以及与 scikit-learn 的参考对照。[验收报告](reports/implementation-acceptance.md)
 为每一项提供了实测证据。三条 GPU 路径已[认证](reports/gpu/)，模型包加载器经过 530 万次输入的[模糊测试](reports/fuzz/)，没有崩溃。
 树模型在 [100 万行](reports/scaling/)上端到端训练 42 秒、内存 1.6 GB，并且在 [Windows 和 Linux 上得到同一个模型](reports/reproducibility/)。
@@ -327,7 +328,7 @@ Tabsmith 0.1 还很年轻。已经可靠且有测试覆盖的部分（179 个自
 尚未完成的部分（有的是有意为之，有的是缺少硬件）：
 
 - **GPU**：需要单独构建。GPU 路径只在实际运行过的硬件上认证（Windows 上的 RTX 5090 和 AMD 核显，见 [reports/gpu](reports/gpu/)）；CUDA 用 TF32 训练，必须显式声明（`execution.precision = "tf32"`），因为矩阵乘法库没有 fp32 开关。请求不存在的 GPU 会报错，绝不会静默回退。
-- **平台**：在 Linux x86_64 上认证，上面的验收运行就在该平台上完成。完整测试套件也在 Windows x86_64 上通过，并在 CI 的 macOS（Apple Silicon）上通过；按 0.1 版的设计，这两者都报告为“未认证”。Linux arm64 和 macOS Intel 二进制只构建、未测试。
+- **平台**：在 Linux x86_64 上认证，上面的验收运行就在该平台上完成。完整测试套件也在 Windows x86_64 上通过，并在 CI 的 macOS（Apple Silicon）上通过；按 0.2 版的设计，这两者都报告为“未认证”。Linux arm64 和 macOS Intel 二进制只构建、未测试。
 - **任务**：单表上的二分类、多分类和回归，支持分层、按实体（`--group`）和按时间（`--time`）切分。不支持排序、生存分析和多表数据。
 - **macOS**：只由 CI 的 Apple Silicon runner 检查，还没有人在 Mac 上手动运行过 Tabsmith。报告里 Linux 上的结果来自开发机上的 WSL。
 - **用户**：还没有正式的用户研究——非常欢迎反馈和 issue。

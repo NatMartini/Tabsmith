@@ -1,6 +1,6 @@
 [package]
 name = "tabsmith-cli"
-description = "The `tabsmith` command-line tool: CSV/Parquet to a trained, verified tabular binary classifier bundle."
+description = "The `tabsmith` command-line tool: a CSV/Parquet file to a trained, verified model bundle (binary, multiclass or regression) that Rust applications load without Python."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

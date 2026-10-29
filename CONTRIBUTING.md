@@ -171,13 +171,6 @@ without any additional terms or conditions.
    with `cargo package --list -p <crate>`; the packages contain only `src/`,
    the crate README and the license files (warnings about skipped tests and
    examples are expected).
-5. Once, after the first crates.io publish: put this badge back in `README.md` and
-   `README.zh-CN.md`, after the Release badge. Before that it shows "not found", so it
-   was left out.
-
-   ```markdown
-   [![crates.io](https://img.shields.io/crates/v/tabsmith-runtime.svg?label=tabsmith-runtime)](https://crates.io/crates/tabsmith-runtime)
-   ```
 
 ---
 
@@ -278,9 +271,3 @@ Tabsmith 采用 [MIT](LICENSE-MIT) 与 [Apache-2.0](LICENSE-APACHE) 双许可。
    并发布 GitHub Release（附 `install.sh`、`install.ps1` 和每个压缩包的 `.sha256`）。带 `-` 的标签（如 `v0.2.0-rc.1`）会作为预发布。
 4. 按依赖顺序发布 crate：`tabsmith-contracts`、`tabsmith-embedded`、`tabsmith-runtime`、`tabsmith-macros`、`tabsmith-workflow`、`tabsmith-cli`（`cargo publish -p <crate>`）。
    发布前可用 `cargo package --list -p <crate>` 检查；包中只含 `src/`、crate 的 README 和许可证文件（关于跳过测试和示例的警告属正常）。
-5. 首次发布到 crates.io 之后（只需一次）：把下面这个徽章加回 `README.md` 和 `README.zh-CN.md`，放在 Release 徽章之后。
-   在此之前它只会显示 “not found”，所以先拿掉了。
-
-   ```markdown
-   [![crates.io](https://img.shields.io/crates/v/tabsmith-runtime.svg?label=tabsmith-runtime)](https://crates.io/crates/tabsmith-runtime)
-   ```

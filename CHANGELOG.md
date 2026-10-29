@@ -8,8 +8,14 @@ Before 1.0, minor versions may contain breaking changes.
 
 ## [Unreleased]
 
-Bundles that carry monotone constraints need this version of the runtime
-(`min_runtime_version` 0.2.0); every other bundle still loads with 0.1.0.
+## [0.2.0] - 2026-10-29
+
+The model as a Rust program, taken further: generated proofs, compile-time bounds,
+monotone constraints, chronological splits, conformal prediction, importance, drift
+monitoring, trees that are the same on every operating system and use every core, and
+the evidence for each (`reports/`). Bundles that carry monotone constraints need this
+version of the runtime (`min_runtime_version` 0.2.0); every other bundle still loads
+with 0.1.0.
 
 ### Added
 
@@ -53,8 +59,7 @@ Bundles that carry monotone constraints need this version of the runtime
   device plan reports the trees' thread count instead of 1.
 - `E_SPLIT_UNSUPPORTED` now means "a time column is declared but the split is not
   `time`"; the message says so.
-- The workspace version is 0.2.0 (unreleased); a bundle with monotone constraints
-  records `min_runtime_version` 0.2.0.
+- A bundle with monotone constraints records `min_runtime_version` 0.2.0.
 
 ## [0.1.0] - 2026-10-28
 
@@ -161,5 +166,6 @@ system with its evidence.
   run on Windows.
 - macOS is checked only by CI's Apple Silicon runners; nobody has run Tabsmith on a Mac by hand.
 
-[Unreleased]: https://github.com/NatMartini/Tabsmith/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/NatMartini/Tabsmith/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/NatMartini/Tabsmith/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/NatMartini/Tabsmith/releases/tag/v0.1.0
