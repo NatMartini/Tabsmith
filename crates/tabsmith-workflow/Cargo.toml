@@ -24,10 +24,13 @@ cuda = ["burn/cuda", "burn/fusion", "dep:cudarc"]
 
 [dependencies]
 tabsmith-contracts.workspace = true
+tabsmith-embedded.workspace = true
 tabsmith-runtime.workspace = true
 # exp/log in pure Rust for the losses and the trees' starting scores: the same bits
 # on every operating system, where the platform C libraries differ in the last bit.
 libm.workspace = true
+# The thread pool of the trees' training (already in the tree through Polars).
+rayon.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 toml.workspace = true

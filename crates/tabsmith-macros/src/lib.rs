@@ -28,7 +28,8 @@
 //! - **`predict(&Input) -> Result<Prediction, InputError>`**. `Prediction` holds a
 //!   `Label` and the probability (binary), a `Class` and every class's probability
 //!   (multiclass), or the value (regression).
-//! - **`features`, `outputs`, `decode`**, the three stages of `predict`.
+//! - **`features`, `outputs`, `decode`**, the three stages of `predict`, and
+//!   **`outputs_batch`**, the raw outputs of many rows of features.
 //! - **`Input::from_values`**, which builds an input from raw [`FieldValue`]s with the
 //!   rules the runtime applies to JSON records.
 //! - **`EXAMPLES` and `self_check()`**: the bundle's example records, and a check that
@@ -44,17 +45,50 @@
 //!   the runtime's `Predictor` implements too.
 //!
 //! The generated code is `no_std`: the model's weights and trees are constants and
-//! inference allocates nothing. It calls the kernels of `tabsmith-embedded`, the
-//! same functions the runtime calls, so predictions are identical to the runtime's,
-//! and the same on every platform. The crate that invokes `model!` must depend on
-//! `tabsmith-embedded`.
+//! inference allocates nothing. A network calls the kernels of `tabsmith-embedded`, the
+//! same functions the runtime calls. Each tree becomes a function of nested `if`s, with
+//! the arithmetic of the kernels:
+//!
+//! ```ignore
+//! const fn tree_0(x: &[f32; N_FEATURES]) -> f32 {
+//!     if x[24] <= 0.2705937f32 {
+//!         if x[23] <= 1.4444073f32 { /* ... */ } else { /* ... */ }
+//!     } else {
+//!         if x[21] <= -0.09460988f32 { /* ... */ } else { /* ... */ }
+//!     }
+//! }
+//! ```
+//!
+//! So predictions are identical to the runtime's, and the same on every platform. The
+//! crate that invokes `model!` must depend on `tabsmith-embedded`.
+//!
+//! On real models, code is 2 to 2.8 times faster than walking the trees' arrays, and it
+//! takes a third less flash on a Cortex-M4F. It also makes `outputs` a `const fn`, so the
+//! compiler can run the model:
+//!
+//! ```
+//! tabsmith_macros::model!(defects, "../../fixtures/bundles/binary-gbdt");
+//!
+//! // Computed while this compiles.
+//! const ALL_ZEROS: [f32; defects::N_OUTPUTS] = defects::outputs(&[0.0; defects::N_FEATURES]);
+//! # assert!(ALL_ZEROS[0].is_finite());
+//! ```
+//!
+//! Code takes longer to compile, so an ensemble of more than 32,768 nodes stays arrays
+//! unless the invocation says `tree_code`: `model!(name, "path", tree_code)`. A crate that
+//! uses `outputs` in a `const` should say it anyway, so that a larger model after retraining
+//! cannot take the `const` away. The numbers are in `reports/inference/` of the repository.
+//! `tree_arrays` keeps the arrays at any size, and a tree more than 64 levels deep always
+//! does. A network ignores both options, so an invocation keeps compiling when retraining
+//! picks another model kind.
 //!
 //! `model!(name, "path", kani)` also makes the module carry its own proofs for the
 //! [Kani](https://github.com/model-checking/kani) model checker: under `cfg(kani)`, the
 //! input types derive `kani::Arbitrary` and a module `name::proofs` holds one harness
 //! per stage of `predict` (features, outputs, decode), each proving that the stage never
 //! panics for any value of its argument, with loop bounds taken from the model's shape.
-//! `cargo kani` runs them; nothing is written by hand.
+//! `cargo kani` runs them; nothing is written by hand. They cover `predict`, not
+//! `outputs_batch`.
 //!
 //! These do not compile:
 //!
@@ -79,6 +113,22 @@
 //! ```compile_fail
 //! // no bundle at this path
 //! tabsmith_macros::model!(defects, "../../fixtures/bundles/no-such-bundle");
+//! ```
+//!
+//! ```compile_fail
+//! // an option that does not exist
+//! tabsmith_macros::model!(defects, "../../fixtures/bundles/binary-gbdt", tree_cod);
+//! ```
+//!
+//! ```compile_fail
+//! // two forms of the same trees
+//! tabsmith_macros::model!(defects, "../../fixtures/bundles/binary-gbdt", tree_code, tree_arrays);
+//! ```
+//!
+//! ```compile_fail,E0015
+//! // arrays are walked at run time, so `outputs` cannot be `const`
+//! tabsmith_macros::model!(defects, "../../fixtures/bundles/binary-gbdt", tree_arrays);
+//! const ALL_ZEROS: [f32; defects::N_OUTPUTS] = defects::outputs(&[0.0; defects::N_FEATURES]);
 //! ```
 //!
 //! [`FieldValue`]: https://docs.rs/tabsmith-embedded/latest/tabsmith_embedded/enum.FieldValue.html

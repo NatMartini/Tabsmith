@@ -118,7 +118,9 @@ impl RowKeys {
         }
         let contents = content_columns(table, content).map(|cols| RowContents {
             columns: content.to_vec(),
-            hashes: rows.iter().map(|&r| row_fingerprint(&cols, r)).collect(),
+            hashes: crate::parallel::map_rows(rows.len(), |i| row_fingerprint(&cols, rows[i]))
+                .into_iter()
+                .collect(),
         });
         RowKeys::Positions {
             snapshot_sha256: snapshot.source.sha256.clone(),

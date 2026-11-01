@@ -146,6 +146,13 @@ impl Record {
         self.fields.contains_key(name)
     }
 
+    /// Whether the record has all of `names`, which must come sorted. One pass over both
+    /// sorted lists instead of a lookup per name.
+    pub(crate) fn contains_sorted<'a>(&self, mut names: impl Iterator<Item = &'a str>) -> bool {
+        let mut fields = self.fields.keys();
+        names.all(|name| fields.any(|k| k.as_str() == name))
+    }
+
     /// Field names, in sorted order.
     pub fn names(&self) -> impl Iterator<Item = &str> {
         self.fields.keys().map(String::as_str)
@@ -329,11 +336,34 @@ impl Table {
     /// Builds a table holding exactly the named columns from records. Records must
     /// already have been checked for presence of these fields.
     pub fn from_records(records: &[Record], names: &[&str]) -> Self {
+        let mut order: Vec<usize> = (0..names.len()).collect();
+        order.sort_unstable_by_key(|&i| names[i]);
+        Self::from_records_in_order(records, names, &order)
+    }
+
+    /// [`Self::from_records`] for a caller that knows `order`, the indices of `names` in
+    /// ascending order of name. Records keep their fields sorted, so one pass over the
+    /// sorted names and the fields of each record replaces a lookup per cell.
+    pub(crate) fn from_records_in_order(records: &[Record], names: &[&str], order: &[usize]) -> Self {
+        let mut values: Vec<Vec<Value>> = names.iter().map(|_| Vec::with_capacity(records.len())).collect();
+        for r in records {
+            let mut fields = r.fields.iter().peekable();
+            for &i in order {
+                let name = names[i];
+                while fields.next_if(|(k, _)| k.as_str() < name).is_some() {}
+                let value = match fields.peek() {
+                    Some((k, v)) if k.as_str() == name => (*v).clone(),
+                    _ => Value::Null,
+                };
+                values[i].push(value);
+            }
+        }
         let columns = names
             .iter()
-            .map(|name| Column {
+            .zip(values)
+            .map(|(name, v)| Column {
                 name: name.to_string(),
-                data: ColumnData::Mixed(records.iter().map(|r| r.get(name).cloned().unwrap_or(Value::Null)).collect()),
+                data: ColumnData::Mixed(v),
             })
             .collect();
         Self {
@@ -402,6 +432,50 @@ mod tests {
         assert_eq!(back, r);
         let nested = serde_json::json!({"a": [1, 2]});
         assert_eq!(Record::from_json(&nested).unwrap_err().code, ErrorCode::SchemaTypeMismatch);
+    }
+
+    #[test]
+    fn a_table_from_records_holds_each_cell_under_its_name() {
+        let records = [
+            Record::new().with("b", 1.5).with("d", "x"),
+            Record::new().with("a", 2.5).with("d", "y").with("z", true),
+            Record::new(),
+        ];
+        // Names in no particular order, one that no record has, and a field left out.
+        let names = ["d", "missing", "a", "b"];
+        let t = Table::from_records(&records, &names);
+        assert_eq!(t.names(), names);
+        assert_eq!(t.n_rows(), 3);
+        let cell = |name: &str, row: usize| t.column(name).unwrap().get(row);
+        assert_eq!(cell("d", 0), ValueRef::Text("x"));
+        assert_eq!(cell("d", 1), ValueRef::Text("y"));
+        assert_eq!(cell("d", 2), ValueRef::Null);
+        assert_eq!(cell("a", 0), ValueRef::Null);
+        assert_eq!(cell("a", 1), ValueRef::Float(2.5));
+        assert_eq!(cell("b", 0), ValueRef::Float(1.5));
+        assert_eq!(cell("b", 1), ValueRef::Null);
+        for row in 0..3 {
+            assert_eq!(cell("missing", row), ValueRef::Null);
+        }
+        // The order a caller already knows gives the same table.
+        let known = Table::from_records_in_order(&records, &names, &[2, 3, 0, 1]);
+        for name in names {
+            for row in 0..3 {
+                assert_eq!(known.column(name).unwrap().get(row), cell(name, row));
+            }
+        }
+    }
+
+    #[test]
+    fn contains_sorted_finds_a_missing_name_anywhere() {
+        let r = Record::new().with("b", 1).with("d", 2).with("f", 3);
+        let has = |names: &[&str]| r.contains_sorted(names.iter().copied());
+        assert!(has(&[]));
+        assert!(has(&["b", "d", "f"]));
+        assert!(has(&["d"]));
+        assert!(!has(&["a", "b"]));
+        assert!(!has(&["b", "c", "d"]));
+        assert!(!has(&["b", "d", "f", "g"]));
     }
 
     #[test]

@@ -103,6 +103,10 @@ squared error of the standardised target: the model learns `(y − mean) / std` 
 training rows, and predictions are mapped back. `gbdt` boosts the same losses with
 Newton steps: each leaf value is `−Σg / (Σh + l2)`, times `learning_rate`.
 
+The trees use up to 12 threads; the environment variable `RAYON_NUM_THREADS` changes that.
+It is not a setting because the result does not depend on it: the same data and settings
+give bit-identical trees on any number of threads.
+
 ---
 
 ## 中文
@@ -133,5 +137,7 @@ Newton steps: each leaf value is `−Σg / (Σh + l2)`, times `learning_rate`.
 - `execution.candidate_device` 可为 `cpu`、`vulkan`、`cuda` 或 `auto-certified`。`auto-certified` 只会选择经 `tools/gpu_certify.py` 认证、且成本模型预计至少快一倍的 GPU，否则用 CPU。GPU 后端只存在于启用了 `vulkan`/`cuda` 特性（CLI 为 `gpu`）的构建中；`gbdt` 始终在 CPU 上训练。
 - `execution.precision = "tf32"`：CUDA（计算能力 8.0 及以上）的矩阵乘法使用 TF32，必须显式声明；要求 fp32 时会被拒绝而不是悄悄降低精度。Vulkan 按 fp32 计算。`execution.fallback` 只有 `error` 一种：不会静默回退。
 - `execution.max_train_seconds` 会让结果依赖运行时间，因此默认关闭。
+
+树最多用 12 个线程；环境变量 `RAYON_NUM_THREADS` 可以改变这个数。它不是配置项，因为训练结果与线程数无关：同样的数据和设置，在任何线程数下都得到逐位相同的树。
 
 网络的训练目标是按类别加权的平均二元交叉熵，加上对权重（不含偏置）的 `l2 / 2 · Σ W²`，与 scikit-learn 的 `LogisticRegression(C = 1 / (n_train · l2), class_weight="balanced")` 目标函数相同。多分类使用加权 softmax 交叉熵，回归使用标准化目标的均方误差；`gbdt` 用牛顿步提升同样的损失（叶子值 `−Σg / (Σh + l2)` 乘以 `learning_rate`）。

@@ -1,0 +1,48 @@
+
+Fixture binary-gbdt: 10000 rows, 14 trees, 854 nodes, 1 outputs, depth 8
+runtime, one thread                0.172 us/row     5803157 rows/s
+arrays, row by row                 0.169 us/row     5900749 rows/s
+arrays, tree by tree               0.311 us/row     3213781 rows/s
+code, row by row                   0.060 us/row    16742006 rows/s
+code, tree by tree                 0.149 us/row     6714113 rows/s
+code, outputs_batch                0.063 us/row    15870497 rows/s
+
+Adult: 10000 rows, 155 trees, 9151 nodes, 1 outputs, depth 8
+runtime, one thread                1.971 us/row      507375 rows/s
+arrays, row by row                 1.976 us/row      506029 rows/s
+arrays, tree by tree               2.297 us/row      435294 rows/s
+code, row by row                   0.786 us/row     1272232 rows/s
+code, tree by tree                 0.909 us/row     1100497 rows/s
+code, outputs_batch                0.795 us/row     1258004 rows/s
+
+Covertype, 40 rounds: 10000 rows, 280 trees, 16848 nodes, 7 outputs, depth 8
+runtime, one thread                2.173 us/row      460183 rows/s
+arrays, row by row                 2.628 us/row      380454 rows/s
+arrays, tree by tree               2.546 us/row      392816 rows/s
+code, row by row                   1.168 us/row      855805 rows/s
+code, tree by tree                 1.367 us/row      731770 rows/s
+code, outputs_batch                1.113 us/row      898529 rows/s
+
+California Housing: 10000 rows, 309 trees, 18823 nodes, 1 outputs, depth 8
+runtime, one thread                3.961 us/row      252469 rows/s
+arrays, row by row                 4.039 us/row      247562 rows/s
+arrays, tree by tree               3.507 us/row      285135 rows/s
+code, row by row                   1.538 us/row      650022 rows/s
+code, tree by tree                 1.375 us/row      727125 rows/s
+code, outputs_batch                1.541 us/row      648942 rows/s
+
+Covertype, 143 rounds: 10000 rows, 1001 trees, 59781 nodes, 7 outputs, depth 8
+runtime, one thread                9.609 us/row      104064 rows/s
+arrays, row by row                15.842 us/row       63122 rows/s
+arrays, tree by tree              10.202 us/row       98017 rows/s
+code, row by row                   7.225 us/row      138408 rows/s
+code, tree by tree                 5.461 us/row      183106 rows/s
+code, outputs_batch                5.849 us/row      170983 rows/s
+
+Covertype, 400 rounds: 10000 rows, 2800 trees, 169248 nodes, 7 outputs, depth 8
+runtime, one thread               27.263 us/row       36679 rows/s
+arrays, row by row                75.246 us/row       13290 rows/s
+arrays, tree by tree              27.163 us/row       36815 rows/s
+code, row by row                  37.984 us/row       26327 rows/s
+code, tree by tree                14.329 us/row       69790 rows/s
+code, outputs_batch               14.437 us/row       69264 rows/s

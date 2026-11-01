@@ -9,8 +9,8 @@ Rust:
 
 [`tabsmith-runtime`](https://crates.io/crates/tabsmith-runtime) and the models that
 [`tabsmith-macros`](https://crates.io/crates/tabsmith-macros) compiles into Rust code
-both call these kernels. That is why a compiled model predicts exactly what the runtime
-predicts.
+both call these kernels, and the trees `tabsmith-macros` turns into code repeat their
+arithmetic. That is why a compiled model predicts exactly what the runtime predicts.
 
 - **Same bits everywhere.** Every kernel fixes its order of operations. `exp` comes
   from [`libm`](https://crates.io/crates/libm) (pure Rust), because the platform C
@@ -36,7 +36,7 @@ Minimum supported Rust version: 1.88.
 ## 中文
 
 Tabsmith 模型算术的 `no_std` 实现：点积与全连接层、树集成遍历、数值标准化、logistic、softmax 与 argmax。
-运行时和编译进代码的模型调用的是同一套内核，因此预测结果逐位相同。`exp` 使用纯 Rust 的 `libm`，在所有平台上
+运行时和编译进代码的模型调用的是同一套内核，生成为代码的树重复同样的算术，因此预测结果逐位相同。`exp` 使用纯 Rust 的 `libm`，在所有平台上
 结果一致；不分配内存、不依赖 `std`、没有 `unsafe`。
 
 ## License

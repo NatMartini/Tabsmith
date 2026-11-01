@@ -176,10 +176,11 @@ pub fn make_split(snapshot_id: &str, table: &Table, target: &TargetInfo, cfg: &D
         Vec::new()
     };
     let content_keys: Option<Vec<String>> = content_columns(table, &keyed_by).map(|cols| {
+        let fingerprints = crate::parallel::map_rows(n, |i| row_fingerprint(&cols, i));
         let mut seen: std::collections::HashMap<u64, usize> = std::collections::HashMap::new();
-        (0..n)
-            .map(|i| {
-                let fp = row_fingerprint(&cols, i);
+        fingerprints
+            .into_iter()
+            .map(|fp| {
                 let k = seen.entry(fp).or_insert(0);
                 let key = format!("{fp:016x}#{k}");
                 *k += 1;

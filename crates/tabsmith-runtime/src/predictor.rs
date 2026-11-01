@@ -1,6 +1,7 @@
 //! Application-facing prediction API.
 
 use std::collections::BTreeMap;
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use std::time::Instant;
@@ -14,7 +15,7 @@ use tabsmith_contracts::{ErrorCode, Phase, Result, TABSMITH_VERSION, TabsmithErr
 use crate::bundle::{Bundle, LoadOptions};
 use crate::model::{sigmoid, softmax};
 use crate::transform::{
-    Matrix, UnseenCategories, apply_transform, check_table_columns, extra_column_error, missing_column_error, unseen_categories,
+    Matrix, UnseenCategories, check_table_columns, extra_column_error, missing_column_error, transform_rows, unseen_categories,
     unseen_fields_by_row,
 };
 use crate::value::{Record, Table};
@@ -203,6 +204,11 @@ pub struct CheckReport {
 pub struct Predictor {
     bundle: Bundle,
     load_ms: f64,
+    /// Threads a large batch may use, resolved from [`LoadOptions::threads`].
+    threads: usize,
+    /// Indices of the input schema's fields in ascending order of name: the order records
+    /// keep their fields in.
+    fields_by_name: Vec<usize>,
 }
 
 /// `Instant::now` panics on `wasm32-unknown-unknown`, which has no clock in `std`;
@@ -232,9 +238,14 @@ impl Predictor {
     }
 
     fn loaded(bundle: Bundle, start: Option<Instant>, opts: &LoadOptions) -> Result<Self> {
+        let fields = &bundle.input_schema.fields;
+        let mut fields_by_name: Vec<usize> = (0..fields.len()).collect();
+        fields_by_name.sort_unstable_by_key(|&i| fields[i].name.as_str());
         let p = Self {
             bundle,
             load_ms: ms_since(start),
+            threads: crate::parallel::resolve(opts.threads),
+            fields_by_name,
         };
         if opts.self_check {
             let report = p.self_check()?;
@@ -280,10 +291,33 @@ impl Predictor {
         &self.bundle
     }
 
-    /// Predicts a batch of records.
+    /// Predicts a batch of records. A large batch runs on several threads
+    /// ([`LoadOptions::threads`]); the predictions are the same, in the same order.
     pub fn predict(&self, records: &[Record]) -> Result<Vec<Prediction>> {
-        let table = self.records_table(records, &[])?;
-        self.predict_table(&table)
+        self.in_pieces(records.len(), |rows| {
+            let piece = &records[rows];
+            let table = self.records_table(piece, &[])?;
+            check_table_columns(&self.bundle.input_schema, &table, Phase::Predict)?;
+            self.predict_rows(&table, 0..piece.len())
+        })
+    }
+
+    /// `f` on pieces of the rows `0..n`, joined in order: on several threads for a large
+    /// batch. A failing piece reports rows of its own, so on a failure the whole batch
+    /// runs once more on this thread, and the error is the one a single thread reports.
+    fn in_pieces<T: Send>(&self, n: usize, f: impl Fn(Range<usize>) -> Result<Vec<T>> + Sync) -> Result<Vec<T>> {
+        let pieces = crate::parallel::pieces(n, self.threads);
+        if pieces <= 1 {
+            return f(0..n);
+        }
+        let mut out = Vec::with_capacity(n);
+        for part in crate::parallel::map_ranges(n, pieces, &f) {
+            match part {
+                Ok(v) => out.extend(v),
+                Err(_) => return f(0..n),
+            }
+        }
+        Ok(out)
     }
 
     /// Predicts a single record.
@@ -331,10 +365,19 @@ impl Predictor {
         self.predict(&records)
     }
 
-    /// Predicts a columnar table (used by offline batch prediction and evaluation).
+    /// Predicts a columnar table (used by offline batch prediction and evaluation). A large
+    /// table runs on several threads ([`LoadOptions::threads`]); the predictions are the
+    /// same, in the same order.
     pub fn predict_table(&self, table: &Table) -> Result<Vec<Prediction>> {
-        let outputs = self.outputs(table)?;
-        let unseen = unseen_fields_by_row(&self.bundle.transform, table);
+        check_table_columns(&self.bundle.input_schema, table, Phase::Predict)?;
+        self.in_pieces(table.n_rows(), |rows| self.predict_rows(table, rows))
+    }
+
+    /// The predictions of rows `rows` of a table whose columns were checked.
+    fn predict_rows(&self, table: &Table, rows: Range<usize>) -> Result<Vec<Prediction>> {
+        let x = transform_rows(&self.bundle.transform, table, Phase::Predict, &|r| r, rows.clone())?;
+        let outputs = self.bundle.model.outputs(&x);
+        let unseen = unseen_fields_by_row(&self.bundle.transform, table, rows);
         let schema = &self.bundle.output_schema;
         Ok(unseen
             .into_iter()
@@ -363,13 +406,26 @@ impl Predictor {
     /// or standardised values (regression); [`decode`] reads them.
     pub fn outputs(&self, table: &Table) -> Result<Matrix> {
         check_table_columns(&self.bundle.input_schema, table, Phase::Predict)?;
-        let x = apply_transform(&self.bundle.transform, table, Phase::Predict)?;
-        Ok(self.outputs_matrix(&x))
+        let data = self.in_pieces(table.n_rows(), |rows| {
+            let x = transform_rows(&self.bundle.transform, table, Phase::Predict, &|r| r, rows)?;
+            Ok(self.bundle.model.outputs(&x).data)
+        })?;
+        Ok(Matrix {
+            rows: table.n_rows(),
+            cols: self.bundle.model.config().n_outputs(),
+            data,
+        })
     }
 
     /// The model's outputs for an already-transformed matrix.
     pub fn outputs_matrix(&self, x: &Matrix) -> Matrix {
-        self.bundle.model.outputs(x)
+        let pieces = crate::parallel::pieces(x.rows, self.threads);
+        let parts = crate::parallel::map_ranges(x.rows, pieces, |rows| self.bundle.model.outputs_rows(x, rows));
+        Matrix {
+            rows: x.rows,
+            cols: self.bundle.model.config().n_outputs(),
+            data: parts.concat(),
+        }
     }
 
     /// Checks records against the input contract and turns them into a table with
@@ -377,19 +433,27 @@ impl Predictor {
     /// allowed even when extra columns are refused) where records have them.
     pub fn records_table(&self, records: &[Record], keep: &[String]) -> Result<Table> {
         let schema = &self.bundle.input_schema;
+        let required = || {
+            self.fields_by_name
+                .iter()
+                .map(|&i| &schema.fields[i])
+                .filter(|f| f.required)
+                .map(|f| f.name.as_str())
+        };
         for (i, r) in records.iter().enumerate() {
-            for field in schema.fields.iter().filter(|f| f.required) {
-                if !r.contains(&field.name) {
-                    let present: Vec<&str> = r.names().collect();
-                    return Err(missing_column_error(
-                        &field.name,
-                        field.kind,
-                        field.nullable,
-                        &present,
-                        Some(i),
-                        Phase::Predict,
-                    ));
-                }
+            if !r.contains_sorted(required())
+                && let Some(field) = schema.fields.iter().find(|f| f.required && !r.contains(&f.name))
+            {
+                // The first missing field in the schema's order.
+                let present: Vec<&str> = r.names().collect();
+                return Err(missing_column_error(
+                    &field.name,
+                    field.kind,
+                    field.nullable,
+                    &present,
+                    Some(i),
+                    Phase::Predict,
+                ));
             }
             if schema.extra_columns == ExtraColumnPolicy::Error {
                 for name in r.names() {
@@ -407,12 +471,18 @@ impl Predictor {
             .filter(|f| f.required || records.iter().any(|r| r.contains(&f.name)))
             .map(|f| f.name.as_str())
             .collect();
+        let every_field = names.len() == schema.fields.len();
+        let n_fields = names.len();
         for k in keep {
             if schema.field(k).is_none() && !names.contains(&k.as_str()) && records.iter().any(|r| r.contains(k)) {
                 names.push(k.as_str());
             }
         }
-        Ok(Table::from_records(records, &names))
+        if every_field && names.len() == n_fields {
+            Ok(Table::from_records_in_order(records, &names, &self.fields_by_name))
+        } else {
+            Ok(Table::from_records(records, &names))
+        }
     }
 
     /// Runs the bundled synthetic examples and compares them with the outputs

@@ -1,0 +1,24 @@
+OMP_NUM_THREADS default
+preprocess 0.020 s, shape (7356, 33), sparse False
+HGB fit, with weights: 3.286 s
+HGB fit, no weights: 0.132 s
+OMP_NUM_THREADS 32
+preprocess 0.016 s, shape (7356, 33), sparse False
+HGB fit, with weights: 3.533 s
+HGB fit, no weights: 0.199 s
+OMP_NUM_THREADS 16
+preprocess 0.015 s, shape (7356, 33), sparse False
+HGB fit, with weights: 3.301 s
+HGB fit, no weights: 0.138 s
+OMP_NUM_THREADS 8
+preprocess 0.018 s, shape (7356, 33), sparse False
+HGB fit, with weights: 3.263 s
+HGB fit, no weights: 0.087 s
+OMP_NUM_THREADS 4
+preprocess 0.019 s, shape (7356, 33), sparse False
+HGB fit, with weights: 2.940 s
+HGB fit, no weights: 0.102 s
+OMP_NUM_THREADS 1
+preprocess 0.016 s, shape (7356, 33), sparse False
+HGB fit, with weights: 0.488 s
+HGB fit, no weights: 0.111 s

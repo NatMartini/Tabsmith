@@ -69,9 +69,11 @@ all cores, rows split between threads; every row is computed exactly as on one t
 
 `gbdt` is Tabsmith's own histogram gradient boosting (`tabsmith-workflow/src/gbdt.rs`),
 trained on the same fitted features. One boosting round is one epoch of the same
-training state, so checkpoints, cancellation and exact resume work alike. Sums run in
-row order on one thread and leaf values are rounded to f32 before they update the
-scores, so training is deterministic and the runtime reproduces the trainer exactly.
+training state, so checkpoints, cancellation and exact resume work alike. It runs on
+up to 12 threads (`RAYON_NUM_THREADS` overrides that): each feature sums its rows in row
+order on one thread, so the result does not depend on the thread count, and leaf values
+are rounded to f32 before they update the scores, so the runtime reproduces the trainer
+exactly.
 
 The runtime executes the engine-neutral model (`model.config.json`: dense layers, or a
 `tabsmith.trees.v1` tree ensemble) with its own small FP32 kernels. Each run records
@@ -80,15 +82,17 @@ the max output difference between the engine and the runtime on validation rows
 
 The runtime crate does not depend on Burn or Polars. `examples/predict-app` is a
 standalone Cargo project whose dependency tree proves it, and `examples/wasm-predict`
-compiles the unchanged runtime to WebAssembly.
+compiles the unchanged runtime to WebAssembly. A batch of 4,096 rows or more runs on up to
+16 plain scoped threads, with the same predictions in the same order at any thread count.
 
 The kernels live in `tabsmith-embedded`, a `no_std` crate without allocation whose only
 dependency is `libm`. `tabsmith-macros` uses them too: `model!(name, "path")` verifies a
 bundle with the runtime while the application compiles, and generates a module with the
-model's input contract as types, the weights as constants, and a `predict` that calls the
-same kernels. A compiled model therefore predicts exactly what the runtime predicts, and
-`exp` from `libm` makes both the same on every platform (`tests/equivalence.rs` and
-`tests/portable.rs` in `tabsmith-macros`). `examples/embedded-predict` builds two
+model's input contract as types, the weights as constants, each tree as a function of nested
+`if`s, and a `predict` with the same arithmetic. A compiled model therefore predicts exactly
+what the runtime predicts, and `exp` from `libm` makes both the same on every platform
+(`tests/equivalence.rs`, `tests/portable.rs` and `tests/tree_code.rs` in `tabsmith-macros`).
+`examples/embedded-predict` builds two
 compiled models for a Cortex-M4F microcontroller (D14).
 
 ## Devices
@@ -139,13 +143,13 @@ recipe 决定任务：`tabular-binary@0.1`、`tabular-multiclass@0.1` 或 `tabul
 
 神经网络（`linear`、`small-mlp`）使用 Burn 0.22 的 Flex CPU 后端（单线程）训练，也可以在 GPU 上训练（见下）。Tabsmith 用自带的、有版本的伪随机数生成器初始化权重；小批次顺序只取决于 `(seed, epoch)`；没有随机层。因此检查点（模型记录 + Adam 状态 + 循环状态 + 最佳权重）足以精确续训。每个 epoch 之后的验证在所有核心上运行运行时，按行分给各线程；每一行的计算与单线程完全相同。
 
-`gbdt` 是 Tabsmith 自己实现的直方图梯度提升树（`tabsmith-workflow/src/gbdt.rs`），使用同样的拟合特征。一轮提升就是同一训练状态中的一个 epoch，因此检查点、取消和精确续训的机制完全相同。求和在单线程上按行序进行，叶子值在更新得分前先舍入到 f32，所以训练是确定的，运行时能精确复现训练端的输出。
+`gbdt` 是 Tabsmith 自己实现的直方图梯度提升树（`tabsmith-workflow/src/gbdt.rs`），使用同样的拟合特征。一轮提升就是同一训练状态中的一个 epoch，因此检查点、取消和精确续训的机制完全相同。它最多用 12 个线程（可用 `RAYON_NUM_THREADS` 覆盖）：每个特征在一个线程上按行序求和，所以结果与线程数无关；叶子值在更新得分前先舍入到 f32，所以运行时能精确复现训练端的输出。
 
 运行时用自己的小型 FP32 内核执行与引擎无关的模型（`model.config.json`：全连接层，或 `tabsmith.trees.v1` 树集成）；每个 Run 记录引擎与运行时在验证集上输出的最大差异（“engine Δ”，网络约 1e-7，树为 0）。
 
-运行时 crate 不依赖 Burn 或 Polars。`examples/predict-app` 是独立的 Cargo 项目，其依赖树可以证明这一点；`examples/wasm-predict` 把未经修改的运行时编译成 WebAssembly。
+运行时 crate 不依赖 Burn 或 Polars。`examples/predict-app` 是独立的 Cargo 项目，其依赖树可以证明这一点；`examples/wasm-predict` 把未经修改的运行时编译成 WebAssembly。4,096 行以上的批量最多用 16 个普通的 scoped 线程，线程数不影响预测和顺序。
 
-这些内核放在 `tabsmith-embedded` 中：一个不分配内存的 `no_std` crate，唯一的依赖是 `libm`。`tabsmith-macros` 也调用它们：`model!(name, "path")` 在应用编译时用运行时校验模型包，并生成一个模块——模型的输入契约是类型，权重是常量，`predict` 调用同一套内核。因此编译进代码的模型与运行时的预测完全相同；`exp` 来自 `libm`，两者在所有平台上也相同（见 `tabsmith-macros` 的 `tests/equivalence.rs` 和 `tests/portable.rs`）。`examples/embedded-predict` 把两个模型编译进可在 Cortex-M4F 微控制器上运行的库（D14）。
+这些内核放在 `tabsmith-embedded` 中：一个不分配内存的 `no_std` crate，唯一的依赖是 `libm`。`tabsmith-macros` 也调用它们：`model!(name, "path")` 在应用编译时用运行时校验模型包，并生成一个模块——模型的输入契约是类型，权重是常量，每棵树是嵌套 `if` 的函数，`predict` 的算术相同。因此编译进代码的模型与运行时的预测完全相同；`exp` 来自 `libm`，两者在所有平台上也相同（见 `tabsmith-macros` 的 `tests/equivalence.rs` 和 `tests/portable.rs`）。`examples/embedded-predict` 把两个模型编译进可在 Cortex-M4F 微控制器上运行的库（D14）。
 
 ### 设备
 

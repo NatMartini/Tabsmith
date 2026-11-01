@@ -4,6 +4,7 @@
 use tabsmith_contracts::METRICS_VERSION;
 use tabsmith_contracts::evaluation::{BinaryMetrics, ConfusionMatrix, Metrics, MulticlassMetrics, RegressionMetrics};
 use tabsmith_contracts::schema::OutputSchema;
+use tabsmith_embedded::kernels;
 use tabsmith_runtime::Matrix;
 use tabsmith_runtime::model::{sigmoid, softmax};
 
@@ -27,6 +28,50 @@ pub fn task_metrics(outputs: &Matrix, targets: &Targets, schema: &OutputSchema) 
             let v: Vec<f64> = outputs.data.iter().map(|&z| s.mean + s.std * f64::from(z)).collect();
             Metrics::Regression(regression_metrics(&v, y))
         }
+    }
+}
+
+/// One metric of model outputs: what `task_metrics(..).get(name)` returns, bit for bit,
+/// without computing the others. A training round needs only the selected metric, and
+/// balanced accuracy, the default, needs no sorting, where the ROC AUC among the others does.
+pub fn selected_metric(outputs: &Matrix, targets: &Targets, schema: &OutputSchema, name: &str) -> Option<f64> {
+    if name != "balanced_accuracy" {
+        return task_metrics(outputs, targets, schema).get(name);
+    }
+    match targets {
+        Targets::Binary(y) => {
+            let (mut tp, mut fp, mut tn, mut fn_) = (0u64, 0u64, 0u64, 0u64);
+            for (&z, &yi) in outputs.data.iter().zip(y) {
+                match (sigmoid(f64::from(z)) >= schema.threshold, yi) {
+                    (true, true) => tp += 1,
+                    (true, false) => fp += 1,
+                    (false, false) => tn += 1,
+                    (false, true) => fn_ += 1,
+                }
+            }
+            let ratio = |a: u64, b: u64| if b == 0 { 0.0 } else { a as f64 / b as f64 };
+            Some((ratio(tp, tp + fn_) + ratio(tn, tn + fp)) / 2.0)
+        }
+        Targets::Classes { y, k } => {
+            let k = *k;
+            let predicted: Vec<u32> = crate::parallel::map_rows_with(
+                y.len(),
+                || vec![0.0f64; k],
+                |p, r| {
+                    kernels::softmax(outputs.row(r), p);
+                    kernels::argmax(p) as u32
+                },
+            );
+            let (mut right, mut total) = (vec![0u64; k], vec![0u64; k]);
+            for (&a, &b) in predicted.iter().zip(y) {
+                total[b as usize] += 1;
+                right[b as usize] += u64::from(a == b);
+            }
+            let present: Vec<usize> = (0..k).filter(|&c| total[c] > 0).collect();
+            let sum: f64 = present.iter().map(|&c| right[c] as f64 / total[c] as f64).sum();
+            Some(sum / present.len().max(1) as f64)
+        }
+        Targets::Values(_) => task_metrics(outputs, targets, schema).get(name),
     }
 }
 
@@ -186,6 +231,52 @@ pub fn roc_auc(p: &[f64], y: &[bool]) -> Option<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn pseudo_logits(n: usize, k: usize) -> Matrix {
+        let mut state = 0x2545_f491_4f6c_dd1du64;
+        let data = (0..n * k)
+            .map(|_| {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                ((state >> 40) as f32 / (1u64 << 24) as f32 - 0.5) * 8.0
+            })
+            .collect();
+        Matrix { rows: n, cols: k, data }
+    }
+
+    fn schema() -> OutputSchema {
+        OutputSchema {
+            target: "y".into(),
+            task: tabsmith_contracts::config::Task::Binary,
+            negative_label: "0".into(),
+            positive_label: "1".into(),
+            probability: "p".into(),
+            threshold: 0.4,
+            decision: "p >= threshold".into(),
+            classes: vec![],
+            target_scale: None,
+        }
+    }
+
+    #[test]
+    fn the_selected_metric_is_the_full_computations_bit_for_bit() {
+        // Below and above the size that runs on several threads; one class absent.
+        for n in [500usize, 40_000] {
+            let multi = pseudo_logits(n, 5);
+            let y: Vec<u32> = (0..n as u32).map(|r| (r * 7 % 11).min(3)).collect();
+            let classes = Targets::Classes { y, k: 5 };
+            let binary = pseudo_logits(n, 1);
+            let labels = Targets::Binary((0..n).map(|r| r % 3 == 0).collect());
+            for (outputs, targets) in [(&multi, &classes), (&binary, &labels)] {
+                for name in ["balanced_accuracy", "accuracy", "log_loss"] {
+                    let full = task_metrics(outputs, targets, &schema()).get(name).unwrap();
+                    let one = selected_metric(outputs, targets, &schema(), name).unwrap();
+                    assert_eq!(one.to_bits(), full.to_bits(), "{name}, {n} rows");
+                }
+            }
+        }
+    }
 
     #[test]
     fn hand_checked_values() {

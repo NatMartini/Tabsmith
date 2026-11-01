@@ -21,8 +21,8 @@ that prediction never panics for any input. Around the compiled model, Tabsmith 
 the discipline that makes the model worth compiling: leakage-free splits, one
 preprocessing implementation, a test set used once, exact resume, conformal intervals,
 and bundles that carry their own evidence. On a 10,000-row problem the trained models
-match scikit-learn's quality; a new process predicts after 1 ms instead of 612 ms, in
-12 MB instead of 161 MB, and the application ships 1.7 MB instead of 354 MB.
+match scikit-learn's quality; a new process predicts after 1 ms instead of 550 ms, in
+12 MB instead of 162 MB, and the application ships 1.9 MB instead of 354 MB.
 
 ## 1. Introduction
 
@@ -41,9 +41,9 @@ Rust programs that need a model today reach for a binding to Python (PyO3), an O
 runtime, or a Rust inference library. All three keep the model outside the type system.
 We take the other road: the model becomes Rust code. A procedural macro reads a trained
 bundle at compile time, verifies it exactly as the runtime would, and expands to a
-module whose input is a struct with one typed field per model input, whose weights and
-trees are constants, and whose `predict` calls the same numeric kernels the runtime
-calls. The model is then subject to everything the Rust toolchain can do with a
+module whose input is a struct with one typed field per model input, whose weights are
+constants, whose trees are functions of nested `if`s, and whose `predict` keeps the
+runtime's arithmetic to the bit. The model is then subject to everything the Rust toolchain can do with a
 program: it type-checks, it runs without `std` or an allocator on a microcontroller,
 its constants can be evaluated at compile time, and it can be model-checked.
 
@@ -119,7 +119,8 @@ evaluation. When new data arrives, the previous bundle and the new model are sco
 the same rows that neither has seen.
 
 *Determinism is a contract.* Randomness comes from a versioned PRNG; CPU training is
-single-threaded; trees sum in a fixed order; checkpoints hold the optimizer state, so
+single-threaded; trees sum each feature in row order on one thread at a time, so their
+result does not depend on the thread count; checkpoints hold the optimizer state, so
 that resuming after a crash gives the same weights, bit for bit, as an uninterrupted
 run. The trees' training takes its transcendental functions (`exp`, `log`) from a pure
 Rust `libm` [14] rather than the platform C library, so the same data gives the same
@@ -160,19 +161,32 @@ of prediction are separate functions, `features`, `outputs` and `decode`, and `p
 is their composition. The weights, or the trees' node arrays, are `const` arrays. For
 trees, constant assertions check the structure at compile time: every split reads a real
 feature and points forward inside its own tree, so a walk can neither leave the tree nor
-loop.
+loop. Each tree also becomes a `const fn` of nested `if`s, generated from those arrays, and
+`outputs` adds them up.
 
-The generated code calls the kernels of a small `no_std` crate (`tabsmith-embedded`,
-about 200 lines of arithmetic) that the runtime calls too. Each kernel fixes its order
-of operations, and `exp` comes from `libm`. That is why a compiled model and the runtime
-produce identical bits, and why Linux, macOS, Windows, WebAssembly and a Cortex-M4F do:
+A network calls the kernels of a small `no_std` crate (`tabsmith-embedded`, about 200
+lines of arithmetic) that the runtime calls too, and a generated tree repeats the
+arithmetic of the trees' kernel. Each kernel fixes its order of operations, and `exp`
+comes from `libm`. That is why a compiled model and the runtime produce identical bits,
+and why Linux, macOS, Windows, WebAssembly and a Cortex-M4F do:
 the platform C libraries' `exp` differ in the last bit for 0.07 % of `f32` inputs between
 glibc and the Microsoft C runtime (`crates/tabsmith-embedded/README.md`). The equivalence
 is tested on seven bundles of every task and model kind with 3,000 random records each,
 including missing values, unseen categories, NaN, infinities and wrong types, and a
 portability test compares the hash of 20,000 predictions per bundle with the value
-recorded on Windows; CI runs it on Linux and macOS. A compiled prediction takes 0.13 to
-0.59 µs on a desktop CPU, 7 to 27 times less than the runtime's from a dynamic record.
+recorded on Windows; CI runs it on Linux and macOS. Because generated trees are a second
+implementation of the walk, a further test takes every node to a row built to reach it, at
+the split's exact threshold, and compares each tree with its arrays. A compiled prediction
+takes 0.06 to 0.33 µs on a desktop CPU, 12 to 57 times less than the runtime's from a dynamic
+record.
+
+Code rather than arrays is what a model as a program makes possible, and it pays three times.
+On real models it is 2.0 to 2.8 times faster than walking the same trees in arrays, since a
+branch knows its constant and its next instruction. It takes a third less flash on a
+Cortex-M4F (11.3 KB against 17.4 KB for 14 trees). And `outputs` becomes a `const fn`, so the
+compiler can run the model. The cost is build time, 3.4 s instead of 1.2 s for a release build
+at 18,823 nodes, so ensembles above 32,768 nodes keep the arrays unless asked otherwise
+(`reports/inference/`).
 
 ### 4.2 What the compiler can say about the model
 
@@ -228,11 +242,13 @@ tokens plus two. Nothing is written by hand, so every model compiled with the op
 gets the same proofs.
 
 For the two models of the embedded example (14 trees with 854 nodes; a 35-32-16-1
-network), the six harnesses pass with Kani 0.68 (CBMC 6.11) in 72 s together, each
-under 2 GB of memory (`reports/kani/`). Two findings on the way are recorded there: a
-single proof of all 14 tree walks needs more than 14 GB of memory (every array index
-depends on the comparisons before it, so nothing can be sliced away), which is why
-`outputs` is proved one walk at a time; and CBMC's floating-point NaN check reports a
+network), the six harnesses, and three more for the same trees as arrays, pass with Kani
+0.68 (CBMC 6.11) in 81 s together, each under 2 GB of memory (`reports/kani/`). Two findings
+are recorded there. As arrays, a single proof of all 14 tree walks needs more than 14 GB of
+memory, because every array index depends on the comparisons before it and nothing can be
+sliced away, so those trees are proved one walk at a time, in 10 s and 1.7 GB. As generated
+code, every index is a constant, and `outputs` over all 14 trees takes one proof, 4.8 s and
+104 MB. And CBMC's floating-point NaN check reports a
 false positive in `libm`'s `exp(−∞)`, which divides a finite number by an infinity
 (IEEE 754 defines the quotient as 0), so the proofs run with that check off and the
 Rust panic checks on.
@@ -258,27 +274,26 @@ same objective, and the metrics agree to 10⁻¹²; CI guards these with frozen 
 The README benchmark trains Tabsmith's three candidates and scikit-learn's
 `LogisticRegression`, `MLPClassifier` and `HistGradientBoostingClassifier` on the same
 10,000 rows, split, features and settings, on one machine
-(`reports/benchmarks/2026-10-27-linux-x86_64-v2/`). Quality is on par: the trees match
+(`reports/benchmarks/2026-10-31-linux-x86_64/`). Quality is on par: the trees match
 `HistGradientBoostingClassifier` (ROC AUC 0.8188 against 0.8184) and the small MLP did
-better than `MLPClassifier` here (0.8250 against 0.7928). Training takes about a second
-or less on both sides. The difference is in shipping: a single-record prediction in an
-application takes about 2.5 µs instead of 2–3 ms; a new process predicts after 1 ms
-instead of 612 ms, in 12 MB instead of 161 MB; the application is a 1.7 MB binary
+better than `MLPClassifier` here (0.8250 against 0.7928). Tabsmith trains each candidate
+in a fraction of a second. The difference is in shipping: a single-record prediction in an
+application takes about 3 µs instead of 2–3 ms; a new process predicts after 1 ms
+instead of 550 ms, in 12 MB instead of 162 MB; the application is a 1.9 MB binary
 instead of a 354 MB Python environment. On three public datasets, one per task (UCI
 Adult, California Housing, UCI Covertype; `reports/datasets/`), every candidate matches
 its scikit-learn equivalent on the same rows and split to within the test split's
-resolution; the trees agree to the third decimal. The clearest loss is there too: the
-trees train 17 to 21 times slower than `HistGradientBoosting` on the larger problems,
-because each leaf's histogram is rebuilt from its rows and the sums keep a fixed order
-(Section 5.5). LightGBM and XGBoost, the faster trainers on large data, were not
-measured.
+resolution; the trees agree to the third decimal. The trees train in about the time of
+`HistGradientBoosting` (Section 5.5): on Windows 1.4 to 2.1 times faster, in WSL faster
+on the smallest problem and about 1.4 times slower on the others. LightGBM and XGBoost,
+the faster trainers on large data, were not measured.
 
 ### 5.3 Robustness
 
 The bundle loader was fuzzed with libFuzzer for 5.3 million inputs without a crash
 (`reports/fuzz/`). Every workspace crate forbids `unsafe`. Property tests cover
-predictions, metrics, splits, epoch orders and damaged bundles; 179 automated tests and
-7 doctests run on Linux, macOS and Windows in CI, including process-level tests that
+predictions, metrics, splits, epoch orders and damaged bundles; 214 automated tests and
+11 doctests run on Linux, macOS and Windows in CI, including process-level tests that
 drive the real binary and a crash-and-resume test that aborts the process.
 
 ### 5.4 The same trees on every operating system
@@ -300,13 +315,16 @@ architecture, which is expected for the same reason but was not measured.
 
 ### 5.5 Scale
 
-The trees build their bins and histograms and apply each grown tree on every core,
-with sums in fixed chunks of 16,384 rows merged in order, so the result does not
-depend on the core count. On 1,000,000 rows (a 172 MB CSV, 35 features) the whole
-`tabsmith train` runs in 42 s on a 16-core desktop with a 1.6 GB working set; the 148
-boosting rounds take 29.6 s, 0.2 s per round over 698,621 training rows, and the
-validation ROC AUC is 0.840 (`reports/scaling/`). The data is held in memory, so ten
-million rows would need about 16 GB; out-of-core training is future work.
+Determinism did not have to cost speed. A histogram is built one feature at a time and
+each feature sums its rows in row order on one thread, so every `(feature, bin)` sees
+the same additions in the same order on any number of threads, with no partial sums to
+merge. One child's histogram is the parent's minus its sibling's, and which child that
+is depends on the row counts alone. Measured weights are the same at 1 to 32 threads
+and on Windows and Linux (`reports/reproducibility/`). On 1,000,000 rows (a 172 MB CSV,
+35 features) the whole `tabsmith train` runs in 18 s on a 16-core desktop with a 1.6 GB
+working set; the 148 boosting rounds take 4.5 s, 30 ms per round over 698,621 training
+rows, and the validation ROC AUC is 0.840 (`reports/scaling/`). The data is held in
+memory, so ten million rows would need about 16 GB; out-of-core training is future work.
 
 ## 6. Related work
 
@@ -332,10 +350,9 @@ them. The output bounds of a network over all inputs are infinite; the useful bo
 need a box, and the box is the user's claim about the inputs. Conformal coverage is
 calibrated on the validation split, which also selected the model, so it is approximate;
 the exact guarantee needs rows the model never saw. The trees have no native categorical
-splits and no sampling, and they train 17 to 21 times slower than scikit-learn's
-`HistGradientBoosting` on the larger public datasets (each leaf's histogram is rebuilt
-from its rows, and the sums keep an order that makes the trees the same on any core
-count); LightGBM and XGBoost train faster still on large data. Training of the
+splits and no sampling, and their training is on a par with scikit-learn's
+`HistGradientBoosting`, not ahead of it everywhere; LightGBM and XGBoost were not
+measured. Training of the
 networks is reproducible across processes, not across operating systems. GPU training
 is certified only on the hardware it was run on. There has been no user study: every
 number here is about the machine, not about the people who would use it. Per-prediction

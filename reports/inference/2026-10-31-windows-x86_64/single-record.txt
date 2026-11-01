@@ -1,0 +1,14 @@
+== binary-gbdt
+base varied records p50 3.700 us  p99 4.600 us | same record p50 3.400 us | batch of 64 p50 1.003 us/row
+now  varied records p50 3.400 us  p99 4.300 us | same record p50 3.300 us | batch of 64 p50 0.791 us/row
+base varied records p50 3.500 us  p99 4.500 us | same record p50 3.300 us | batch of 64 p50 1.000 us/row
+now  varied records p50 3.400 us  p99 4.100 us | same record p50 3.200 us | batch of 64 p50 0.786 us/row
+base varied records p50 3.700 us  p99 5.000 us | same record p50 3.600 us | batch of 64 p50 1.008 us/row
+now  varied records p50 3.400 us  p99 4.000 us | same record p50 3.200 us | batch of 64 p50 0.787 us/row
+== binary-mlp
+base varied records p50 4.000 us  p99 4.600 us | same record p50 3.700 us | batch of 64 p50 1.247 us/row
+now  varied records p50 3.500 us  p99 4.300 us | same record p50 3.500 us | batch of 64 p50 1.047 us/row
+base varied records p50 4.000 us  p99 6.700 us | same record p50 3.900 us | batch of 64 p50 1.289 us/row
+now  varied records p50 3.500 us  p99 4.500 us | same record p50 3.500 us | batch of 64 p50 1.023 us/row
+base varied records p50 3.700 us  p99 4.500 us | same record p50 3.700 us | batch of 64 p50 1.227 us/row
+now  varied records p50 3.700 us  p99 4.600 us | same record p50 3.500 us | batch of 64 p50 1.016 us/row

@@ -16,11 +16,21 @@ use tabsmith_runtime::{LoadOptions, Outcome, Predictor, Record};
 
 use crate::names::{Namer, camel, snake};
 
-/// `name, "path"` with an optional `, kani`.
+/// Trees with more nodes than this stay arrays unless the invocation asks for `tree_code`:
+/// compile time grows with the generated code. Above it, the generated `outputs_batch` runs
+/// tree by tree over blocks of rows, because one pass through all the code no longer fits
+/// in the cache; below it, row by row is as fast (`reports/inference/`).
+const TREE_CODE_MAX_NODES: usize = 32_768;
+/// Trees deeper than this always stay arrays: each level nests one more `if`.
+const TREE_CODE_MAX_DEPTH: usize = 64;
+
+/// `name, "path"` with the options `kani`, and `tree_code` or `tree_arrays`.
 pub struct Args {
     name: Ident,
     path: LitStr,
     kani: bool,
+    /// `Some(true)` for `tree_code`, `Some(false)` for `tree_arrays`.
+    tree_code: Option<bool>,
 }
 
 impl Parse for Args {
@@ -28,7 +38,7 @@ impl Parse for Args {
         let name: Ident = input.parse()?;
         input.parse::<syn::Token![,]>()?;
         let path: LitStr = input.parse()?;
-        let mut kani = false;
+        let (mut kani, mut tree_code) = (false, None);
         while input.peek(syn::Token![,]) {
             input.parse::<syn::Token![,]>()?;
             if input.is_empty() {
@@ -37,14 +47,24 @@ impl Parse for Args {
             let option: Ident = input.parse()?;
             if option == "kani" {
                 kani = true;
+            } else if option == "tree_code" || option == "tree_arrays" {
+                if tree_code.is_some() {
+                    return Err(syn::Error::new(option.span(), "`tree_code` and `tree_arrays` exclude each other"));
+                }
+                tree_code = Some(option == "tree_code");
             } else {
                 return Err(syn::Error::new(
                     option.span(),
-                    format!("unknown option `{option}`; the one option is `kani`"),
+                    format!("unknown option `{option}`; the options are `kani`, `tree_code` and `tree_arrays`"),
                 ));
             }
         }
-        Ok(Args { name, path, kani })
+        Ok(Args {
+            name,
+            path,
+            kani,
+            tree_code,
+        })
     }
 }
 
@@ -53,7 +73,10 @@ pub fn expand(args: &Args) -> syn::Result<TokenStream> {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").map_err(|_| fail("CARGO_MANIFEST_DIR is not set; build with cargo".into()))?;
     let dir = Path::new(&manifest_dir).join(args.path.value());
     let compiled = Compiled::load(&dir, &args.path.value()).map_err(|e| fail(format!("Tabsmith bundle `{}`:\n{e}", args.path.value())))?;
-    Ok(compiled.generate(&args.name, args.kani))
+    let tree_code = compiled
+        .tree_code(args.tree_code)
+        .map_err(|e| fail(format!("Tabsmith bundle `{}`:\n{e}", args.path.value())))?;
+    Ok(compiled.generate(&args.name, args.kani, tree_code))
 }
 
 /// One input field of the model.
@@ -464,7 +487,25 @@ impl Compiled {
         })
     }
 
-    fn generate(&self, name: &Ident, kani: bool) -> TokenStream {
+    /// Whether the trees become code: what the invocation asks for, otherwise as long as
+    /// they stay cheap to compile. A network has no trees, so the options change nothing
+    /// for it, and an invocation keeps compiling when retraining picks another model kind.
+    fn tree_code(&self, requested: Option<bool>) -> Result<bool, String> {
+        let Network::Trees { feature, .. } = &self.network else {
+            return Ok(false);
+        };
+        let shallow = self.max_tree_depth <= TREE_CODE_MAX_DEPTH;
+        match requested {
+            Some(true) if !shallow => Err(format!(
+                "`tree_code` stops at trees {TREE_CODE_MAX_DEPTH} levels deep and this bundle has one of {}; use `tree_arrays`",
+                self.max_tree_depth
+            )),
+            Some(code) => Ok(code),
+            None => Ok(shallow && feature.len() <= TREE_CODE_MAX_NODES),
+        }
+    }
+
+    fn generate(&self, name: &Ident, kani: bool, tree_code: bool) -> TokenStream {
         let kani_derive = if kani {
             quote!(#[cfg_attr(kani, derive(kani::Arbitrary))])
         } else {
@@ -508,14 +549,23 @@ impl Compiled {
         let idents: Vec<&Ident> = self.fields.iter().map(|f| &f.ident).collect();
 
         let (output_types, decode) = self.output();
-        let (model_consts, outputs_body) = self.network();
+        let (model_consts, outputs_body, batch_body) = self.network(tree_code);
+        let (outputs_const, outputs_doc) = if tree_code {
+            (
+                quote!(const),
+                "The model's raw outputs for one row of features: every tree is a function of \
+                 nested `if`s. `const`, so the compiler can run the model while it compiles.",
+            )
+        } else {
+            (quote!(), "The model's raw outputs for one row of features.")
+        };
         let examples: Vec<TokenStream> = self.examples.iter().map(|e| self.example(e)).collect();
         let n_examples = examples.len();
         let self_check = self.self_check();
         let analysis = self.analysis();
         let conformal = self.conformal();
         let model_impl = self.model_impl();
-        let proofs = if kani { self.proofs(name) } else { quote!() };
+        let proofs = if kani { self.proofs(name, tree_code) } else { quote!() };
 
         let dropped = if self.dropped.is_empty() {
             String::new()
@@ -545,7 +595,7 @@ impl Compiled {
 
         quote! {
             #[doc = #module_doc]
-            #[allow(clippy::all, clippy::pedantic, non_camel_case_types, non_snake_case, dead_code)]
+            #[allow(clippy::all, clippy::pedantic, non_camel_case_types, non_snake_case, dead_code, unused_variables)]
             pub mod #name {
                 use ::tabsmith_embedded::kernels;
                 pub use ::tabsmith_embedded::{FieldInfo, FieldKind, FieldValue, InputError, SelfCheckError};
@@ -606,9 +656,17 @@ impl Compiled {
 
                 #model_consts
 
-                /// The model's raw outputs for one row of features.
-                pub fn outputs(x: &[f32; N_FEATURES]) -> [f32; N_OUTPUTS] {
+                #[doc = #outputs_doc]
+                pub #outputs_const fn outputs(x: &[f32; N_FEATURES]) -> [f32; N_OUTPUTS] {
                     #outputs_body
+                }
+
+                /// The raw outputs of many rows into `out`, bit for bit what [`outputs`] gives
+                /// for each row. It stops at the end of the shorter slice and returns the
+                /// number of rows it computed.
+                pub fn outputs_batch(x: &[[f32; N_FEATURES]], out: &mut [[f32; N_OUTPUTS]]) -> usize {
+                    #batch_body
+                    x.len().min(out.len())
                 }
 
                 #decode
@@ -924,13 +982,26 @@ impl Compiled {
 
     /// The harnesses for the Kani model checker: prediction never panics, for every
     /// possible input, proved stage by stage with loop bounds from the model's shape.
-    fn proofs(&self, name: &Ident) -> TokenStream {
+    fn proofs(&self, name: &Ident, tree_code: bool) -> TokenStream {
         let features = format_ident!("{name}_features_are_total");
         let decode = format_ident!("{name}_decode_is_total");
         // `kernels::numeric` scans the numeric missing-value tokens; nothing else in
         // `features` loops.
         let u_features = Literal::usize_unsuffixed(self.numeric_tokens.len() + 2);
         let outputs = match &self.network {
+            Network::Trees { .. } if tree_code => {
+                let total = format_ident!("{name}_outputs_are_total");
+                quote! {
+                    /// Every tree at once, for any feature values: comparisons with an array
+                    /// at indices the compiler has checked, and additions. Generated code has
+                    /// no loop to bound and no index that depends on the data.
+                    #[kani::proof]
+                    fn #total() {
+                        let x: [f32; N_FEATURES] = kani::any();
+                        let _ = outputs(&x);
+                    }
+                }
+            }
             Network::Trees { .. } => {
                 let walk = format_ident!("{name}_tree_walk_is_total");
                 let u = Literal::usize_unsuffixed(self.max_tree_depth + 2);
@@ -1493,7 +1564,13 @@ impl Compiled {
         }
     }
 
-    fn network(&self) -> (TokenStream, TokenStream) {
+    /// The model's constants, the body of `outputs` and the body of `outputs_batch`.
+    fn network(&self, tree_code: bool) -> (TokenStream, TokenStream, TokenStream) {
+        let row_by_row = quote! {
+            for (row, o) in x.iter().zip(out.iter_mut()) {
+                *o = outputs(row);
+            }
+        };
         match &self.network {
             Network::Dense(layers) => {
                 let mut consts = Vec::new();
@@ -1525,7 +1602,7 @@ impl Compiled {
                         kernels::dense(&#w, &#b, #input, #relu, &mut #out);
                     });
                 }
-                (quote!(#(#consts)*), quote!(#(#body)* out))
+                (quote!(#(#consts)*), quote!(#(#body)* out), row_by_row)
             }
             Network::Trees {
                 roots,
@@ -1538,6 +1615,25 @@ impl Compiled {
                 monotone,
             } => {
                 let (n_trees, n_nodes, n_base) = (roots.len(), feature.len(), base.len());
+                let generated = tree_code.then(|| {
+                    let trees = kernels::Trees {
+                        roots,
+                        feature,
+                        threshold,
+                        left,
+                        right,
+                        value,
+                        base,
+                    };
+                    generated_trees(&trees, self.n_outputs)
+                });
+                let trees_doc = if tree_code {
+                    "The same trees as arrays, for [`output_bounds`] and the compiler's checks. \
+                     [`outputs`] runs the functions generated from them."
+                } else {
+                    "The ensemble that [`outputs`] evaluates. `TREES.leaf(t, &x)` is the walk \
+                     through tree `t`; the Kani proofs check one walk at a time."
+                };
                 let constrained: Vec<String> = self
                     .fields
                     .iter()
@@ -1602,8 +1698,7 @@ impl Compiled {
                         }
                     };
 
-                    /// The ensemble that [`outputs`] evaluates. `TREES.leaf(t, &x)` is the walk
-                    /// through tree `t`; the Kani proofs check one walk at a time.
+                    #[doc = #trees_doc]
                     pub(crate) const TREES: kernels::Trees<'static> = kernels::Trees {
                         roots: &TREE_ROOTS,
                         feature: &TREE_FEATURE,
@@ -1638,12 +1733,20 @@ impl Compiled {
                         }
                     };
                 };
-                let body = quote! {
-                    let mut out = [0f32; N_OUTPUTS];
-                    TREES.outputs(x, &mut out);
-                    out
+                let Some((functions, body)) = generated else {
+                    let body = quote! {
+                        let mut out = [0f32; N_OUTPUTS];
+                        TREES.outputs(x, &mut out);
+                        out
+                    };
+                    return (consts, body, row_by_row);
                 };
-                (consts, body)
+                let batch = if n_nodes > TREE_CODE_MAX_NODES {
+                    quote!(outputs_by_tree(x, out);)
+                } else {
+                    row_by_row
+                };
+                (quote!(#consts #functions), body, batch)
             }
         }
     }
@@ -1704,6 +1807,79 @@ impl Compiled {
     }
 }
 
+/// Node `i` of a tree as an expression: a leaf's value, or a comparison and two subtrees.
+/// A row goes left when `x[feature] <= threshold`, as in `kernels::Trees`, so NaN goes right.
+/// The numbers are finite (`TreeEnsemble::new` checks) and written in decimal, so that the
+/// code reads as the tree it is. That is exact: Rust prints the shortest decimal that reads
+/// back as the same bits, and rustc reads it back correctly rounded. `tests/tree_code.rs`
+/// checks every number of its bundles at its exact value.
+fn tree_expr(t: &kernels::Trees<'_>, i: usize) -> TokenStream {
+    if t.feature[i] < 0 {
+        let value = Literal::f32_suffixed(t.value[i]);
+        return quote!(#value);
+    }
+    let f = Literal::usize_unsuffixed(t.feature[i] as usize);
+    let threshold = Literal::f32_suffixed(t.threshold[i]);
+    let (left, right) = (tree_expr(t, t.left[i] as usize), tree_expr(t, t.right[i] as usize));
+    quote!(if x[#f] <= #threshold { #left } else { #right })
+}
+
+/// One function per tree, the body of `outputs` that adds them up, and `outputs_by_tree`
+/// for many rows. Each output adds its trees in order, in f64, and is rounded to f32 at
+/// the end, as in `kernels::Trees`: the same bits.
+fn generated_trees(t: &kernels::Trees<'_>, n_outputs: usize) -> (TokenStream, TokenStream) {
+    let n_trees = t.roots.len();
+    let names: Vec<Ident> = (0..n_trees).map(|i| format_ident!("tree_{i}")).collect();
+    let functions = t.roots.iter().zip(&names).map(|(&root, name)| {
+        let body = tree_expr(t, root as usize);
+        quote! {
+            #[inline]
+            const fn #name(x: &[f32; N_FEATURES]) -> f32 {
+                #body
+            }
+        }
+    });
+    let additions = names.iter().enumerate().map(|(i, name)| {
+        let o = Literal::usize_unsuffixed(i % n_outputs);
+        quote!(sums[#o] += #name(x) as f64;)
+    });
+    let results = (0..n_outputs).map(|o| {
+        let o = Literal::usize_unsuffixed(o);
+        quote!(sums[#o] as f32)
+    });
+    let body = quote! {
+        let mut sums = TREE_BASE;
+        #(#additions)*
+        [#(#results),*]
+    };
+    let functions = quote! {
+        #(#functions)*
+
+        /// Every tree, for [`outputs_by_tree`].
+        pub(crate) const TREE_FUNCTIONS: [fn(&[f32; N_FEATURES]) -> f32; #n_trees] = [#(#names),*];
+
+        /// [`outputs_batch`] tree by tree over blocks of rows: one tree's code stays in the
+        /// cache while it runs. Each output still adds its trees in order.
+        pub(crate) fn outputs_by_tree(x: &[[f32; N_FEATURES]], out: &mut [[f32; N_OUTPUTS]]) {
+            const BLOCK: usize = 256;
+            for (rows, results) in x.chunks(BLOCK).zip(out.chunks_mut(BLOCK)) {
+                let mut sums = [TREE_BASE; BLOCK];
+                for (t, tree) in TREE_FUNCTIONS.iter().enumerate() {
+                    for (row, s) in rows.iter().zip(sums.iter_mut()) {
+                        s[t % N_OUTPUTS] += tree(row) as f64;
+                    }
+                }
+                for (s, r) in sums[..rows.len()].iter().zip(results.iter_mut()) {
+                    for k in 0..N_OUTPUTS {
+                        r[k] = s[k] as f32;
+                    }
+                }
+            }
+        }
+    };
+    (functions, body)
+}
+
 fn f32_lit(v: f32) -> TokenStream {
     let bits = Literal::u32_unsuffixed(v.to_bits());
     quote!(f32::from_bits(#bits))
@@ -1757,9 +1933,42 @@ mod tests {
         for name in FIXTURES {
             let compiled = Compiled::load(&fixture(name), name).unwrap();
             for kani in [false, true] {
-                let tokens = compiled.generate(&format_ident!("m"), kani);
-                syn::parse2::<syn::File>(tokens).unwrap_or_else(|e| panic!("{name}: {e}"));
+                for requested in [None, Some(true), Some(false)] {
+                    let tree_code = compiled.tree_code(requested).unwrap();
+                    let tokens = compiled.generate(&format_ident!("m"), kani, tree_code);
+                    syn::parse2::<syn::File>(tokens).unwrap_or_else(|e| panic!("{name}: {e}"));
+                }
             }
+        }
+    }
+
+    #[test]
+    fn small_trees_become_code_and_deep_ones_stay_arrays() {
+        let mut compiled = Compiled::load(&fixture("binary-gbdt"), "binary-gbdt").unwrap();
+        assert_eq!(compiled.tree_code(None), Ok(true));
+        assert_eq!(compiled.tree_code(Some(true)), Ok(true));
+        assert_eq!(compiled.tree_code(Some(false)), Ok(false));
+
+        let code = compiled.generate(&format_ident!("m"), false, true).to_string();
+        assert!(code.contains("const fn tree_0"), "one function per tree");
+        assert!(code.contains("pub const fn outputs"), "the compiler can run the model");
+        assert!(!code.contains("TREES . outputs"), "the arrays are not walked");
+        let arrays = compiled.generate(&format_ident!("m"), false, false).to_string();
+        assert!(!arrays.contains("const fn tree_0"));
+        assert!(!arrays.contains("pub const fn outputs"));
+        assert!(arrays.contains("TREES . outputs"));
+
+        compiled.max_tree_depth = TREE_CODE_MAX_DEPTH + 1;
+        assert_eq!(compiled.tree_code(None), Ok(false));
+        assert_eq!(compiled.tree_code(Some(false)), Ok(false));
+        assert!(compiled.tree_code(Some(true)).unwrap_err().contains("tree_arrays"));
+    }
+
+    #[test]
+    fn a_network_ignores_the_tree_options() {
+        let compiled = Compiled::load(&fixture("binary-mlp"), "binary-mlp").unwrap();
+        for requested in [None, Some(true), Some(false)] {
+            assert_eq!(compiled.tree_code(requested), Ok(false));
         }
     }
 

@@ -9,6 +9,7 @@
 //! (`tabsmith_macros::model!`) call too: both compute the same bits.
 
 use std::collections::HashMap;
+use std::ops::Range;
 
 use safetensors::tensor::TensorView;
 use safetensors::{Dtype, SafeTensors};
@@ -122,13 +123,22 @@ impl DenseModel {
 
     /// The outputs of every row: `rows x n_outputs`.
     pub fn outputs(&self, x: &Matrix) -> Matrix {
+        Matrix {
+            rows: x.rows,
+            cols: self.config.n_outputs(),
+            data: self.outputs_rows(x, 0..x.rows),
+        }
+    }
+
+    /// The outputs of rows `rows` of `x`, one row after another.
+    pub fn outputs_rows(&self, x: &Matrix, rows: Range<usize>) -> Vec<f32> {
         assert_eq!(x.cols, self.config.input_dim, "input width checked by the predictor");
         let k = self.config.n_outputs();
-        let mut out = Vec::with_capacity(x.rows * k);
+        let mut out = Vec::with_capacity(rows.len() * k);
         let max_width = self.layers.iter().map(|l| l.out_dim.max(l.in_dim)).max().unwrap_or(1);
         let mut cur = vec![0f32; max_width];
         let mut next = vec![0f32; max_width];
-        for r in 0..x.rows {
+        for r in rows {
             let row = x.row(r);
             cur[..row.len()].copy_from_slice(row);
             for l in &self.layers {
@@ -138,13 +148,16 @@ impl DenseModel {
             }
             out.extend_from_slice(&cur[..k]);
         }
-        Matrix {
-            rows: x.rows,
-            cols: k,
-            data: out,
-        }
+        out
     }
 }
+
+/// From this many nodes on, a batch runs tree by tree over blocks of rows: one tree's nodes
+/// stay in the cache while the block walks them. Below it, row by row is as fast or faster
+/// (`reports/inference/`).
+const BY_TREE_MIN_NODES: usize = 32_768;
+/// Rows in one block of [`TreeEnsemble::outputs_rows`].
+const BLOCK: usize = 256;
 
 /// A gradient-boosted tree ensemble ([`TREES_FORMAT`]); all trees' nodes in one
 /// set of arrays. Node `i` is a leaf when `feature[i] < 0`; otherwise rows with
@@ -251,13 +264,55 @@ impl TreeEnsemble {
     /// plus one leaf per tree of that output, summed in f64 in tree order (as the
     /// trainer does) and rounded to f32 at the end.
     pub fn outputs_row(&self, row: &[f32], out: &mut [f32]) {
+        let base = self.base();
+        self.kernel(base).outputs(row, out);
+    }
+
+    /// The outputs of rows `rows` of `x`, one row after another, bit for bit what
+    /// [`Self::outputs_row`] gives for each.
+    pub fn outputs_rows(&self, x: &Matrix, rows: Range<usize>) -> Vec<f32> {
+        assert_eq!(x.cols, self.config.input_dim, "input width checked by the predictor");
+        let k = self.config.n_outputs();
+        let mut out = vec![0f32; rows.len() * k];
+        if self.feature.len() >= BY_TREE_MIN_NODES {
+            self.outputs_by_tree(x, rows, &mut out);
+        } else {
+            for (i, r) in rows.enumerate() {
+                self.outputs_row(x.row(r), &mut out[i * k..(i + 1) * k]);
+            }
+        }
+        out
+    }
+
+    /// Tree by tree over blocks of rows. Each output still adds its trees in order, in f64,
+    /// and is rounded to f32 at the end, so the order of the rows changes no bit.
+    fn outputs_by_tree(&self, x: &Matrix, rows: Range<usize>, out: &mut [f32]) {
+        let base = self.base();
+        let (trees, k) = (self.kernel(base), base.len());
+        let mut sums = vec![0f64; rows.len().min(BLOCK) * k];
+        for (first, results) in rows.step_by(BLOCK).zip(out.chunks_mut(BLOCK * k)) {
+            let block = &mut sums[..results.len()];
+            for s in block.chunks_exact_mut(k) {
+                s.copy_from_slice(base);
+            }
+            for t in 0..self.roots.len() {
+                for (i, s) in block.chunks_exact_mut(k).enumerate() {
+                    s[t % k] += f64::from(self.value[trees.leaf(t, x.row(first + i))]);
+                }
+            }
+            for (r, s) in results.iter_mut().zip(block.iter()) {
+                *r = *s as f32;
+            }
+        }
+    }
+
+    fn base(&self) -> &[f64] {
         let spec = self.config.trees.as_ref().expect("checked when loaded");
-        let base: &[f64] = if spec.n_outputs == 1 {
+        if spec.n_outputs == 1 {
             std::slice::from_ref(&spec.base_score)
         } else {
             &spec.base_scores
-        };
-        self.kernel(base).outputs(row, out);
+        }
     }
 
     fn kernel<'a>(&'a self, base: &'a [f64]) -> kernels::Trees<'a> {
@@ -332,21 +387,18 @@ impl Model {
 
     /// The outputs of every row: `rows x n_outputs` (logits, or standardised values).
     pub fn outputs(&self, x: &Matrix) -> Matrix {
+        Matrix {
+            rows: x.rows,
+            cols: self.config().n_outputs(),
+            data: self.outputs_rows(x, 0..x.rows),
+        }
+    }
+
+    /// The outputs of rows `rows` of `x`, one row after another.
+    pub fn outputs_rows(&self, x: &Matrix, rows: Range<usize>) -> Vec<f32> {
         match self {
-            Model::Dense(m) => m.outputs(x),
-            Model::Trees(m) => {
-                assert_eq!(x.cols, m.config.input_dim, "input width checked by the predictor");
-                let k = m.config.n_outputs();
-                let mut data = vec![0f32; x.rows * k];
-                for r in 0..x.rows {
-                    m.outputs_row(x.row(r), &mut data[r * k..(r + 1) * k]);
-                }
-                Matrix {
-                    rows: x.rows,
-                    cols: k,
-                    data,
-                }
-            }
+            Model::Dense(m) => m.outputs_rows(x, rows),
+            Model::Trees(m) => m.outputs_rows(x, rows),
         }
     }
 
@@ -423,6 +475,9 @@ fn read_f32(st: &SafeTensors<'_>, name: &str, shape: &[usize]) -> Result<Vec<f32
 
 #[cfg(test)]
 mod tests {
+    use tabsmith_contracts::config::Task;
+    use tabsmith_contracts::model::TreesSpec;
+
     use super::*;
 
     fn tiny() -> DenseModel {
@@ -471,6 +526,112 @@ mod tests {
         let wrong = ModelConfig::dense("small-mlp", 3, &[2]);
         let e = DenseModel::from_safetensors(wrong, &bytes).unwrap_err();
         assert_eq!(e.code, ErrorCode::BundleCorrupt);
+    }
+
+    /// `n_trees` balanced trees of depth 5 over three features, with pseudo-random splits
+    /// and leaves.
+    fn forest(n_trees: usize, n_outputs: usize) -> TreeEnsemble {
+        let mut state = 88_172_645_463_325_252u64;
+        let mut next = move |range: f32| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            ((state % 2000) as f32 / 1000.0 - 1.0) * range
+        };
+        let (mut roots, mut feature, mut threshold, mut left, mut right, mut value) = (vec![], vec![], vec![], vec![], vec![], vec![]);
+        for _ in 0..n_trees {
+            let root = feature.len() as u32;
+            roots.push(root);
+            for i in 0..63u32 {
+                let split = i < 31;
+                feature.push(if split { (next(1.0).abs() * 2.99) as i32 } else { -1 });
+                threshold.push(if split { next(2.0) } else { 0.0 });
+                left.push(if split { root + 2 * i + 1 } else { 0 });
+                right.push(if split { root + 2 * i + 2 } else { 0 });
+                value.push(if split { 0.0 } else { next(0.3) });
+            }
+        }
+        let spec = TreesSpec {
+            n_trees,
+            n_nodes: feature.len(),
+            max_depth: 5,
+            base_score: if n_outputs == 1 { 0.25 } else { 0.0 },
+            n_outputs,
+            base_scores: if n_outputs == 1 {
+                Vec::new()
+            } else {
+                (0..n_outputs).map(|o| o as f64 / 3.0).collect()
+            },
+            monotone: Vec::new(),
+        };
+        let task = if n_outputs == 1 { Task::Binary } else { Task::Multiclass };
+        TreeEnsemble::new(
+            ModelConfig::trees_for(3, task, Some(spec)),
+            roots,
+            feature,
+            threshold,
+            left,
+            right,
+            value,
+        )
+        .unwrap()
+    }
+
+    /// `rows` rows of three features, some of them NaN or infinite.
+    fn rows(rows: usize) -> Matrix {
+        let data = (0..rows * 3)
+            .map(|i| match i % 37 {
+                5 => f32::NAN,
+                11 => f32::INFINITY,
+                17 => f32::NEG_INFINITY,
+                _ => (i.wrapping_mul(2_654_435_761) % 4000) as f32 / 1000.0 - 2.0,
+            })
+            .collect();
+        Matrix { rows, cols: 3, data }
+    }
+
+    fn bits(v: &[f32]) -> Vec<u32> {
+        v.iter().map(|x| x.to_bits()).collect()
+    }
+
+    fn row_by_row(m: &TreeEnsemble, x: &Matrix, rows: Range<usize>) -> Vec<f32> {
+        let k = m.config.n_outputs();
+        let mut out = vec![0f32; rows.len() * k];
+        for (i, r) in rows.enumerate() {
+            m.outputs_row(x.row(r), &mut out[i * k..(i + 1) * k]);
+        }
+        out
+    }
+
+    #[test]
+    fn tree_by_tree_gives_the_bits_of_row_by_row() {
+        let x = rows(1100);
+        for (n_trees, k) in [(1, 1), (40, 1), (42, 3)] {
+            let m = forest(n_trees, k);
+            for range in [0..0, 0..1, 0..255, 0..256, 0..257, 0..1100, 300..301, 7..600] {
+                let mut got = vec![0f32; range.len() * k];
+                m.outputs_by_tree(&x, range.clone(), &mut got);
+                assert_eq!(
+                    bits(&got),
+                    bits(&row_by_row(&m, &x, range.clone())),
+                    "{n_trees} trees, {k} outputs, {range:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_large_ensemble_gives_the_same_bits_through_the_model() {
+        let x = rows(600);
+        for (n_trees, k) in [(BY_TREE_MIN_NODES / 63 + 1, 1), ((BY_TREE_MIN_NODES / 63 / 3 + 1) * 3, 3)] {
+            let m = forest(n_trees, k);
+            assert!(m.feature.len() >= BY_TREE_MIN_NODES);
+            let want = row_by_row(&m, &x, 0..600);
+            let model = Model::Trees(m);
+            assert_eq!(bits(&model.outputs_rows(&x, 0..600)), bits(&want));
+            assert_eq!(bits(&model.outputs(&x).data), bits(&want));
+            assert_eq!(bits(&model.outputs_rows(&x, 200..203)), bits(&want[200 * k..203 * k]));
+        }
     }
 
     #[test]

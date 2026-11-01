@@ -1,0 +1,12 @@
+$ <repo>/target/release/tabsmith data bind data/defects.csv --target defect --group device_id --id unit_id
+bound data/defects.csv (10000 rows, 25 columns) as snapshot s-647bf1a3732a
+target `defect`: positive "1" (1289 rows), negative "0" (8711 rows)
+split group (seed 42):
+  train    7356 rows, 951 positive
+  valid    1258 rows, 168 positive
+  test     1386 rows, 170 positive
+note: column `inspector_note` excluded: 10000 distinct values in 10000 rows (identifier or free text)
+
+next: tabsmith plan
+
+--- stderr ---

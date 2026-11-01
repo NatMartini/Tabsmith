@@ -13,6 +13,7 @@ pub mod exposure;
 pub mod fit;
 pub mod gbdt;
 pub mod metrics;
+mod parallel;
 pub mod project;
 pub mod report;
 pub mod rng;

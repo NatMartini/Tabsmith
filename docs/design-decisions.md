@@ -103,7 +103,8 @@ is what makes a divergence visible.
   (a CI step fails if either appears).
 - The runtime compiled to WebAssembly without a single change: `examples/wasm-predict`
   verifies and predicts inside a browser tab.
-- The same kernels run a bundle compiled into Rust code, down to a microcontroller (D14).
+- The same kernels, and for trees the same arithmetic in generated code, run a bundle
+  compiled into Rust code, down to a microcontroller (D14).
 
 **Rejected.**
 - Burn as a runtime dependency: compile time, binary size and GPU dependencies.
@@ -151,12 +152,15 @@ bit for bit.
   in the same order. Inference over many rows (validation after every epoch,
   evaluation) does use every core: the runtime's rows are split between threads. Each
   row is computed exactly as on one thread, so the results are bit-identical.
-- **Trees** sum in row order inside fixed chunks of 16,384 rows and merge the chunk
-  sums in chunk order; the chunking depends on the row count alone, so the trees are
-  the same on one core and on thirty-two, and a node with at most one chunk of rows is
-  summed in plain row order. Binning, histograms and the application of a grown tree
-  use every core. Ties between splits are broken by `(feature, bin)`, and ties between
-  leaves by creation order. Their `exp` and `log`
+- **Trees** run on several threads without any reduction whose order could vary. A
+  histogram is built one feature at a time, and each feature sums its rows in row order
+  on one thread, so every `(feature, bin)` sees the same additions in the same order
+  however the features are spread over threads. One child's histogram is the parent's
+  minus its sibling's, and which child that is depends on the row counts alone. Row-wise
+  work (gradients, partitions, losses) is a pure function of its row or piece of rows,
+  combined in order. The trees were measured to be the same at 1 to 32 threads. Ties
+  between splits are broken by `(feature, bin)`, and ties between leaves by creation
+  order. Their `exp` and `log`
   (gradients, starting score, losses) come from the pure-Rust `libm`, not the platform
   C library, so the same data gives the same trees on every operating system: measured
   on Windows and Linux, the weight file has the same hash and the training history is
@@ -369,15 +373,26 @@ while the application builds:
   misspelled field or a category the model never saw does not compile.
 - Weights become constants, written as `f32::from_bits` so that no decimal round trip
   touches them. Tree ensembles get constant assertions on their structure.
-- `predict` calls the kernels in `tabsmith-embedded`, a `no_std` crate without
-  allocation that the runtime calls too. `exp` comes from `libm` (pure Rust) instead of
-  the platform's C library.
+- Each tree becomes a `const fn` of nested `if`s, up to 32,768 nodes by default. Its numbers
+  are decimal literals, so that the expansion reads as the tree it is. That is exact (Rust
+  prints the shortest decimal that reads back as the same bits, and rustc reads it back
+  correctly rounded), and a test holds every number to it. Larger ensembles keep the arrays,
+  because of the build time, unless the invocation says `tree_code`.
+- A network's `predict` calls the kernels in `tabsmith-embedded`, a `no_std` crate without
+  allocation that the runtime calls too, and a generated tree repeats the arithmetic of the
+  trees' kernel. `exp` comes from `libm` (pure Rust) instead of the platform's C library.
 - The macro records what the runtime predicted for the bundle's examples, and
   `self_check()` replays them on the target.
 
 **Cost.**
 - The kernels' order of operations is now part of the format. The runtime and every
   compiled model depend on it, and changing it changes every prediction.
+- The trees have two implementations of the walk: the kernel and the generated code.
+  `tests/tree_code.rs` keeps them equal at every node, and it was itself checked by changing
+  the generator on purpose: a threshold or a leaf by one representable number, `<` for `<=`,
+  swapped children, trees added to the wrong output. All six failed the tests.
+- Generated trees take longer to build: at 32,450 nodes, 7.6 s against 2.1 s in a release
+  build. That is why the default stops at 32,768 nodes.
 - `Input::from_values` repeats the runtime's coercion of raw values for the compiled
   path. Property tests keep the two equal.
 - An application that uses `model!` compiles `tabsmith-runtime` as a build-time
@@ -395,33 +410,40 @@ while the application builds:
 - Compile-fail doctests check a misspelled field, a text where a category belongs, and
   a label that does not exist.
 - `examples/embedded-predict` builds for a Cortex-M4F (`thumbv7em-none-eabihf`) and for
-  WebAssembly. Six Kani proofs show that its prediction never panics, for every input.
+  WebAssembly. Kani proofs show that its prediction never panics, for every input.
   `predict` is `decode(outputs(features(input)?))`, and each stage is proved total for
   every value of its argument type, a superset of what the stage before it returns.
-  With Kani 0.68 on Linux the six take 72 s together, each under 2 GB of memory. The
-  harnesses are generated by `model!` (its `kani` option), with loop bounds from the
-  model's shape, so every compiled model carries the same proofs. The
-  trees' `outputs` is proved one walk at a time, through any tree: all 14 walks in one
-  proof ran out of memory with 14 GB, and a CI runner has 16 GB. Kani's
-  additional floating-point checks are off, for three reasons:
+  With Kani 0.68 on Linux the nine take 81 s together, each under 2 GB of memory: six for
+  the two models and three for the same trees as arrays. The harnesses are generated by
+  `model!` (its `kani` option), with loop bounds from the model's shape, so every compiled
+  model carries the same proofs. Generated trees are proved all at once, in 4.8 s and
+  104 MB, because every index is a constant. Trees kept as arrays are proved one walk at a
+  time, through any tree: all 14 walks in one proof ran out of memory with 14 GB, and a CI
+  runner has 16 GB. Kani's additional floating-point checks are off, for three reasons:
   - they are not about panics;
   - CBMC treats any division by an infinity as a possible NaN, which flags `exp(-inf)`
     in `libm`;
-  - without them Kani slices the network's arithmetic away, and its layers take 26 s
+  - without them Kani slices the network's arithmetic away, and its layers take 25 s
     instead of not finishing in 32 minutes.
 
   The evidence is in `reports/kani/`.
-- On one Windows x86_64 machine, a compiled prediction takes 0.13–0.59 µs, against
-  3.5–4.2 µs for the runtime predicting from a `Record`
+- On one Windows x86_64 machine, a compiled prediction takes 0.06–0.33 µs, against
+  3.6–4.2 µs for the runtime predicting from a `Record`
   (`examples/compiled_vs_runtime.rs`).
+- On real models and rows, generated trees run 2.0–2.8× faster than the arrays, and take a
+  third less flash on a Cortex-M4F (`reports/inference/`).
 
 **Rejected.**
 - A `build.rs` that writes source code: the same result with a worse interface, a
   generated file to include and no errors at the call site.
 - Embedding the bundle with `include_bytes!` and parsing it at start-up: this needs an
   allocator, and errors appear at run time.
-- A C code generator or ONNX export: another implementation of the arithmetic, so
-  predictions would no longer match the runtime bit for bit.
+- A C code generator or ONNX export: another implementation of the arithmetic in another
+  language, outside the tests and the proofs, so predictions would no longer be held to the
+  runtime's bits.
+- Tree by tree for every batch: it takes twice as long on the smallest model and gains
+  nothing below about 20,000 nodes, so the runtime and `outputs_batch` switch at 32,768
+  nodes, where it gains 1.6× or more in the arrays.
 
 ---
 
@@ -433,7 +455,7 @@ while the application builds:
 | D2 | 预处理只有一份实现，归运行时所有 | 训练、评估、离线预测和应用预测都调用 `apply_transform`；与 scikit-learn 一致到约 2e-7 |
 | D3 | 运行时自己执行模型 | 包内是与引擎无关的模型描述；运行时用 `tabsmith-embedded` 中的 FP32 内核执行（编译进代码的模型也用这套内核）；每个 Run 记录 engine Δ（网络约 1e-7，树为 0）；因此运行时无需修改即可编译为 WebAssembly |
 | D4 | 模型包自我校验 | 每个文件的 SHA-256、版本、一致性和示例预测自检；热切换只在自检通过后进行 |
-| D5 | 确定性是契约 | 自带 PRNG（SplitMix64）、小批次顺序只取决于 (seed, epoch)、网络用单线程引擎；树按 16,384 行的固定分块求和再按块顺序合并，因此核心数不影响结果；树的 `exp`/`log` 来自纯 Rust 的 `libm`，同样的数据在任何操作系统上得到同样的树（Windows 与 Linux 实测哈希一致）；GPU 关闭 autotune；续训与不中断训练逐位相同 |
+| D5 | 确定性是契约 | 自带 PRNG（SplitMix64）、小批次顺序只取决于 (seed, epoch)、网络用单线程引擎；树按特征并行，每个特征在一个线程上按行序求和，因此线程数不影响结果（1 到 32 线程实测哈希一致）；树的 `exp`/`log` 来自纯 Rust 的 `libm`，同样的数据在任何操作系统上得到同样的树（Windows 与 Linux 实测哈希一致）；GPU 关闭 autotune；续训与不中断训练逐位相同 |
 | D6 | 测试集只用一次 | 选择只看验证集；测试使用记入台账；分组切分保证同一实体不跨越训练/测试 |
 | D7 | 阶段按内容寻址 | 快照、切分、变换的 id 是其输入的哈希；输入不变即复用 |
 | D8 | 错误是数据，绝不悄悄回退 | 稳定错误码 + 阶段 + 字段 + 下一步建议；做不到就拒绝 |
@@ -442,4 +464,4 @@ while the application builds:
 | D11 | GPU 训练：可选、事先规划、按设备认证 | CUDA 必须显式接受 TF32；`auto-certified` 只使用经 `tools/gpu_certify.py` 认证的设备 |
 | D12 | 用 Flex 代替 NdArray | 约 1.4 倍速度，与 NdArray 相差 9e-8 |
 | D13 | 禁止 `unsafe`，对不可信输入做模糊测试 | 全工作区 `forbid(unsafe_code)`；对 `Bundle::from_memory` 做 cargo-fuzz；proptest 检查不变量 |
-| D14 | 模型可以编译进 Rust 代码，并与运行时共用内核 | `model!` 在编译期按运行时的规则校验模型包，把输入契约生成为类型、权重生成为常量；推理不分配内存、不依赖 `std`；与运行时逐位相同，跨平台也逐位相同（CI 在三个平台上验证）。编译器还知道模型的更多性质：由 rustc 常量求值得到的可靠输出范围（树精确，网络用区间算术并为舍入留余量）、由此导出的概率/数值范围、单次预测的最大运算量、单调约束的编译期检查；`kani` 选项让宏自己生成 Kani 证明（循环上界取自模型形状），6 个证明 72 秒通过 |
+| D14 | 模型可以编译进 Rust 代码，并与运行时共用内核 | `model!` 在编译期按运行时的规则校验模型包，把输入契约生成为类型、权重生成为常量；推理不分配内存、不依赖 `std`；与运行时逐位相同，跨平台也逐位相同（CI 在三个平台上验证）。编译器还知道模型的更多性质：由 rustc 常量求值得到的可靠输出范围（树精确，网络用区间算术并为舍入留余量）、由此导出的概率/数值范围、单次预测的最大运算量、单调约束的编译期检查；`kani` 选项让宏自己生成 Kani 证明（循环上界取自模型形状），9 个证明 81 秒通过。每棵树生成为嵌套 `if` 的 `const fn`（默认到 32,768 个节点），比数组快 2–2.8 倍、在 Cortex-M4F 上少占三分之一 flash，所有树能放进一个证明，由逐节点测试保证比特相同 |

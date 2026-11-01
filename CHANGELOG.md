@@ -8,6 +8,75 @@ Before 1.0, minor versions may contain breaking changes.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-31
+
+Speed, with every bit kept. The trees train 11 to 36 times faster, and a batch of records
+predicts 7 to 11 times faster than scikit-learn's, with the same results at any thread count.
+`model!` now turns each tree into code, which is faster and smaller, lets the compiler run the
+model, and lets Kani prove all the trees at once. The bundle format is unchanged, and existing
+bundles predict the same bits.
+
+### Added
+
+- **`model!` turns trees into code.** Each tree of a compiled model is now a `const fn` of
+  nested `if`s, up to 32,768 nodes by default. On real models the outputs take 2.0 to 2.8
+  times less time than walking arrays, and flash on a Cortex-M4F shrinks by about a third,
+  with every prediction the same to the bit (`reports/inference/`). A release build takes
+  7.6 s instead of 2.1 s at 32,450 nodes, which is why the default stops there. `outputs`
+  becomes a `const fn`, so the compiler can run the model. The options `tree_code` and
+  `tree_arrays` override the default.
+- **Kani proves all the trees at once**, for trees as code: `<name>_outputs_are_total`, in
+  4.8 s and 104 MB for 14 trees, where one walk through the arrays takes 10 s and 1.7 GB and
+  all 14 do not fit in 14 GB (`reports/kani/`). Trees kept as arrays still have
+  `<name>_tree_walk_is_total`.
+- `outputs_batch` on every compiled model. Above 32,768 nodes it runs tree by tree over blocks
+  of rows, up to 2.6 times faster than row by row.
+- `tools/publish.cmd`: a double-click on Windows pushes to GitHub, waits for CI on that commit,
+  tags, and publishes to crates.io. Run it again after a failure, and what is done is skipped.
+- `LoadOptions::threads` and `LoadOptions::with_threads`: the threads a large batch may use.
+  A public field, so code that builds `LoadOptions` with a struct literal and no `..` must add
+  it.
+
+### Changed
+
+- **The trees train 11 to 36 times faster**, with the same test metrics to four decimals
+  on the three public datasets (`reports/datasets/`): Covertype takes 29 s instead of
+  513 s, Adult 0.5 s instead of 17 s, California 0.2 s instead of 2.1 s. They now take
+  about as long as scikit-learn's `HistGradientBoosting`. Histograms are built feature by
+  feature on up to 12 threads, one child's histogram is the parent's minus its sibling's,
+  a feature's dominant bin follows from the node's totals, and a tree needs no allocation
+  per node. `RAYON_NUM_THREADS` overrides the thread count.
+- **The trees stay deterministic on any number of threads**, without chunks: each feature
+  sums its rows in row order on one thread. Measured weights are the same at 1 to 32
+  threads and on Windows and Linux (`reports/reproducibility/`).
+- Retraining gives slightly different trees from 0.2.0 where rounding decides a split or
+  a tie: on the public datasets, California's weights are unchanged and Adult's and
+  Covertype's differ, with the same test metrics. The bundle format is unchanged and every
+  bundle still loads. A gbdt checkpoint of 0.2.0 cannot be resumed.
+- A whole `tabsmith train` is 2 to 8 times faster (Covertype with all three candidates:
+  71 s instead of 603 s). Row fingerprints and permutation importance use several threads,
+  a training round computes only the selected metric, and `run.json` is rewritten at most
+  once a second during training instead of after every round or epoch, which also speeds
+  up the networks on small problems. After a crash `tabsmith runs` can show up to a second
+  less progress; resume reads the checkpoints, as before.
+- **Batch prediction runs on several threads.** `Predictor::predict`, `predict_table` and
+  `outputs` use up to 16 threads from 4,096 rows on, on plain scoped threads with no dependency
+  added: 8 times the one-thread rate on 100,000 records. The predictions are the same at any
+  thread count, in the same order, and so is the error when a record is wrong. WebAssembly stays
+  on one thread.
+- Turning records into a table merges each record's sorted fields with the schema's, which
+  makes `predict` on one thread about 40 % faster. Against scikit-learn on the README's problem,
+  a batch of records now runs 7 to 11 times faster, up from about even.
+- The runtime goes tree by tree over blocks of rows from 32,768 nodes on, 1.6 to 2.8 times faster
+  on large ensembles, with the same bits.
+- `tabsmith-workflow` depends on `rayon` directly (it was already in its tree through
+  Polars) and on `tabsmith-embedded`. `tabsmith-runtime` gains no dependency.
+
+### Fixed
+
+- The trees' device plan reports their thread count; it said 1 while the receipt gave the
+  real count.
+
 ## [0.2.0] - 2026-10-29
 
 The model as a Rust program, taken further: generated proofs, compile-time bounds,
@@ -166,6 +235,7 @@ system with its evidence.
   run on Windows.
 - macOS is checked only by CI's Apple Silicon runners; nobody has run Tabsmith on a Mac by hand.
 
-[Unreleased]: https://github.com/NatMartini/Tabsmith/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/NatMartini/Tabsmith/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/NatMartini/Tabsmith/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/NatMartini/Tabsmith/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/NatMartini/Tabsmith/releases/tag/v0.1.0

@@ -1,0 +1,86 @@
+[
+ {
+  "model": "Covertype 78 rounds, 32450 nodes",
+  "variant": "arrays",
+  "profile": "debug",
+  "seconds": 2.01,
+  "exe_bytes": 859136
+ },
+ {
+  "model": "Covertype 78 rounds, 32450 nodes",
+  "variant": "arrays",
+  "profile": "release",
+  "seconds": 2.11,
+  "exe_bytes": 817664
+ },
+ {
+  "model": "Covertype 78 rounds, 32450 nodes",
+  "variant": "code, decimal literals",
+  "profile": "debug",
+  "seconds": 3.16,
+  "exe_bytes": 955904
+ },
+ {
+  "model": "Covertype 78 rounds, 32450 nodes",
+  "variant": "code, decimal literals",
+  "profile": "release",
+  "seconds": 7.63,
+  "exe_bytes": 692224
+ },
+ {
+  "model": "Covertype 143 rounds, 59781 nodes",
+  "variant": "arrays",
+  "profile": "debug",
+  "seconds": 4.76,
+  "exe_bytes": 1407488
+ },
+ {
+  "model": "Covertype 143 rounds, 59781 nodes",
+  "variant": "arrays",
+  "profile": "release",
+  "seconds": 4.87,
+  "exe_bytes": 1366016
+ },
+ {
+  "model": "Covertype 143 rounds, 59781 nodes",
+  "variant": "code, decimal literals",
+  "profile": "debug",
+  "seconds": 7.54,
+  "exe_bytes": 1581568
+ },
+ {
+  "model": "Covertype 143 rounds, 59781 nodes",
+  "variant": "code, decimal literals",
+  "profile": "release",
+  "seconds": 18.73,
+  "exe_bytes": 1113088
+ },
+ {
+  "model": "Covertype 400 rounds, 169248 nodes",
+  "variant": "arrays",
+  "profile": "debug",
+  "seconds": 27.53,
+  "exe_bytes": 3604480
+ },
+ {
+  "model": "Covertype 400 rounds, 169248 nodes",
+  "variant": "arrays",
+  "profile": "release",
+  "seconds": 27.47,
+  "exe_bytes": 3562496
+ },
+ {
+  "model": "Covertype 400 rounds, 169248 nodes",
+  "variant": "code, decimal literals",
+  "profile": "debug",
+  "seconds": 36.22,
+  "exe_bytes": 4083200
+ },
+ {
+  "model": "Covertype 400 rounds, 169248 nodes",
+  "variant": "code, decimal literals",
+  "profile": "release",
+  "seconds": 114.73,
+  "exe_bytes": 2885120
+ }
+]

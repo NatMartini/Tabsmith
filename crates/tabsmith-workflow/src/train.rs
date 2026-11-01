@@ -35,7 +35,7 @@ use tabsmith_runtime::model::{DenseLayer, DenseModel, Model};
 
 use crate::data::Targets;
 use crate::device::EngineDevice;
-use crate::metrics::task_metrics;
+use crate::metrics::selected_metric;
 use crate::project::{write_atomic, write_json};
 use crate::rng::{SplitMix64, epoch_permutation};
 
@@ -405,16 +405,13 @@ pub fn encode_targets(t: &Targets, output: &OutputSchema, weights: &[f32]) -> (V
 pub fn task_loss(outputs: &Matrix, t: &Targets, output: &OutputSchema, weights: &[f32]) -> f64 {
     match t {
         Targets::Binary(y) => weighted_bce_from_logits(&outputs.data, y, weights[0], weights[1]),
-        Targets::Classes { y, .. } => {
-            let mut s = 0.0;
-            for (r, &c) in y.iter().enumerate() {
-                let z: Vec<f64> = outputs.row(r).iter().map(|&v| f64::from(v)).collect();
-                let max = z.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-                let lse = max + libm::log(z.iter().map(|v| libm::exp(v - max)).sum::<f64>());
-                s += (lse - z[c as usize]) * f64::from(weights[c as usize]);
-            }
-            s / y.len().max(1) as f64
-        }
+        Targets::Classes { y, .. } => crate::parallel::mean_in_row_order(y.len(), |r| {
+            let row = outputs.row(r);
+            let c = y[r] as usize;
+            let max = row.iter().map(|&v| f64::from(v)).fold(f64::NEG_INFINITY, f64::max);
+            let lse = max + libm::log(row.iter().map(|&v| libm::exp(f64::from(v) - max)).sum::<f64>());
+            (lse - f64::from(row[c])) * f64::from(weights[c])
+        }),
         Targets::Values(y) => {
             let sc = output.target_scale.expect("regression schema");
             let s: f64 = y
@@ -447,13 +444,11 @@ pub(crate) fn class_weights(y: &[bool], mode: ClassWeight) -> (f32, f32) {
 /// `log1p` come from `libm`, so the loss, and the early stopping it drives, are the
 /// same on every operating system.
 pub fn weighted_bce_from_logits(logits: &[f32], y: &[bool], w_neg: f32, w_pos: f32) -> f64 {
-    let mut s = 0.0;
-    for (&z, &t) in logits.iter().zip(y) {
-        let z = f64::from(z);
+    crate::parallel::mean_in_row_order(y.len(), |r| {
+        let (z, t) = (f64::from(logits[r]), y[r]);
         let l = z.max(0.0) - if t { z } else { 0.0 } + libm::log1p(libm::exp(-z.abs()));
-        s += l * f64::from(if t { w_pos } else { w_neg });
-    }
-    s / y.len().max(1) as f64
+        l * f64::from(if t { w_pos } else { w_neg })
+    })
 }
 
 /// Training objective for one minibatch: class-weighted mean BCE-with-logits plus
@@ -695,9 +690,7 @@ pub fn train(
         let exported = model.export(config)?;
         let v_out = par_outputs(inputs.x_valid, |x| exported.outputs(x));
         let valid_loss = task_loss(&v_out, inputs.y_valid, inputs.output, &weights);
-        let metric = task_metrics(&v_out, inputs.y_valid, inputs.output)
-            .get(inputs.metric.as_str())
-            .unwrap_or(0.0);
+        let metric = selected_metric(&v_out, inputs.y_valid, inputs.output, inputs.metric.as_str()).unwrap_or(0.0);
         if !valid_loss.is_finite() {
             return Err(TabsmithError::new(
                 ErrorCode::TrainingDiverged,

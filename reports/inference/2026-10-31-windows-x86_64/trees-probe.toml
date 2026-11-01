@@ -1,0 +1,13 @@
+[package]
+name = "codegen-probe"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+tabsmith-runtime = { path = "<repo>/crates/tabsmith-runtime" }
+tabsmith-embedded = { path = "<repo>/crates/tabsmith-embedded" }
+tabsmith-macros = { path = "<repo>/crates/tabsmith-macros" }
+serde_json = "1"

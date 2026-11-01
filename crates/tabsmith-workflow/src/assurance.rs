@@ -7,18 +7,19 @@
 //! exact one needs rows the model never saw. The test split is not touched: it is
 //! used once, for the evaluation, and nothing else.
 
+use rayon::prelude::*;
 use tabsmith_contracts::config::SelectionMetric;
 use tabsmith_contracts::data::SplitName;
 use tabsmith_contracts::manifest::{Conformal, FieldImportance, Importance};
 use tabsmith_contracts::run::RunRecord;
 use tabsmith_contracts::schema::OutputSchema;
-use tabsmith_contracts::transform::FittedTransform;
+use tabsmith_contracts::transform::{FeatureTransform, FittedTransform};
 use tabsmith_contracts::{Phase, Result};
 use tabsmith_runtime::model::{Model, sigmoid, softmax};
 use tabsmith_runtime::{Column, Matrix, Table, apply_transform_rows};
 
 use crate::data::{Targets, targets};
-use crate::metrics::task_metrics;
+use crate::metrics::selected_metric;
 use crate::pipeline::Workspace;
 use crate::rng::SplitMix64;
 use crate::train::par_outputs;
@@ -151,12 +152,13 @@ fn importance(
     baseline_outputs: &Matrix,
 ) -> Option<Importance> {
     let name = metric.as_str();
-    let score = |outputs: &Matrix| task_metrics(outputs, y, schema).get(name);
+    let score = |outputs: &Matrix| selected_metric(outputs, y, schema, name);
     let baseline = score(baseline_outputs)?;
     let sign = if metric.higher_is_better() { 1.0 } else { -1.0 };
     let n = sub.n_rows();
-    let mut fields = Vec::new();
-    for f in &transform.features {
+    // Every (field, repeat) has its own derived seed, so the fields are independent and
+    // the result does not depend on the number of threads.
+    let one_field = |f: &FeatureTransform| -> Option<FieldImportance> {
         let col = sub.column(f.name())?;
         let mut drops = Vec::with_capacity(REPEATS);
         for r in 0..REPEATS {
@@ -179,17 +181,19 @@ fn importance(
                 .collect();
             let table = Table::new(columns).ok()?;
             let x = apply_transform_rows(transform, &table, Phase::Bundle, rows).ok()?;
-            let outputs = par_outputs(&x, |x| model.outputs(x));
+            let outputs = model.outputs(&x);
             drops.push(sign * (baseline - score(&outputs)?));
         }
         let mean = drops.iter().sum::<f64>() / REPEATS as f64;
         let var = drops.iter().map(|d| (d - mean) * (d - mean)).sum::<f64>() / REPEATS as f64;
-        fields.push(FieldImportance {
+        Some(FieldImportance {
             name: f.name().to_string(),
             importance: mean,
             std: var.sqrt(),
-        });
-    }
+        })
+    };
+    let fields: Option<Vec<FieldImportance>> = crate::parallel::install(|| transform.features.par_iter().map(one_field).collect());
+    let mut fields = fields?;
     fields.sort_by(|a, b| b.importance.total_cmp(&a.importance).then(a.name.cmp(&b.name)));
     Some(Importance {
         metric: name.into(),

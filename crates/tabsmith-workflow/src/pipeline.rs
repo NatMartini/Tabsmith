@@ -707,6 +707,7 @@ impl Workspace {
         let t0 = Instant::now();
         let epochs = tcfg.epochs;
         let run_path = self.run_path(&run_id);
+        let mut last_progress_write: Option<Instant> = None;
         let mut on_epoch = |s: &TrainState| {
             if let Some(h) = s.history.last() {
                 progress(Progress::Epoch {
@@ -718,11 +719,17 @@ impl Workspace {
                     valid_metric: h.valid_metric,
                 });
             }
-            // Keep run.json's progress current so `tabsmith runs` shows it.
-            if let Ok(mut r) = read_json::<RunRecord>(&run_path, Phase::Train) {
-                r.steps_done = s.step;
-                r.history = s.history.clone();
-                let _ = write_json(&run_path, &r);
+            // Keep run.json's progress current so `tabsmith runs` shows it. At most once a
+            // second: each write holds the whole history and syncs the disk, which after
+            // every round would take most of the time of a small training. The final state
+            // is written when the run ends, and a resume reads the checkpoints.
+            if last_progress_write.is_none_or(|t: Instant| t.elapsed().as_secs_f64() >= 1.0) {
+                if let Ok(mut r) = read_json::<RunRecord>(&run_path, Phase::Train) {
+                    r.steps_done = s.step;
+                    r.history = s.history.clone();
+                    let _ = write_json(&run_path, &r);
+                }
+                last_progress_write = Some(Instant::now());
             }
         };
         let outcome = match candidate {

@@ -36,13 +36,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     us.sort_by(f64::total_cmp);
     let q = |f: f64| us[((us.len() - 1) as f64 * f).round() as usize];
 
-    // Whole batch in one call.
-    let rounds = 5;
-    let t = Instant::now();
-    for _ in 0..rounds {
+    // Whole batch in one call, three ways: from records as an application receives them, from
+    // a table already in memory (where a DataFrame starts), and from records on one thread.
+    let rounds = 9;
+    let median = |f: &dyn Fn() -> Result<(), Box<dyn std::error::Error>>| -> Result<f64, Box<dyn std::error::Error>> {
+        let mut t = Vec::with_capacity(rounds);
+        for _ in 0..rounds {
+            let start = Instant::now();
+            f()?;
+            t.push(start.elapsed().as_secs_f64());
+        }
+        t.sort_by(f64::total_cmp);
+        Ok(t[rounds / 2])
+    };
+    let batch_s = median(&|| {
         std::hint::black_box(predictor.predict(&records)?);
-    }
-    let batch_s = t.elapsed().as_secs_f64() / rounds as f64;
+        Ok(())
+    })?;
+    let table = predictor.records_table(&records, &[])?;
+    let table_s = median(&|| {
+        std::hint::black_box(predictor.predict_table(&table)?);
+        Ok(())
+    })?;
+    let one_thread = Predictor::load(&bundle, LoadOptions::cpu().with_threads(1))?;
+    let one_thread_s = median(&|| {
+        std::hint::black_box(one_thread.predict(&records)?);
+        Ok(())
+    })?;
 
     println!(
         "{}",
@@ -51,6 +71,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "load_ms": load_ms,
             "single_record_us": {"p50": q(0.5), "p95": q(0.95), "p99": q(0.99), "iterations": iterations},
             "batch": {"rows": records.len(), "seconds": batch_s, "rows_per_second": records.len() as f64 / batch_s},
+            "batch_table": {"rows": records.len(), "seconds": table_s, "rows_per_second": records.len() as f64 / table_s},
+            "batch_one_thread": {"rows": records.len(), "seconds": one_thread_s, "rows_per_second": records.len() as f64 / one_thread_s},
         })
     );
     Ok(())

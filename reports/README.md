@@ -11,14 +11,16 @@ next to it are the evidence itself, with local paths replaced by `<work>` /
 | [benchmarks/](benchmarks/) | Tabsmith vs the equivalent pandas + scikit-learn workflow on the same rows, split, features and settings: quality, training time, prediction latency, cold start, memory, deployment size. The newest run includes the gradient-boosted trees against `HistGradientBoostingClassifier` | [`tools/bench/bench.py`](../tools/bench/bench.py) |
 | [gpu/](gpu/) | Certification of each GPU path on real hardware: determinism across processes, exact resume, agreement with the CPU, bundle self-check, and training time against the CPU | [`tools/gpu_certify.py`](../tools/gpu_certify.py) |
 | [fuzz/](fuzz/) | Fuzzing of the bundle loader with libFuzzer: duration, executions, coverage, seeds, result | [`fuzz/`](../fuzz/) |
-| [kani/](kani/) | Kani proofs that the models compiled into code never panic, for every input: each proof's checks, time, memory and result, why the trees are proved one walk at a time, and a false positive in CBMC's NaN check | `cargo kani` in [`examples/embedded-predict`](../examples/embedded-predict/) |
+| [kani/](kani/) | Kani proofs that the models compiled into code never panic, for every input: each proof's checks, time, memory and result, why generated trees can be proved all at once while arrays are proved one walk at a time, and a false positive in CBMC's NaN check | `cargo kani` in [`examples/embedded-predict`](../examples/embedded-predict/) |
+| [inference/](inference/) | Trees as generated code against trees as arrays on real models: time per row, compile time, flash on a Cortex-M4F, the tests that hold them to the same bits, and batch prediction by thread count | the probes and scripts in the report |
 | [reproducibility/](reproducibility/) | The same training on Windows and on Linux: the trees' weights and history are identical to the bit, the Burn-trained networks differ in the seventh digit | the two scripts in the report |
 | [scaling/](scaling/) | The trees on 1,000,000 rows: stage times, rounds per second, peak memory, quality | the script in the report |
 | [datasets/](datasets/) | Three public datasets (Adult, Covertype, California Housing): every candidate against its scikit-learn equivalent on the same rows and split, test metrics side by side, including where Tabsmith loses | [`tools/datasets/compare.py`](../tools/datasets/compare.py) + [`tools/datasets/report.py`](../tools/datasets/report.py) |
 
 Numbers depend on the machine. Re-run the tools on yours rather than comparing
 absolute values across machines; a new report goes into a new dated directory,
-and old reports are kept, favourable or not.
+and old reports are kept, favourable or not. Where a newer report shows that an older
+one explained something wrongly, the older one carries a note saying so.
 
 **Older name.** The first benchmark (`benchmarks/2026-10-27-linux-x86_64`) was made at commit `ae39055`, before the
 project was renamed from RustPy to Tabsmith, and is kept as recorded:
@@ -33,7 +35,7 @@ second benchmark and the GPU and fuzzing reports were made after these changes.
 
 中文：README 中各项说法所依据的实测证据。每份报告都注明了来自哪个提交、哪台机器，以及如何复现；
 旁边的机器可读文件就是证据本身（本地路径已替换为 `<work>` / `<repo>`）。数字取决于机器，请在自己的
-机器上重新运行这些工具，而不要跨机器比较绝对值；新报告放在新的带日期目录中，旧报告无论结果好坏都会保留。
+机器上重新运行这些工具，而不要跨机器比较绝对值；新报告放在新的带日期目录中，旧报告无论结果好坏都会保留。如果新报告证明旧报告的某个解释是错的，旧报告里会加一条说明。
 
 **旧名称**：第一份基准报告（`benchmarks/2026-10-27-linux-x86_64`）产生于提交 `ae39055`，当时项目还叫 RustPy，报告按原样保留：其中的 `rustpy` 命令、`rustpy-*`
 crate、`rustpy.toml` 和 `.rustpy/` 如今分别是 `tabsmith`、`tabsmith-*`、`tabsmith.toml` 和 `.tabsmith/`。改名没有改变任何

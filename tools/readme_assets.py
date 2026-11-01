@@ -16,7 +16,7 @@ from xml.sax.saxutils import escape, quoteattr
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 OUT = ROOT / "docs" / "assets"
-RESULTS = ROOT / "reports" / "benchmarks" / "2026-10-27-linux-x86_64-v2" / "results.json"
+RESULTS = ROOT / "reports" / "benchmarks" / "2026-10-31-linux-x86_64" / "results.json"
 
 SANS = ("-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, "
         "'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif")

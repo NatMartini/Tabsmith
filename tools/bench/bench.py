@@ -142,7 +142,7 @@ def main():
     for cand, r in runs.items():
         bundle = os.path.join(proj, "bundles", r["run_id"])
         if not os.path.exists(records):
-            records_from_csv(data_csv, os.path.join(bundle, "input.schema.json"), records, 2000)
+            records_from_csv(data_csv, os.path.join(bundle, "input.schema.json"), records, a.rows)
             with open(records) as f, open(one, "w") as o:
                 o.write(f.readline())
         txt = run([app, bundle, records, "20000"], log=f"{logs}/app-bench-{cand}.txt")
@@ -163,6 +163,8 @@ def main():
             "test": {"balanced_accuracy": m["balanced_accuracy"], "roc_auc": m["roc_auc"], "log_loss": m["log_loss"]},
             "app_single_record_us": app_bench["single_record_us"],
             "app_batch_rows_per_second": app_bench["batch"]["rows_per_second"],
+            "app_batch_table_rows_per_second": app_bench["batch_table"]["rows_per_second"],
+            "app_batch_one_thread_rows_per_second": app_bench["batch_one_thread"]["rows_per_second"],
             "app_load_ms": app_bench["load_ms"],
             "cold_start_seconds": cold,
             "cold_start_peak_rss_mb": cold_rss,
@@ -217,8 +219,8 @@ def markdown(R, rows):
              f"Python {sk['versions']['python']}, scikit-learn {sk['versions']['scikit-learn']}, "
              f"pandas {sk['versions']['pandas']}, numpy {sk['versions']['numpy']}. "
              "Tabsmith's linear, small-mlp and gbdt candidates stand next to scikit-learn's LogisticRegression, "
-             "MLPClassifier and HistGradientBoostingClassifier (HGB). Tabsmith trains on one thread; "
-             "scikit-learn runs with its defaults (HGB uses every core).", ""]
+             "MLPClassifier and HistGradientBoostingClassifier (HGB). Tabsmith's networks train on one thread "
+             "and its trees on up to 12; scikit-learn runs with its defaults.", ""]
     lines += ["| | Tabsmith linear | scikit-learn logistic | Tabsmith small-mlp | scikit-learn MLP | Tabsmith gbdt | scikit-learn HGB |",
               "|---|---|---|---|---|---|---|"]
     pairs = [(rp["candidates"][c], sk["candidates"][c]) for c in CANDIDATES]
@@ -229,7 +231,9 @@ def markdown(R, rows):
     row("Training time", lambda c, k: f"{(c['train_seconds'] if k == 'r' else c['fit_seconds']):.2f} s")
     row("Single-record prediction in an app (p50)", lambda c, k: f"{(c['app_single_record_us'] if k == 'r' else c['single_record_us'])['p50']:.1f} µs")
     row("Single-record prediction (p99)", lambda c, k: f"{(c['app_single_record_us'] if k == 'r' else c['single_record_us'])['p99']:.1f} µs")
-    row("Batch prediction in process", lambda c, k: f"{(c['app_batch_rows_per_second'] if k == 'r' else c['batch']['rows_per_second']):,.0f} rows/s")
+    row("Batch prediction from records", lambda c, k: f"{(c['app_batch_rows_per_second'] if k == 'r' else c['batch_records']['rows_per_second']):,.0f} rows/s")
+    row("Batch prediction from a table in memory", lambda c, k: f"{(c['app_batch_table_rows_per_second'] if k == 'r' else c['batch']['rows_per_second']):,.0f} rows/s")
+    row("Batch prediction from records, Tabsmith on one thread", lambda c, k: f"{c['app_batch_one_thread_rows_per_second']:,.0f} rows/s" if k == 'r' else "–")
     row("Cold start: new process, load model, predict 1 record", lambda c, k: f"{c['cold_start_seconds'] * 1e3:.0f} ms")
     row("Peak memory of that process", lambda c, k: f"{c['cold_start_peak_rss_mb']:.0f} MB")
     row("Model artifact", lambda c, k: mb(c['bundle_bytes'] if k == 'r' else c['model_file_bytes']))

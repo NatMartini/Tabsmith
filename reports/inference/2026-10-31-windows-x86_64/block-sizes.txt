@@ -1,0 +1,93 @@
+
+defects_code: 10000 rows, 14 trees, 854 nodes, 1 outputs
+runtime arrays, row by row                  0.169 us/row       5909118 rows/s
+arrays, row by row                          0.163 us/row       6144771 rows/s
+code, row by row                            0.065 us/row      15434481 rows/s
+code, pointers, block 32                    0.146 us/row       6839945 rows/s
+code, pointers, block 64                    0.145 us/row       6878052 rows/s
+code, pointers, block 128                   0.145 us/row       6874742 rows/s
+code, pointers, block 256                   0.145 us/row       6879472 rows/s
+code, pointers, block 1024                  0.145 us/row       6890849 rows/s
+code, pointers, block 4096                  0.139 us/row       7196315 rows/s
+arrays, tree by tree, block 64              0.320 us/row       3123536 rows/s
+arrays, tree by tree, block 256             0.316 us/row       3162955 rows/s
+arrays, tree by tree, block 1024            0.304 us/row       3286123 rows/s
+arrays, tree by tree, block 4096            0.301 us/row       3319392 rows/s
+
+adult_code: 10000 rows, 155 trees, 9151 nodes, 1 outputs
+runtime arrays, row by row                  1.909 us/row        523722 rows/s
+arrays, row by row                          1.872 us/row        534174 rows/s
+code, row by row                            0.852 us/row       1173640 rows/s
+code, pointers, block 32                    1.029 us/row        972280 rows/s
+code, pointers, block 64                    0.963 us/row       1037969 rows/s
+code, pointers, block 128                   0.958 us/row       1044125 rows/s
+code, pointers, block 256                   0.963 us/row       1038335 rows/s
+code, pointers, block 1024                  0.925 us/row       1080707 rows/s
+code, pointers, block 4096                  0.995 us/row       1005187 rows/s
+arrays, tree by tree, block 64              2.141 us/row        467067 rows/s
+arrays, tree by tree, block 256             2.247 us/row        444953 rows/s
+arrays, tree by tree, block 1024            2.212 us/row        452084 rows/s
+arrays, tree by tree, block 4096            2.266 us/row        441250 rows/s
+
+california_code: 10000 rows, 309 trees, 18823 nodes, 1 outputs
+runtime arrays, row by row                  3.745 us/row        267038 rows/s
+arrays, row by row                          3.787 us/row        264065 rows/s
+code, row by row                            1.542 us/row        648517 rows/s
+code, pointers, block 32                    1.770 us/row        565119 rows/s
+code, pointers, block 64                    1.553 us/row        644010 rows/s
+code, pointers, block 128                   1.481 us/row        675397 rows/s
+code, pointers, block 256                   1.423 us/row        702958 rows/s
+code, pointers, block 1024                  1.402 us/row        713358 rows/s
+code, pointers, block 4096                  1.362 us/row        734010 rows/s
+arrays, tree by tree, block 64              3.561 us/row        280829 rows/s
+arrays, tree by tree, block 256             3.397 us/row        294385 rows/s
+arrays, tree by tree, block 1024            3.459 us/row        289110 rows/s
+arrays, tree by tree, block 4096            3.327 us/row        300593 rows/s
+
+covertype_code: 10000 rows, 280 trees, 16848 nodes, 7 outputs
+runtime arrays, row by row                  2.179 us/row        458947 rows/s
+arrays, row by row                          2.463 us/row        405941 rows/s
+code, row by row                            1.139 us/row        877763 rows/s
+code, pointers, block 32                    1.637 us/row        610993 rows/s
+code, pointers, block 64                    1.468 us/row        681296 rows/s
+code, pointers, block 128                   1.410 us/row        709084 rows/s
+code, pointers, block 256                   1.379 us/row        725400 rows/s
+code, pointers, block 1024                  1.440 us/row        694589 rows/s
+code, pointers, block 4096                  1.369 us/row        730450 rows/s
+arrays, tree by tree, block 64              2.533 us/row        394742 rows/s
+arrays, tree by tree, block 256             2.594 us/row        385561 rows/s
+arrays, tree by tree, block 1024            2.584 us/row        386964 rows/s
+arrays, tree by tree, block 4096            2.677 us/row        373530 rows/s
+
+
+mid_code: 10000 rows, 1001 trees, 59781 nodes, 7 outputs
+runtime arrays, row by row                 13.726 us/row         72853 rows/s
+arrays, row by row                         14.049 us/row         71179 rows/s
+code, row by row                            5.642 us/row        177235 rows/s
+code, pointers, block 32                    6.643 us/row        150528 rows/s
+code, pointers, block 64                    5.476 us/row        182608 rows/s
+code, pointers, block 128                   5.089 us/row        196503 rows/s
+code, pointers, block 256                   5.135 us/row        194748 rows/s
+code, pointers, block 1024                  4.811 us/row        207860 rows/s
+code, pointers, block 4096                  4.800 us/row        208337 rows/s
+arrays, tree by tree, block 64              9.828 us/row        101750 rows/s
+arrays, tree by tree, block 256             9.886 us/row        101154 rows/s
+arrays, tree by tree, block 1024           10.016 us/row         99842 rows/s
+arrays, tree by tree, block 4096            9.822 us/row        101815 rows/s
+
+
+big_code: 10000 rows, 2800 trees, 169248 nodes, 7 outputs
+runtime arrays, row by row                 66.303 us/row         15082 rows/s
+arrays, row by row                         70.757 us/row         14133 rows/s
+code, row by row                           35.842 us/row         27901 rows/s
+code, pointers, block 32                   19.513 us/row         51249 rows/s
+code, pointers, block 64                   16.583 us/row         60302 rows/s
+code, pointers, block 128                  14.779 us/row         67661 rows/s
+code, pointers, block 256                  14.535 us/row         68797 rows/s
+code, pointers, block 1024                 13.161 us/row         75983 rows/s
+code, pointers, block 4096                 13.250 us/row         75473 rows/s
+arrays, tree by tree, block 64             25.565 us/row         39117 rows/s
+arrays, tree by tree, block 256            25.796 us/row         38766 rows/s
+arrays, tree by tree, block 1024           25.672 us/row         38953 rows/s
+arrays, tree by tree, block 4096           24.977 us/row         40037 rows/s
+

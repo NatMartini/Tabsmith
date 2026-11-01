@@ -25,6 +25,7 @@
 
 pub mod bundle;
 pub mod model;
+mod parallel;
 pub mod predictor;
 pub mod transform;
 pub mod value;

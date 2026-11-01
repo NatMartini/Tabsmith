@@ -1,0 +1,110 @@
+[
+ {
+  "model": "binary-gbdt",
+  "opt": "s",
+  "form": "tree_arrays",
+  "text": 238,
+  "rodata": 17160,
+  "data": 0,
+  "score_symbol": 224
+ },
+ {
+  "model": "binary-gbdt",
+  "opt": "s",
+  "form": "tree_code",
+  "text": 11300,
+  "rodata": 8,
+  "data": 0,
+  "score_symbol": 11300
+ },
+ {
+  "model": "binary-gbdt",
+  "opt": "3",
+  "form": "tree_arrays",
+  "text": 238,
+  "rodata": 17160,
+  "data": 0,
+  "score_symbol": 224
+ },
+ {
+  "model": "binary-gbdt",
+  "opt": "3",
+  "form": "tree_code",
+  "text": 11480,
+  "rodata": 8,
+  "data": 0,
+  "score_symbol": 11480
+ },
+ {
+  "model": "regression-gbdt",
+  "opt": "s",
+  "form": "tree_arrays",
+  "text": 238,
+  "rodata": 72472,
+  "data": 0,
+  "score_symbol": 224
+ },
+ {
+  "model": "regression-gbdt",
+  "opt": "s",
+  "form": "tree_code",
+  "text": 45822,
+  "rodata": 16,
+  "data": 0,
+  "score_symbol": 14
+ },
+ {
+  "model": "regression-gbdt",
+  "opt": "3",
+  "form": "tree_arrays",
+  "text": 238,
+  "rodata": 72472,
+  "data": 0,
+  "score_symbol": 224
+ },
+ {
+  "model": "regression-gbdt",
+  "opt": "3",
+  "form": "tree_code",
+  "text": 47330,
+  "rodata": 16,
+  "data": 0,
+  "score_symbol": 14
+ },
+ {
+  "model": "multiclass-gbdt",
+  "opt": "s",
+  "form": "tree_arrays",
+  "text": 298,
+  "rodata": 49016,
+  "data": 0,
+  "score_symbol": 284
+ },
+ {
+  "model": "multiclass-gbdt",
+  "opt": "s",
+  "form": "tree_code",
+  "text": 31828,
+  "rodata": 16,
+  "data": 0,
+  "score_symbol": 28
+ },
+ {
+  "model": "multiclass-gbdt",
+  "opt": "3",
+  "form": "tree_arrays",
+  "text": 662,
+  "rodata": 48984,
+  "data": 0,
+  "score_symbol": 648
+ },
+ {
+  "model": "multiclass-gbdt",
+  "opt": "3",
+  "form": "tree_code",
+  "text": 33022,
+  "rodata": 16,
+  "data": 0,
+  "score_symbol": 26
+ }
+]

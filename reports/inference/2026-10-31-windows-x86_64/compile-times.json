@@ -1,0 +1,170 @@
+[
+ {
+  "model": "fixture binary-gbdt, 854 nodes",
+  "variant": "arrays",
+  "profile": "debug",
+  "seconds": 0.32,
+  "exe_bytes": 198656
+ },
+ {
+  "model": "fixture binary-gbdt, 854 nodes",
+  "variant": "arrays",
+  "profile": "release",
+  "seconds": 0.36,
+  "exe_bytes": 174592
+ },
+ {
+  "model": "fixture binary-gbdt, 854 nodes",
+  "variant": "code, decimal literals",
+  "profile": "debug",
+  "seconds": 0.35,
+  "exe_bytes": 198656
+ },
+ {
+  "model": "fixture binary-gbdt, 854 nodes",
+  "variant": "code, decimal literals",
+  "profile": "release",
+  "seconds": 0.44,
+  "exe_bytes": 171008
+ },
+ {
+  "model": "fixture binary-gbdt, 854 nodes",
+  "variant": "code, from_bits",
+  "profile": "debug",
+  "seconds": 0.36,
+  "exe_bytes": 208896
+ },
+ {
+  "model": "fixture binary-gbdt, 854 nodes",
+  "variant": "code, from_bits",
+  "profile": "release",
+  "seconds": 0.45,
+  "exe_bytes": 171008
+ },
+ {
+  "model": "Adult, 9151 nodes",
+  "variant": "arrays",
+  "profile": "debug",
+  "seconds": 0.7,
+  "exe_bytes": 363520
+ },
+ {
+  "model": "Adult, 9151 nodes",
+  "variant": "arrays",
+  "profile": "release",
+  "seconds": 0.87,
+  "exe_bytes": 351744
+ },
+ {
+  "model": "Adult, 9151 nodes",
+  "variant": "code, decimal literals",
+  "profile": "debug",
+  "seconds": 1.0,
+  "exe_bytes": 385024
+ },
+ {
+  "model": "Adult, 9151 nodes",
+  "variant": "code, decimal literals",
+  "profile": "release",
+  "seconds": 1.79,
+  "exe_bytes": 299008
+ },
+ {
+  "model": "Adult, 9151 nodes",
+  "variant": "code, from_bits",
+  "profile": "debug",
+  "seconds": 1.15,
+  "exe_bytes": 500224
+ },
+ {
+  "model": "Adult, 9151 nodes",
+  "variant": "code, from_bits",
+  "profile": "release",
+  "seconds": 1.87,
+  "exe_bytes": 299008
+ },
+ {
+  "model": "Covertype 40 rounds, 16848 nodes",
+  "variant": "arrays",
+  "profile": "debug",
+  "seconds": 1.09,
+  "exe_bytes": 546304
+ },
+ {
+  "model": "Covertype 40 rounds, 16848 nodes",
+  "variant": "arrays",
+  "profile": "release",
+  "seconds": 1.18,
+  "exe_bytes": 504320
+ },
+ {
+  "model": "Covertype 40 rounds, 16848 nodes",
+  "variant": "code, decimal literals",
+  "profile": "debug",
+  "seconds": 1.71,
+  "exe_bytes": 596480
+ },
+ {
+  "model": "Covertype 40 rounds, 16848 nodes",
+  "variant": "code, decimal literals",
+  "profile": "release",
+  "seconds": 3.65,
+  "exe_bytes": 442880
+ },
+ {
+  "model": "Covertype 40 rounds, 16848 nodes",
+  "variant": "code, from_bits",
+  "profile": "debug",
+  "seconds": 1.89,
+  "exe_bytes": 803328
+ },
+ {
+  "model": "Covertype 40 rounds, 16848 nodes",
+  "variant": "code, from_bits",
+  "profile": "release",
+  "seconds": 3.79,
+  "exe_bytes": 442880
+ },
+ {
+  "model": "California, 18823 nodes",
+  "variant": "arrays",
+  "profile": "debug",
+  "seconds": 1.17,
+  "exe_bytes": 548352
+ },
+ {
+  "model": "California, 18823 nodes",
+  "variant": "arrays",
+  "profile": "release",
+  "seconds": 1.17,
+  "exe_bytes": 531968
+ },
+ {
+  "model": "California, 18823 nodes",
+  "variant": "code, decimal literals",
+  "profile": "debug",
+  "seconds": 1.83,
+  "exe_bytes": 602624
+ },
+ {
+  "model": "California, 18823 nodes",
+  "variant": "code, decimal literals",
+  "profile": "release",
+  "seconds": 3.44,
+  "exe_bytes": 448512
+ },
+ {
+  "model": "California, 18823 nodes",
+  "variant": "code, from_bits",
+  "profile": "debug",
+  "seconds": 2.08,
+  "exe_bytes": 834048
+ },
+ {
+  "model": "California, 18823 nodes",
+  "variant": "code, from_bits",
+  "profile": "release",
+  "seconds": 3.64,
+  "exe_bytes": 448512
+ }
+]

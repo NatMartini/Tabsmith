@@ -59,7 +59,7 @@ pub fn environment() -> EnvironmentInfo {
 pub enum EngineDevice {
     /// Burn's Flex backend on the CPU, single thread.
     Cpu,
-    /// Tabsmith's own gradient-boosted trees, pure Rust on the CPU, single thread.
+    /// Tabsmith's own gradient-boosted trees, pure Rust on the CPU.
     Trees,
     /// A CUDA device (CubeCL CUDA backend), by ordinal.
     Cuda {
@@ -95,7 +95,7 @@ impl EngineDevice {
     pub fn engine(&self) -> String {
         match self {
             EngineDevice::Cpu => ENGINE.to_string(),
-            EngineDevice::Trees => "tabsmith gbdt (pure Rust, CPU, single thread)".into(),
+            EngineDevice::Trees => "tabsmith gbdt (pure Rust, CPU)".into(),
             EngineDevice::Cuda { .. } => "burn 0.22.1 / cuda backend (CubeCL, kernel fusion, fixed kernels)".into(),
             EngineDevice::Vulkan { .. } => "burn 0.22.1 / vulkan backend (CubeCL wgpu, kernel fusion, fixed kernels)".into(),
         }
@@ -852,6 +852,7 @@ pub fn plan_trees(exec: &ExecutionConfig, work: &WorkEstimate) -> Result<Planned
     planned.engine = EngineDevice::Trees;
     planned.plan.requested = "cpu (gbdt trains on the CPU)".into();
     planned.plan.backend = EngineDevice::Trees.backend().into();
+    planned.plan.threads = engine_threads(&EngineDevice::Trees);
     planned.plan.copy_path.pop();
     planned
         .plan
@@ -908,10 +909,10 @@ pub fn peak_rss_mb() -> Option<f64> {
 }
 
 /// The threads an engine trains with: the networks run on one thread (D5); the trees
-/// build their histograms on every core, with sums merged in a fixed order.
+/// sum each feature on one thread at a time, so their result does not depend on this.
 fn engine_threads(engine: &EngineDevice) -> usize {
     match engine {
-        EngineDevice::Trees => crate::gbdt::threads(),
+        EngineDevice::Trees => crate::parallel::threads(),
         _ => 1,
     }
 }

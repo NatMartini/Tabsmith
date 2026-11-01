@@ -2,6 +2,12 @@
 
 [中文](#中文)
 
+> **Newer report.** [The report of 2026-10-31](../2026-10-31-windows-x86_64/) measures the
+> trees after they were rewritten: 11 to 36 times faster, with the same test metrics. It also
+> corrects this report: the third reason given below for their slowness is wrong. Keeping
+> the sums in a fixed order rules out nothing, because a histogram can be built one
+> feature at a time. The quality numbers here still stand.
+
 **Claim.** On three public datasets of the three tasks, every Tabsmith candidate
 reaches the quality of its scikit-learn equivalent trained on the same rows, split,
 features and settings, within the noise of the test split. Where Tabsmith clearly loses
@@ -115,6 +121,9 @@ the README benchmark measures (`reports/benchmarks/`).
 ---
 
 ## 中文
+
+> **新报告。** [2026-10-31 的报告](../2026-10-31-windows-x86_64/)测量了重写之后的树：快 11 到 36 倍，测试指标不变。
+> 它还更正了本报告：下面说的第三个原因（固定求和顺序）是错的，直方图可以按特征构建，固定顺序并不排除任何快速方法。这里的质量数字仍然成立。
 
 **结论。** 在三个任务各一个公开数据集上（UCI Adult 二分类、California Housing 回归、UCI Covertype 七分类），
 Tabsmith 的每个候选都达到了在同样的行、切分、特征和设置下训练的 scikit-learn 对应模型的质量，差异在测试集的噪声以内。

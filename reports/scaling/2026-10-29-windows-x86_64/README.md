@@ -2,6 +2,9 @@
 
 [中文](#中文)
 
+> **Newer report.** [The report of 2026-10-31](../2026-10-31-windows-x86_64/) measures the
+> trees after they were rewritten: the same model in 4.5 s of training instead of 29.6 s.
+
 **Claim.** `tabsmith train` with the `gbdt` candidate on 1,000,000 rows (172 MB CSV,
 25 columns, 35 features after encoding) runs end to end in 42 s on a desktop, with a
 peak working set of 1.6 GB, and trains 148 boosting rounds in 29.6 s, about 0.2 s per
@@ -58,6 +61,8 @@ problem and says little about a million rows.
 ---
 
 ## 中文
+
+> **新报告。** [2026-10-31 的报告](../2026-10-31-windows-x86_64/)测量了重写之后的树：同样的模型，训练 4.5 秒而不是 29.6 秒。
 
 **结论。** `gbdt` 候选在 1,000,000 行（172 MB CSV，25 列，编码后 35 个特征）上，`tabsmith train` 端到端 42 秒，
 进程峰值工作集 1.6 GB；148 轮提升用时 29.6 秒，在 698,621 行训练数据上约每轮 0.2 秒。151,572 行验证集上 ROC AUC 0.840、

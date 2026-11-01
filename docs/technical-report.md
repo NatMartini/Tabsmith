@@ -18,22 +18,22 @@
 > resume, and why GPU training breaks them unless autotuning is disabled and TF32 is made
 > explicit), and an in-house gradient-boosted tree learner. The evidence:
 > - parity with scikit-learn: preprocessing to 2.3e-7, metrics below 1e-15;
-> - single-record prediction latency 800–950× lower than an equivalent scikit-learn
+> - single-record prediction latency 700–880× lower than an equivalent scikit-learn
 >   deployment, and a 1 ms cold start instead of 0.6 s;
 > - certification of GPU paths on real hardware;
 > - fuzzing of the bundle loader;
 > - the unchanged runtime compiled to WebAssembly;
 > - compiled models that predict the same bits as the runtime on Linux, macOS and
->   Windows, 7–27× faster, and build for a Cortex-M4F microcontroller.
+>   Windows, 12–57× faster, and build for a Cortex-M4F microcontroller.
 
 > **摘要。** Tabsmith 是一个用 Rust 编写的工具：把 CSV/Parquet 文件变成可校验的“模型包”，应用程序只需依赖一个轻量的
 > 运行时 crate 即可加载和预测。本文把应用机器学习中常见的失败方式视为工程缺陷，而不是靠使用者自律来避免：
 > 训练与服务不一致、数据泄漏、不可复现，以及静默退化。每一种都由构造方式加以排除，并由测试守护。报告介绍了
 > 体系结构（带版本的契约、唯一的预处理实现、与训练引擎无关的运行时，以及在编译期把模型包变成 `no_std` Rust 代码、
 > 并沿用运行时同一套算术的过程宏）、确定性保证（逐位精确的续训，以及为何 GPU 训练必须关闭 autotune 并显式声明
-> TF32），以及自研的梯度提升树。证据包括：与 scikit-learn 的数值一致性、单条预测延迟低 800–950 倍、GPU 路径在真实
+> TF32），以及自研的梯度提升树。证据包括：与 scikit-learn 的数值一致性、单条预测延迟低 700–880 倍、GPU 路径在真实
 > 硬件上的认证、对模型包加载器的模糊测试、运行时无需修改即可编译为 WebAssembly，以及编译进代码的模型：在 Linux、
-> macOS 和 Windows 上与运行时逐位相同，快 7–27 倍，并能为 Cortex-M4F 微控制器构建。
+> macOS 和 Windows 上与运行时逐位相同，快 12–57 倍，并能为 Cortex-M4F 微控制器构建。
 
 ---
 
@@ -81,12 +81,12 @@ four reasons:
    covering numerical parity, accuracy, latency, footprint and robustness (§7).
 5. **Models compiled into code** (§6.1). A procedural macro turns a bundle into a
    `no_std` Rust module whose types are the model's input contract. The module shares
-   the runtime's kernels, so it predicts the same bits as the runtime, on every platform;
+   the runtime's arithmetic, so it predicts the same bits as the runtime, on every platform;
    tests check this on seven bundles and three platforms.
 
 ### Scope
 
-Release 0.1 covers supervised learning on one table: binary classification, multiclass
+Release 0.3 covers supervised learning on one table: binary classification, multiclass
 classification and regression. It trains three candidate families (a linear model, a
 small multilayer perceptron, and gradient-boosted trees) on the CPU, and optionally the
 networks on a GPU. It is aimed at datasets that fit in memory (thousands to millions of
@@ -230,7 +230,7 @@ the hash of their weights. And a report is only evidence if it can be regenerate
 | Random number generator algorithms changing between library versions | Tabsmith's own SplitMix64 [4] with Lemire's unbiased bounded sampling [5]. Streams are derived from `(seed, label)`. The `rand` crate does not promise that `StdRng` stays the same across releases. |
 | Minibatch order | A pure function of `(seed, epoch)`, so it can be recomputed at resume |
 | Stochastic layers | None (no dropout) |
-| Parallel reductions | Single-threaded CPU backend for the networks; the trees sum in row order inside fixed chunks of 16,384 rows and merge the chunks in order, so the result is the same on any number of cores. Inference over many rows (validation, evaluation) is split by rows across cores, which changes no row's arithmetic |
+| Parallel reductions | Single-threaded CPU backend for the networks; the trees sum each feature in row order on one thread, with no merge of partial sums, so the result is the same on any number of threads. Inference over many rows (validation, evaluation) is split by rows across cores, which changes no row's arithmetic |
 | Ties | Splits are ordered by `(feature, bin)`, leaves by creation order |
 | Optimizer state | Checkpoints hold model, Adam moments, loop state and best weights |
 
@@ -323,11 +323,20 @@ algorithm instead (in the style of LightGBM and scikit-learn's
   target.
 
 Three details make it deterministic and exactly portable to the runtime:
-1. every sum runs in row order inside fixed chunks of 16,384 rows, and the chunk sums
-   are merged in chunk order, so the result is the same on any number of cores (a
-   node with at most one chunk of rows is summed in plain row order);
+1. a histogram is built one feature at a time, and each feature sums its rows in row
+   order on one thread, so every `(feature, bin)` sees the same additions in the same
+   order on any number of threads; one child's histogram is the parent's minus its
+   sibling's, and which child that is depends on the row counts alone;
 2. ties are broken by `(feature, bin)`;
-3. leaf values are rounded to f32 before they update the training scores.
+3. leaf values are summed from the leaf's rows and rounded to f32 before they update the
+   training scores.
+
+Parallelism therefore costs determinism nothing. What costs time is everything around
+the sums, and an earlier version got most of it wrong: it started threads and allocated
+histograms per node and chunk, summed one-hot columns whose rows nearly all fall in one
+bin, built both children from their rows, and rewrote and synced the run record after every
+round. Removing these made the trees 11 to 36 times faster with the same test metrics
+(`reports/datasets/2026-10-31-windows-x86_64`).
 
 The trainer's validation scores are therefore exactly what the runtime computes, and the
 recorded engine difference for trees is 0. One boosting round is one "epoch" of the
@@ -349,6 +358,12 @@ runtime's on the validation rows ("engine Δ"): about 1e-7 for networks, and 0 f
 Having two implementations is the price of a small runtime, and the engine Δ is what
 keeps the price safe.
 
+A batch of 4,096 rows or more runs on up to 16 plain scoped threads, with no dependency
+added: 8 times the one-thread rate on 100,000 records with the trees, 7 times with the
+network. Every row is computed as on one thread and the results join in row order. If a
+piece fails, the whole batch runs again on the calling thread, so the error is the one a
+single thread reports. A batch below that size starts no threads (`reports/inference/`).
+
 Loading a bundle verifies it before anything is predicted:
 - the SHA-256 of every file against the manifest;
 - every format version;
@@ -364,7 +379,7 @@ self-check, and kept the input contract; `rollback_to` returns to an earlier bun
 Two consequences show how small the runtime is.
 
 **A Rust application.** The example application `examples/predict-app` builds to a
-1.7 MB binary. CI checks that its dependency tree contains neither Burn nor Polars.
+1.9 MB binary. CI checks that its dependency tree contains neither Burn nor Polars.
 
 **A web page.** The runtime compiled to `wasm32-unknown-unknown` without a single
 change. In `examples/wasm-predict`, a web page hands a bundle's files to
@@ -388,6 +403,7 @@ edited bundle is a compile error. It then generates a module with:
 - the weights as constants written with `f32::from_bits`, and the tree arrays with
   constant assertions that every split reads a real feature and points forward inside
   its own tree;
+- each tree as a `const fn` of nested `if`s, up to 32,768 nodes by default;
 - `predict`, which allocates nothing and needs no `std`;
 - `self_check()`, which replays the bundle's examples against the runtime's predictions
   recorded at compile time.
@@ -396,16 +412,44 @@ The generated code and the runtime call the same kernels in `tabsmith-embedded`:
 product with a fixed order of eight partial sums, dense layers, tree traversal summing
 leaves in f64 in tree order, standardisation, sigmoid and softmax. Their order of
 operations is part of the format. `exp` comes from `libm` [14], a pure-Rust port of
-musl's math library, instead of the C runtime. Two test suites check the consequence:
+musl's math library, instead of the C runtime. A generated tree repeats the traversal's
+arithmetic in code: a row goes left on `<=`, so NaN goes right, and each output adds its
+trees in order, in f64. Three test suites check the consequence:
 - For seven bundles covering every task and model kind, the compiled model and the
   runtime return the same bits on the bundle's examples and on 3,000 random records each
   (proptest). The records include missing values, unseen categories, NaN, infinity and
   values of the wrong type. A record that one of them refuses, the other refuses too.
 - The hash of 20,000 predictions per bundle equals the value recorded on Windows x86_64.
   CI runs this test on Linux x86_64 and macOS arm64 as well.
+- For every node of every tree of the three tree fixtures, a row is built to reach it, at
+  the split's exact threshold and one representable number on either side, and each tree
+  is compared on its own with the arrays. Changing the generator on purpose (a threshold or
+  a leaf by one representable number, `<` for `<=`, swapped children, trees added to the
+  wrong output) fails this suite in all six cases.
 
-On the development machine, a compiled prediction takes 0.13–0.59 µs, against 3.5–4.2 µs
+On the development machine, a compiled prediction takes 0.06–0.33 µs, against 3.6–4.2 µs
 for the runtime's `predict_one`, which looks up and coerces named values first.
+
+Generated trees are the fast path because a branch knows its constant and its next
+instruction, where a walk over arrays loads a node's feature, threshold and child from
+memory that holds every other tree too. On 10,000 real rows on one thread:
+
+| Model | Trees | Nodes | Arrays | Code | `outputs_batch` |
+|---|---|---|---|---|---|
+| Fixture | 14 | 854 | 0.169 µs | 0.060 µs | 0.063 µs |
+| Adult | 155 | 9,151 | 1.98 µs | 0.79 µs | 0.80 µs |
+| California Housing | 309 | 18,823 | 4.04 µs | 1.54 µs | 1.54 µs |
+| Covertype, 400 rounds | 2,800 | 169,248 | 75.2 µs | 38.0 µs | 14.4 µs |
+
+The program gets smaller too: on a Cortex-M4F the fixture takes 11.3 KB of flash instead of
+17.4 KB. The cost is build time, 3.4 s instead of 1.2 s for a release build at 18,823 nodes
+and 115 s instead of 27 s at 169,248, which is why the default stops at 32,768 nodes;
+`tree_code` and `tree_arrays` override it. Above that size, `outputs_batch` and the runtime
+go tree by tree over blocks of rows, which keeps one tree in the cache while the block walks
+it, and which changes no bit because each output still adds its trees in order. Below it,
+row by row is as fast. `outputs` also becomes a `const fn`, so rustc can run the model. The
+numbers are in `reports/inference/`.
+
 `examples/embedded-predict` compiles two bundles into a `no_std` library, without
 `unsafe` code, that builds for a Cortex-M4F (`thumbv7em-none-eabihf`) and for
 WebAssembly. With `model!(…, kani)` the input types derive `kani::Arbitrary`, and the
@@ -416,13 +460,16 @@ stage before it returns. Rust's own checks stay on: overflow, division by zero a
 indexing. Kani's additional floating-point checks are off. They are not about panics,
 and CBMC treats any division by an infinity as a possible NaN, which flags `exp(-∞)` in
 `libm` although IEEE 754 defines that quotient as 0. Without them, no check depends on
-the network's arithmetic, so Kani slices it away. The layers then take 26 s; with
-those checks on, they had not finished after 32 minutes. For the trees, `outputs` is
-proved one walk at a time, through any tree; it adds the walks' leaf values, so it cannot
-panic once every walk stays in range. All 14 walks in one proof ran out of memory with
-14 GB. The harnesses are generated by `model!` itself, with loop bounds from the model's
-shape, so nothing is written by hand and every compiled model carries the same proofs.
-All six pass with Kani 0.68 (CBMC 6.11), in 72 s together and under 2 GB
+the network's arithmetic, so Kani slices it away. The layers then take 25 s; with
+those checks on, they had not finished after 32 minutes. Generated trees are proved all at
+once: every index is a constant the compiler has checked, so no check depends on a
+comparison, and `outputs` over all 14 trees takes 4.8 s and 104 MB. Trees kept as arrays are
+proved one walk at a time, through any tree, in 10 s and 1.7 GB; `outputs` adds the walks'
+leaf values, so it cannot panic once every walk stays in range. All 14 walks in one proof
+ran out of memory with 14 GB. The harnesses are generated by `model!` itself, with loop
+bounds from the model's shape, so nothing is written by hand and every compiled model
+carries the same proofs. All nine, six for the two models of the example and three for the
+same trees as arrays, pass with Kani 0.68 (CBMC 6.11), in 81 s together and under 2 GB
 of memory each (`reports/kani/`).
 
 **What else the compiler knows.** Proving the absence of panics is the floor. The
@@ -504,40 +551,45 @@ equivalent pandas + scikit-learn code. Both sides get the same rows, split, feat
 training settings, and each candidate is paired with its scikit-learn counterpart. The
 run was on WSL2 on the same Ryzen 9 9950X3D2, with Python 3.14, scikit-learn 1.9.1 and
 pandas 3.1. The full table, with p99 latency, batch throughput and artifact sizes, is in
-`reports/benchmarks/2026-10-27-linux-x86_64-v2`.
+`reports/benchmarks/2026-10-31-linux-x86_64`.
 
 | | Tabsmith linear | logistic regression | Tabsmith MLP | `MLPClassifier` | Tabsmith GBDT | `HistGradientBoosting` |
 |---|---|---|---|---|---|---|
 | Test balanced accuracy | 0.7528 | 0.7516 | 0.7729 | 0.7314 | 0.7332 | 0.7295 |
 | Test ROC AUC | 0.8202 | 0.8209 | 0.8250 | 0.7928 | 0.8188 | 0.8184 |
-| Training time | 0.11 s | 0.04 s | 0.10 s | 0.13 s | 0.67 s | 3.66 s |
-| One prediction in an application (p50) | 2.4 µs | 1,993 µs | 2.6 µs | 2,007 µs | 3.0 µs | 2,844 µs |
-| New process: load, predict one record | 1 ms | 618 ms | 1 ms | 612 ms | 1 ms | 625 ms |
-| Peak memory of that process | 12 MB | 160 MB | 12 MB | 161 MB | 12 MB | 164 MB |
+| Training time | 0.09 s | 0.03 s | 0.11 s | 0.14 s | 0.12 s | 3.53 s |
+| One prediction in an application (p50) | 2.5 µs | 2,021 µs | 2.8 µs | 1,990 µs | 3.0 µs | 2,592 µs |
+| A batch of 10,000 records | 4.6 M rows/s | 0.64 M rows/s | 4.1 M rows/s | 0.38 M rows/s | 3.5 M rows/s | 0.45 M rows/s |
+| New process: load, predict one record | 1 ms | 570 ms | 1 ms | 550 ms | 1 ms | 573 ms |
+| Peak memory of that process | 12 MB | 162 MB | 12 MB | 162 MB | 12 MB | 165 MB |
 
 Quality is on par for the linear model and for the trees (ROC AUC 0.8188 against
 0.8184). Tabsmith's small MLP is ahead of `MLPClassifier`, which was given the same
-number of epochs. Tabsmith's single-threaded GBDT trained its 54 rounds in 0.67 s, while
-`HistGradientBoostingClassifier`, which uses every core by default, took 3.66 s for the
-same 54 rounds. That is a statement about a 7,356-row problem, where per-round overheads
-dominate; on large data the parallel implementation should win.
+number of epochs. Tabsmith's GBDT trained its 54 rounds in 0.12 s, while
+`HistGradientBoostingClassifier` took 3.53 s for the same 54 rounds. Most of that goes to
+the class weights both sides use (a separate fit took 3.3 s with them and 0.13 s
+without), so this says little about the trees themselves; on larger data the two are
+about even (below).
 
 The decisive differences are in deployment:
-- a prediction from an application costs 2.4–3.0 µs instead of 2.0–2.8 ms;
+- a prediction from an application costs 2.5–3.0 µs instead of 2.0–2.6 ms;
+- a batch of records runs 7 to 11 times faster, on up to 16 threads, and 1.5 to 2.5 times
+  faster on one;
 - a new process answers after 1 ms instead of about 0.6 s, in 12 MB instead of 160 MB;
-- the application is a 1.7 MB binary instead of a 354 MB Python environment.
+- the application is a 1.9 MB binary instead of a 354 MB Python environment.
 
 **Public datasets.** The same comparison on three public datasets, one per task (UCI
 Adult, California Housing, UCI Covertype; `reports/datasets/`), gives the same picture
 for quality: every candidate matches its scikit-learn equivalent on the same rows and
 split to within the test split's resolution, and the trees agree to the third decimal
 (Adult: ROC AUC 0.9301 against 0.9297; California: R² 0.8438 on both sides; Covertype:
-accuracy 0.8995 against 0.8984). It also gives the clearest loss: the trees train 17
-to 21 times slower than `HistGradientBoosting` on the larger problems (513 s against
-31 s for 400 rounds of 7 trees on Covertype), because each leaf's histogram is rebuilt
-from its rows, the parallelism is over rows in fixed chunks, and the sums keep an order
-that gives the same trees on any core count. The linear model and the network train as
-fast or faster on one thread.
+accuracy 0.8995 against 0.8984). The trees now train in about the time of
+`HistGradientBoosting`. On one operating system at a time, with Tabsmith on 12 threads and
+scikit-learn on 16: on Windows they are 1.4 to 2.1 times faster, and in WSL they are 1.9 times
+faster on California and about 1.4 times slower on Adult and Covertype (table in
+`reports/datasets/2026-10-31-windows-x86_64`). The linear model and the network train as
+fast or faster on one thread. LightGBM and XGBoost, which are faster than
+`HistGradientBoosting` on large data, were not measured.
 
 ### 7.3 GPU certification
 
@@ -571,7 +623,7 @@ from 49 to 32 ms.
 
 ### 7.4 Robustness
 
-The workspace has 179 tests and 7 doctests. They include property tests (proptest) that
+The workspace has 214 tests and 11 doctests. They include property tests (proptest) that
 check these invariants on random inputs:
 - predictions are total and independent of batch composition;
 - a compiled model and the runtime return the same bits, and refuse the same records;
@@ -594,21 +646,17 @@ execute.
 ## 8. Limitations and future work
 
 - **Scale.** Data is held in memory. The networks train on one thread by design (§4);
-  the trees build their bins and histograms and apply each grown tree on every core,
-  with chunk sums merged in a fixed order so that the result does not depend on the
-  core count (§5). Each leaf's histogram is still built from its own rows, where the
-  usual trick derives one child's histogram as the parent's minus its sibling's; that
-  trick changes the rounding and was left out. On 1,000,000 rows (a 172 MB CSV, 35
-  features) the whole `tabsmith train` runs in 42 s with a 1.6 GB working set, 148
-  rounds in 29.6 s (`reports/scaling/`). Out-of-core training (reading the data in row
-  groups) is not implemented, so ten million rows would need about 16 GB.
+  the trees run on up to 12 threads, with a result that does not depend on the count
+  (§5). On 1,000,000 rows (a 172 MB CSV, 35 features) the whole `tabsmith train` runs in
+  18 s with a 1.6 GB working set, 148 rounds in 4.5 s (`reports/scaling/`). Out-of-core
+  training (reading the data in row groups) is not implemented, so ten million rows
+  would need about 16 GB.
 - **Trees.** There are no native categorical splits or sampling schemes such as GOSS.
   (Monotone constraints exist: kept by construction, recorded in the bundle, checked by
-  the loader and by the compiler.) Training is also slower than it needs to be: each leaf's
-  histogram is built from its rows, where the usual trick derives one child's histogram
-  as the parent's minus its sibling's. The learner trades breadth and speed for
-  determinism and auditability, and the subtraction trick is the first speed-up to
-  take.
+  the loader and by the compiler.) The learner trades breadth for determinism and
+  auditability. The next speed-ups would be bundling one-hot columns, which are nearly
+  all one bin, and thread dispatch cheaper than a work-stealing pool's: in WSL more than
+  about 8 threads bring nothing or make training slower.
 - **GPU.** Fp32 on CUDA waits on an upstream switch. A draft issue for `cubek-matmul`
   proposes a precision policy modelled on PyTorch's
   `set_float32_matmul_precision`. A second draft, for `cubecl-wgpu`, reports the panic

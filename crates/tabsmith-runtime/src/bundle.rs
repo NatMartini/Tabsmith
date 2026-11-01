@@ -77,6 +77,10 @@ pub struct LoadOptions {
     /// fields, changed field kinds or types, stricter policies, a different target
     /// or label mapping). Default: false.
     pub allow_contract_change: bool,
+    /// Threads a large batch may use: 0 lets the runtime choose (the logical CPUs, up to
+    /// 16), 1 keeps everything on the calling thread. A batch below 4,096 rows stays
+    /// on the calling thread anyway. Predictions do not depend on this. Default: 0.
+    pub threads: usize,
 }
 
 impl LoadOptions {
@@ -87,6 +91,7 @@ impl LoadOptions {
             verify_hashes: true,
             self_check: false,
             allow_contract_change: false,
+            threads: 0,
         }
     }
 
@@ -105,6 +110,13 @@ impl LoadOptions {
     /// Whether every file's SHA-256 is checked against the manifest.
     pub fn with_hash_verification(mut self, yes: bool) -> Self {
         self.verify_hashes = yes;
+        self
+    }
+
+    /// How many threads a large batch may use: see [`LoadOptions::threads`]. An application
+    /// that must not start threads passes 1.
+    pub fn with_threads(mut self, threads: usize) -> Self {
+        self.threads = threads;
         self
     }
 

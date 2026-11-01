@@ -1,0 +1,4 @@
+sklearn 1.5.1 OMP_NUM_THREADS 16
+california: 14447 rows, 8 features, 334 rounds: 0.40 s, 1.2 ms per round
+adult: 34189 rows, 105 features, 180 rounds: 0.91 s, 5.1 ms per round
+covertype: 406708 rows, 54 features, 40 rounds: 4.43 s, 110.8 ms per round

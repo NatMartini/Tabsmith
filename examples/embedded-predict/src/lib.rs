@@ -27,6 +27,11 @@
 tabsmith_macros::model!(defects, "../../fixtures/bundles/binary-gbdt", kani);
 tabsmith_macros::model!(defects_mlp, "../../fixtures/bundles/binary-mlp", kani);
 
+// The same trees as arrays, the form a very large ensemble keeps. It exists only so that
+// `cargo kani` keeps proving that form too; the firmware does not contain it.
+#[cfg(kani)]
+tabsmith_macros::model!(defects_arrays, "../../fixtures/bundles/binary-gbdt", tree_arrays, kani);
+
 pub use tabsmith_embedded::{InputError, SelfCheckError};
 
 /// The trees' probability of a defect lies within these bounds for every possible

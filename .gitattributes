@@ -1,4 +1,6 @@
 # Shell scripts must keep LF line endings to run after a Windows checkout.
 *.sh text eol=lf
+# Batch files must keep CRLF line endings to run reliably on Windows.
+*.cmd text eol=crlf
 # Reference fixtures are read byte for byte by the tests: never convert line endings.
 fixtures/** -text

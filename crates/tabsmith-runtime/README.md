@@ -44,6 +44,11 @@ runs in a browser. `Predictor` implements the `tabsmith_embedded::Model` trait, 
 model compiled with `tabsmith-macros` does, so an application can be written once for
 both.
 
+`Predictor::predict` and `predict_table` run a batch of 4,096 rows or more on several
+threads, up to 16 unless `LoadOptions::with_threads` says otherwise, on plain scoped
+threads with no dependency added. The predictions are the same at any thread count, in the
+same order, and so is the error when a record is wrong. WebAssembly stays on one thread.
+
 Loading is all-or-nothing: the manifest, every file's SHA-256 and size, the
 bundle id, format versions and the consistency of schemas, transform and weights
 are checked before a `Predictor` exists. `PredictorHandle::try_update` swaps in a
@@ -66,6 +71,7 @@ FP32 的全连接网络与梯度提升树，并可原样编译为 WebAssembly。
 `probability()`（二分类、多分类）、`probabilities()`（多分类）、`value()`（回归）。模型包带有 conformal 校准（`conformal.json`）时，
 预测还附带 `interval`（回归）或 `prediction_set`（分类）：在与校准行同分布的行上，真值落在其中的概率约为 `1 − alpha`。
 `Predictor` 实现了 `tabsmith_embedded::Model` trait，用 `tabsmith-macros` 编译进代码的模型也实现了它，应用代码可以只写一份。
+4,096 行以上的批量最多用 16 个线程（`LoadOptions::with_threads` 可以改），预测和顺序都与线程数无关。
 中文文档见仓库中的 `README.zh-CN.md`。
 
 ## License

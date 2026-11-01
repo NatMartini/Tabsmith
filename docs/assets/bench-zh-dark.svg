@@ -10,23 +10,23 @@
 <rect x="300" y="58" width="3.0" height="18" rx="3" fill="#f97316"/>
 <text x="311.0" y="72" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="13.5" font-weight="700" fill="#fb923c" text-anchor="start">1 ms</text>
 <rect x="300" y="84" width="560.0" height="18" rx="3" fill="#656c76"/>
-<text x="868.0" y="98" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="13.5" font-weight="700" fill="#9198a1" text-anchor="start">612 ms</text>
+<text x="868.0" y="98" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="13.5" font-weight="700" fill="#9198a1" text-anchor="start">550 ms</text>
 <text x="0" y="146" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="15" font-weight="700" fill="#f0f6fc" text-anchor="start">单次预测</text>
 <text x="0" y="165" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="12.5" font-weight="400" fill="#9198a1" text-anchor="start">应用内的单条记录，p50</text>
 <rect x="300" y="130" width="3.0" height="18" rx="3" fill="#f97316"/>
-<text x="311.0" y="144" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="13.5" font-weight="700" fill="#fb923c" text-anchor="start">2.6 µs</text>
+<text x="311.0" y="144" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="13.5" font-weight="700" fill="#fb923c" text-anchor="start">2.8 µs</text>
 <rect x="300" y="156" width="560.0" height="18" rx="3" fill="#656c76"/>
 <text x="868.0" y="170" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="13.5" font-weight="700" fill="#9198a1" text-anchor="start">2.0 ms</text>
 <text x="0" y="218" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="15" font-weight="700" fill="#f0f6fc" text-anchor="start">内存</text>
 <text x="0" y="237" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="12.5" font-weight="400" fill="#9198a1" text-anchor="start">冷启动进程的峰值</text>
-<rect x="300" y="202" width="42.6" height="18" rx="3" fill="#f97316"/>
-<text x="350.6" y="216" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="13.5" font-weight="700" fill="#fb923c" text-anchor="start">12 MB</text>
+<rect x="300" y="202" width="42.3" height="18" rx="3" fill="#f97316"/>
+<text x="350.3" y="216" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="13.5" font-weight="700" fill="#fb923c" text-anchor="start">12 MB</text>
 <rect x="300" y="228" width="560.0" height="18" rx="3" fill="#656c76"/>
-<text x="868.0" y="242" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="13.5" font-weight="700" fill="#9198a1" text-anchor="start">161 MB</text>
+<text x="868.0" y="242" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="13.5" font-weight="700" fill="#9198a1" text-anchor="start">162 MB</text>
 <text x="0" y="290" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="15" font-weight="700" fill="#f0f6fc" text-anchor="start">交付体积</text>
 <text x="0" y="309" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="12.5" font-weight="400" fill="#9198a1" text-anchor="start">应用需要带上的东西</text>
 <rect x="300" y="274" width="3.0" height="18" rx="3" fill="#f97316"/>
-<text x="311.0" y="288" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="13.5" font-weight="700" fill="#fb923c" text-anchor="start">1.7 MB</text>
+<text x="311.0" y="288" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="13.5" font-weight="700" fill="#fb923c" text-anchor="start">1.9 MB</text>
 <rect x="300" y="300" width="560.0" height="18" rx="3" fill="#656c76"/>
 <text x="868.0" y="314" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif" font-size="13.5" font-weight="700" fill="#9198a1" text-anchor="start">354 MB</text>
 </svg>

@@ -1,0 +1,7 @@
+sample-data: 3 s, 172 MB
+train (gbdt): exit , wall 18 s, peak working set 1595 MB
+run: run-001 candidate=gbdt status=completed rounds=148 steps_done=148
+valid: balanced_accuracy=0.7609631276402598 roc_auc=0.8395791407975739
+timings: 
+stages: 
+stderr tail:

@@ -1,0 +1,40 @@
+built
+covertype t=default: train 4.086 s, rounds 40, weights 9b86e39024e4db16
+covertype t=1: train 8.134 s, rounds 40, weights 9b86e39024e4db16
+covertype t=2: train 5.060 s, rounds 40, weights 9b86e39024e4db16
+covertype t=4: train 3.708 s, rounds 40, weights 9b86e39024e4db16
+covertype t=6: train 3.832 s, rounds 40, weights 9b86e39024e4db16
+covertype t=8: train 3.851 s, rounds 40, weights 9b86e39024e4db16
+covertype t=12: train 3.915 s, rounds 40, weights 9b86e39024e4db16
+covertype t=16: train 4.117 s, rounds 40, weights 9b86e39024e4db16
+covertype t=24: train 4.610 s, rounds 40, weights 9b86e39024e4db16
+covertype t=32: train 4.855 s, rounds 40, weights 9b86e39024e4db16
+adult t=default: train 0.877 s, rounds 180, weights eea00e7112c87cc1
+adult t=1: train 0.953 s, rounds 180, weights eea00e7112c87cc1
+adult t=4: train 0.687 s, rounds 180, weights eea00e7112c87cc1
+adult t=8: train 0.783 s, rounds 180, weights eea00e7112c87cc1
+adult t=16: train 0.873 s, rounds 180, weights eea00e7112c87cc1
+adult t=32: train 0.875 s, rounds 180, weights eea00e7112c87cc1
+california t=default: train 0.245 s, rounds 334, weights 6cdc0dee0a7e9668
+california t=1: train 0.215 s, rounds 334, weights 6cdc0dee0a7e9668
+california t=4: train 0.250 s, rounds 334, weights 6cdc0dee0a7e9668
+california t=8: train 0.250 s, rounds 334, weights 6cdc0dee0a7e9668
+california t=16: train 0.250 s, rounds 334, weights 6cdc0dee0a7e9668
+covertype-full t=default: train 36.194 s, rounds 400, weights ab735adb28f14eaa
+rows-1000000 t=default: train 5.195 s, rounds 148, weights 46c4eea6dde5569f
+rows-1000000 t=1: train 12.505 s, rounds 148, weights 46c4eea6dde5569f
+rows-1000000 t=4: train 5.644 s, rounds 148, weights 46c4eea6dde5569f
+rows-1000000 t=8: train 5.265 s, rounds 148, weights 46c4eea6dde5569f
+rows-1000000 t=32: train 5.862 s, rounds 148, weights 46c4eea6dde5569f
+--- scikit-learn: default threads
+effective threads 16
+sklearn 1.9.1 OMP_NUM_THREADS default
+california: 14447 rows, 8 features, 334 rounds: 0.47 s, 1.4 ms per round
+adult: 34189 rows, 105 features, 180 rounds: 0.65 s, 3.6 ms per round
+covertype: 406708 rows, 54 features, 40 rounds: 2.89 s, 72.3 ms per round
+--- scikit-learn: 8 threads
+sklearn 1.9.1 OMP_NUM_THREADS 8
+california: 14447 rows, 8 features, 334 rounds: 0.25 s, 0.8 ms per round
+adult: 34189 rows, 105 features, 180 rounds: 0.66 s, 3.7 ms per round
+covertype: 406708 rows, 54 features, 40 rounds: 3.97 s, 99.3 ms per round
+done

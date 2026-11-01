@@ -1,0 +1,12 @@
+$ <repo>/target/release/tabsmith bundle build --run run-002
+built bundle b-9a793f129136358f at bundles/run-002
+  10 files, evaluation: evaluated, self-check: passed (5 examples, max |Δp| 0.0e0)
+  conformal (split-conformal/lac): alpha 0.1, quantile 0.6763 from 1258 validation rows; predictions carry a prediction set
+  importance (drop of balanced_accuracy on 1258 validation rows when shuffled): vibration_rms +0.0891, vibration_peak +0.0555, temp_max +0.0427, temp_mean +0.0287, line +0.0140, …
+
+use it from Rust:
+  let predictor = Predictor::load("bundles/run-002", LoadOptions::cpu())?;
+check it on the target machine:
+  tabsmith bundle check bundles/run-002
+
+--- stderr ---

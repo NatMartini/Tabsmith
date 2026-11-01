@@ -1,0 +1,5 @@
+windows x86_64
+binary-mlp         compiled 06340251457e6ef3  runtime 06340251457e6ef3  equal  | runtime     3914 ns  compiled(values)    334 ns  compiled(Input)    322 ns
+binary-gbdt        compiled b50b8e115c248237  runtime b50b8e115c248237  equal  | runtime     3617 ns  compiled(values)     64 ns  compiled(Input)     51 ns
+multiclass-gbdt    compiled 4f5577ab0f4e26c5  runtime 4f5577ab0f4e26c5  equal  | runtime     3878 ns  compiled(values)    110 ns  compiled(Input)     98 ns
+regression-gbdt    compiled d2749e9e207c1285  runtime d2749e9e207c1285  equal  | runtime     4204 ns  compiled(values)    105 ns  compiled(Input)     93 ns

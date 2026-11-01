@@ -7,6 +7,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
+documentation = "https://github.com/NatMartini/Tabsmith#readme"
 authors.workspace = true
 readme = "README.md"
 keywords = ["machine-learning", "cli", "tabular", "classification", "training"]

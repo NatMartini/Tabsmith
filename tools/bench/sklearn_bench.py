@@ -112,12 +112,18 @@ def main():
         yt = y[te]
         quality = {"balanced_accuracy": M.balanced_accuracy_score(yt, (p_test >= 0.5).astype(int)),
                    "roc_auc": M.roc_auc_score(yt, p_test), "log_loss": M.log_loss(yt, p_test)}
-        # Batch: the whole table in one call.
-        t0 = time.perf_counter()
-        rounds = 5
-        for _ in range(rounds):
-            pipe.predict_proba(x)
-        batch_s = (time.perf_counter() - t0) / rounds
+        # Batch: the whole table in one call, from a DataFrame already in memory, and from
+        # the same records an application would receive.
+        rounds = 9
+        def median_s(f):
+            times = []
+            for _ in range(rounds):
+                t0 = time.perf_counter()
+                f()
+                times.append(time.perf_counter() - t0)
+            return sorted(times)[rounds // 2]
+        batch_s = median_s(lambda: pipe.predict_proba(x))
+        records_s = median_s(lambda: pipe.predict_proba(pd.DataFrame(records)))
         # Single record: a one-row DataFrame per call, as a request handler would do.
         for d in one_rows[:50]:
             pipe.predict_proba(d)
@@ -134,6 +140,7 @@ def main():
             "fit_seconds": fit_s, "test": quality,
             "iterations": int(np.max(model.n_iter_)),
             "batch": {"rows": int(len(df)), "seconds": batch_s, "rows_per_second": len(df) / batch_s},
+            "batch_records": {"rows": len(records), "seconds": records_s, "rows_per_second": len(records) / records_s},
             "single_record_us": {"p50": q(0.5), "p95": q(0.95), "p99": q(0.99), "iterations": len(lat)},
             "model_file_bytes": os.path.getsize(path),
         }

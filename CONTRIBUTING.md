@@ -172,6 +172,13 @@ without any additional terms or conditions.
    the crate README and the license files (warnings about skipped tests and
    examples are expected).
 
+On Windows, `tools/publish.cmd` does steps 3 and 4 with a double-click, once step 2 is
+committed. It checks the repository, shows the plan and waits for Enter, packages and builds
+every crate locally, pushes, waits for CI on that commit, tags, and publishes. If the version
+is already on crates.io it only pushes. After a failure, run it again: what is done is
+skipped. It never commits and never force-pushes, and `-DryRun` shows the plan and changes
+nothing.
+
 ---
 
 ## 中文
@@ -271,3 +278,6 @@ Tabsmith 采用 [MIT](LICENSE-MIT) 与 [Apache-2.0](LICENSE-APACHE) 双许可。
    并发布 GitHub Release（附 `install.sh`、`install.ps1` 和每个压缩包的 `.sha256`）。带 `-` 的标签（如 `v0.2.0-rc.1`）会作为预发布。
 4. 按依赖顺序发布 crate：`tabsmith-contracts`、`tabsmith-embedded`、`tabsmith-runtime`、`tabsmith-macros`、`tabsmith-workflow`、`tabsmith-cli`（`cargo publish -p <crate>`）。
    发布前可用 `cargo package --list -p <crate>` 检查；包中只含 `src/`、crate 的 README 和许可证文件（关于跳过测试和示例的警告属正常）。
+
+在 Windows 上，第 2 步提交之后，双击 `tools/publish.cmd` 就能完成第 3、4 步：检查仓库，显示清单并等你按回车，在本地打包并构建每个 crate，push，等这个提交的 CI 通过，打标签，发布。
+如果这个版本已在 crates.io 上，它只 push。失败后再运行一次，已完成的步骤会跳过。它不会提交，也不会强制 push；`-DryRun` 只显示清单，不改动任何东西。

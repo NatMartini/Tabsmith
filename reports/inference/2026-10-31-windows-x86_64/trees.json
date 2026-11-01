@@ -1,0 +1,206 @@
+[
+  {
+    "lines": [
+      {
+        "how": "runtime, one thread",
+        "us_per_row": 0.17232
+      },
+      {
+        "how": "arrays, row by row",
+        "us_per_row": 0.16947
+      },
+      {
+        "how": "arrays, tree by tree",
+        "us_per_row": 0.31116
+      },
+      {
+        "how": "code, row by row",
+        "us_per_row": 0.059730000000000005
+      },
+      {
+        "how": "code, tree by tree",
+        "us_per_row": 0.14894000000000002
+      },
+      {
+        "how": "code, outputs_batch",
+        "us_per_row": 0.06301
+      }
+    ],
+    "max_depth": 8,
+    "model": "Fixture binary-gbdt",
+    "nodes": 854,
+    "outputs": 1,
+    "rows": 10000,
+    "trees": 14
+  },
+  {
+    "lines": [
+      {
+        "how": "runtime, one thread",
+        "us_per_row": 1.9709299999999998
+      },
+      {
+        "how": "arrays, row by row",
+        "us_per_row": 1.97617
+      },
+      {
+        "how": "arrays, tree by tree",
+        "us_per_row": 2.2973
+      },
+      {
+        "how": "code, row by row",
+        "us_per_row": 0.7860199999999999
+      },
+      {
+        "how": "code, tree by tree",
+        "us_per_row": 0.9086800000000002
+      },
+      {
+        "how": "code, outputs_batch",
+        "us_per_row": 0.79491
+      }
+    ],
+    "max_depth": 8,
+    "model": "Adult",
+    "nodes": 9151,
+    "outputs": 1,
+    "rows": 10000,
+    "trees": 155
+  },
+  {
+    "lines": [
+      {
+        "how": "runtime, one thread",
+        "us_per_row": 2.17305
+      },
+      {
+        "how": "arrays, row by row",
+        "us_per_row": 2.62844
+      },
+      {
+        "how": "arrays, tree by tree",
+        "us_per_row": 2.54572
+      },
+      {
+        "how": "code, row by row",
+        "us_per_row": 1.16849
+      },
+      {
+        "how": "code, tree by tree",
+        "us_per_row": 1.36655
+      },
+      {
+        "how": "code, outputs_batch",
+        "us_per_row": 1.11293
+      }
+    ],
+    "max_depth": 8,
+    "model": "Covertype, 40 rounds",
+    "nodes": 16848,
+    "outputs": 7,
+    "rows": 10000,
+    "trees": 280
+  },
+  {
+    "lines": [
+      {
+        "how": "runtime, one thread",
+        "us_per_row": 3.96089
+      },
+      {
+        "how": "arrays, row by row",
+        "us_per_row": 4.03939
+      },
+      {
+        "how": "arrays, tree by tree",
+        "us_per_row": 3.50711
+      },
+      {
+        "how": "code, row by row",
+        "us_per_row": 1.53841
+      },
+      {
+        "how": "code, tree by tree",
+        "us_per_row": 1.37528
+      },
+      {
+        "how": "code, outputs_batch",
+        "us_per_row": 1.5409700000000002
+      }
+    ],
+    "max_depth": 8,
+    "model": "California Housing",
+    "nodes": 18823,
+    "outputs": 1,
+    "rows": 10000,
+    "trees": 309
+  },
+  {
+    "lines": [
+      {
+        "how": "runtime, one thread",
+        "us_per_row": 9.609470000000002
+      },
+      {
+        "how": "arrays, row by row",
+        "us_per_row": 15.842229999999999
+      },
+      {
+        "how": "arrays, tree by tree",
+        "us_per_row": 10.2023
+      },
+      {
+        "how": "code, row by row",
+        "us_per_row": 7.224990000000001
+      },
+      {
+        "how": "code, tree by tree",
+        "us_per_row": 5.461329999999999
+      },
+      {
+        "how": "code, outputs_batch",
+        "us_per_row": 5.848520000000001
+      }
+    ],
+    "max_depth": 8,
+    "model": "Covertype, 143 rounds",
+    "nodes": 59781,
+    "outputs": 7,
+    "rows": 10000,
+    "trees": 1001
+  },
+  {
+    "lines": [
+      {
+        "how": "runtime, one thread",
+        "us_per_row": 27.26342
+      },
+      {
+        "how": "arrays, row by row",
+        "us_per_row": 75.24637
+      },
+      {
+        "how": "arrays, tree by tree",
+        "us_per_row": 27.162740000000003
+      },
+      {
+        "how": "code, row by row",
+        "us_per_row": 37.984469999999995
+      },
+      {
+        "how": "code, tree by tree",
+        "us_per_row": 14.32864
+      },
+      {
+        "how": "code, outputs_batch",
+        "us_per_row": 14.43746
+      }
+    ],
+    "max_depth": 8,
+    "model": "Covertype, 400 rounds",
+    "nodes": 169248,
+    "outputs": 7,
+    "rows": 10000,
+    "trees": 2800
+  }
+]

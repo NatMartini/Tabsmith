@@ -2,6 +2,10 @@
 
 [中文](#中文)
 
+**A newer report.** Since 2026-10-31 `model!` turns trees into code by default, and
+[the newer report](../2026-10-31-wsl-linux-x86_64/) proves all the trees at once. The tree
+proof here is what `tree_arrays` still generates.
+
 **Claim.** For the two models that `examples/embedded-predict` compiles with `model!`
 (`defects`, gradient-boosted trees, and `defects_mlp`, a 35-32-16-1 network), prediction
 never panics, for every possible input: any number (NaN and infinities included), any
@@ -99,6 +103,8 @@ cargo kani                              # all six; or --harness proofs::<name>
 ---
 
 ## 中文
+
+**有更新的报告。** 从 2026-10-31 起，`model!` 默认把树生成为代码，[更新的报告](../2026-10-31-wsl-linux-x86_64/)把所有树放进一个证明。这里的树证明仍是 `tree_arrays` 生成的内容。
 
 **结论。** `examples/embedded-predict` 用 `model!` 编译了两个模型（梯度提升树 `defects` 和 35-32-16-1 的神经网络
 `defects_mlp`）。对任何可能的输入（任何数值，包括 NaN 和无穷大；任何类别；任何缺失值），它们的预测都不会 panic。

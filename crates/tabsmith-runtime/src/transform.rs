@@ -4,6 +4,7 @@
 
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::ops::Range;
 
 use tabsmith_contracts::config::{NanPolicy, UnknownCategoryPolicy};
 use tabsmith_contracts::schema::{FieldKind, InputSchema, RawDtype};
@@ -211,7 +212,19 @@ pub fn apply_transform_rows(t: &FittedTransform, table: &Table, phase: Phase, ro
 }
 
 fn transform_impl(t: &FittedTransform, table: &Table, phase: Phase, source_row: &dyn Fn(usize) -> usize) -> Result<Matrix> {
-    let rows = table.n_rows();
+    transform_rows(t, table, phase, source_row, 0..table.n_rows())
+}
+
+/// The features of rows `range` of `table`, as a matrix of just those rows.
+pub(crate) fn transform_rows(
+    t: &FittedTransform,
+    table: &Table,
+    phase: Phase,
+    source_row: &dyn Fn(usize) -> usize,
+    range: Range<usize>,
+) -> Result<Matrix> {
+    let first = range.start;
+    let rows = range.len();
     let cols = t.output_dim;
     let mut data = vec![0f32; rows * cols];
     let tokens = MissingTokens::new(&t.missing_tokens);
@@ -228,7 +241,7 @@ fn transform_impl(t: &FittedTransform, table: &Table, phase: Phase, source_row: 
             FeatureTransform::Numeric {
                 impute, mean, std, offset, ..
             } => {
-                for row in 0..rows {
+                for row in range.clone() {
                     let v = column.get(row);
                     let v = tokens.numeric(v);
                     let x = coerce_numeric(v, t.nan)
@@ -251,7 +264,7 @@ fn transform_impl(t: &FittedTransform, table: &Table, phase: Phase, source_row: 
                         .actual(x.to_string())
                         .next("check the units / clean the value before prediction"));
                     }
-                    data[row * cols + offset] = z;
+                    data[(row - first) * cols + offset] = z;
                 }
             }
             FeatureTransform::Categorical {
@@ -262,7 +275,7 @@ fn transform_impl(t: &FittedTransform, table: &Table, phase: Phase, source_row: 
                 ..
             } => {
                 let index: HashMap<&str, usize> = categories.iter().enumerate().map(|(i, c)| (c.as_str(), i)).collect();
-                for row in 0..rows {
+                for row in range.clone() {
                     let v = column.get(row);
                     let v = tokens.categorical(v);
                     check_category_type(*raw_dtype, v).map_err(|e| e.into_error(name, source_row(row), v, phase))?;
@@ -272,7 +285,7 @@ fn transform_impl(t: &FittedTransform, table: &Table, phase: Phase, source_row: 
                         None => None,
                     };
                     match slot {
-                        Some(s) => data[row * cols + offset + s] = 1.0,
+                        Some(s) => data[(row - first) * cols + offset + s] = 1.0,
                         None if t.unknown_category == UnknownCategoryPolicy::Ignore => {}
                         None => return Err(unknown_category_error(name, source_row(row), v, categories, phase)),
                     }
@@ -380,7 +393,7 @@ pub struct UnseenCategories {
 /// type coercion are skipped here (`apply_transform` reports them).
 pub fn unseen_categories(t: &FittedTransform, table: &Table) -> Vec<UnseenCategories> {
     let mut out: Vec<UnseenCategories> = Vec::new();
-    for_each_unseen(t, table, |field, _row, value| {
+    for_each_unseen(t, table, 0..table.n_rows(), |field, _row, value| {
         if out.last().is_none_or(|u| u.field != field) {
             out.push(UnseenCategories {
                 field: field.to_string(),
@@ -397,16 +410,17 @@ pub fn unseen_categories(t: &FittedTransform, table: &Table) -> Vec<UnseenCatego
     out
 }
 
-/// For each row, the categorical fields whose value was not seen in training.
-pub(crate) fn unseen_fields_by_row(t: &FittedTransform, table: &Table) -> Vec<Vec<String>> {
-    let mut out = vec![Vec::new(); table.n_rows()];
-    for_each_unseen(t, table, |field, row, _| out[row].push(field.to_string()));
+/// For each row of `range`, the categorical fields whose value was not seen in training.
+pub(crate) fn unseen_fields_by_row(t: &FittedTransform, table: &Table, range: Range<usize>) -> Vec<Vec<String>> {
+    let first = range.start;
+    let mut out = vec![Vec::new(); range.len()];
+    for_each_unseen(t, table, range, |field, row, _| out[row - first].push(field.to_string()));
     out
 }
 
 /// Calls `f(field, row, value)` for every categorical value without a slot in
 /// the frozen transform (a missing value counts when there is no missing slot).
-fn for_each_unseen(t: &FittedTransform, table: &Table, mut f: impl FnMut(&str, usize, &str)) {
+fn for_each_unseen(t: &FittedTransform, table: &Table, range: Range<usize>, mut f: impl FnMut(&str, usize, &str)) {
     let tokens = MissingTokens::new(&t.missing_tokens);
     for feature in &t.features {
         let FeatureTransform::Categorical {
@@ -420,7 +434,7 @@ fn for_each_unseen(t: &FittedTransform, table: &Table, mut f: impl FnMut(&str, u
         };
         let Some(column) = table.column(name) else { continue };
         let known: std::collections::HashSet<&str> = categories.iter().map(String::as_str).collect();
-        for row in 0..table.n_rows() {
+        for row in range.clone() {
             match coerce_category(tokens.categorical(column.get(row)), t.nan) {
                 Ok(Some(c)) if !known.contains(c.as_ref()) => f(name, row, c.as_ref()),
                 Ok(None) if !missing_slot => f(name, row, "<missing>"),
@@ -563,7 +577,7 @@ mod tests {
         assert_eq!(u.len(), 1);
         assert_eq!((u[0].field.as_str(), u[0].rows), ("c", 3));
         assert_eq!(u[0].examples, vec!["zzz".to_string(), "yyy".to_string()]);
-        let by_row = unseen_fields_by_row(&t, &tab);
+        let by_row = unseen_fields_by_row(&t, &tab, 0..tab.n_rows());
         assert_eq!(by_row[0], vec!["c".to_string()]);
         assert!(by_row[1].is_empty());
     }

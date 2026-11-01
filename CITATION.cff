@@ -1,0 +1,38 @@
+# Citation metadata (https://citation-file-format.github.io/). GitHub shows it as
+# "Cite this repository" on the repository page, and Zenodo reads it when a release is
+# archived there. To be cited by name, replace the entity below with a person:
+#   - family-names: "<family name>"
+#     given-names: "<given names>"
+#     orcid: "https://orcid.org/0000-0000-0000-0000"
+# and add the DOI Zenodo assigns under `identifiers`.
+cff-version: 1.2.0
+message: "If you use Tabsmith in research, please cite it as below."
+type: software
+title: "Tabsmith: train a model from a CSV and ship it inside a Rust application"
+abstract: >-
+  Tabsmith trains tabular models (linear, small MLP, gradient-boosted trees) from a
+  CSV or Parquet file with one command and ships them without Python: as a verified
+  bundle loaded by a small runtime crate, or compiled into typed no_std Rust code whose
+  prediction the Kani model checker proves panic-free, with sound output bounds and
+  monotone constraints checked at compile time. Every bundle carries conformal
+  prediction intervals or sets and permutation importance.
+authors:
+  - name: "Tabsmith contributors"
+version: 0.3.0
+date-released: 2026-10-31
+license:
+  - MIT
+  - Apache-2.0
+repository-code: "https://github.com/NatMartini/Tabsmith"
+url: "https://github.com/NatMartini/Tabsmith"
+keywords:
+  - rust
+  - machine-learning
+  - tabular-data
+  - gradient-boosting
+  - model-deployment
+  - no-std
+  - embedded
+  - formal-verification
+  - kani
+  - conformal-prediction
