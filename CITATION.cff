@@ -19,7 +19,7 @@ abstract: >-
 authors:
   - name: "Tabsmith contributors"
 version: 0.3.0
-date-released: 2026-10-31
+date-released: 2026-11-01
 license:
   - MIT
   - Apache-2.0

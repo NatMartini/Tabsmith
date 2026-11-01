@@ -8,7 +8,7 @@ Before 1.0, minor versions may contain breaking changes.
 
 ## [Unreleased]
 
-## [0.3.0] - 2026-10-31
+## [0.3.0] - 2026-11-01
 
 Speed, with every bit kept. The trees train 11 to 36 times faster, and a batch of records
 predicts 7 to 11 times faster than scikit-learn's, with the same results at any thread count.
