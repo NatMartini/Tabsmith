@@ -1,5 +1,6 @@
-//! The thread pool of the parts of the workflow that run on several threads: the trees'
-//! training, row fingerprints, permutation importance, per-row losses and metrics.
+//! How many threads the workflow uses, and the rayon pool of the parts that run a few long
+//! sections: the trees' binning, row fingerprints, permutation importance, per-row losses and
+//! metrics. The trees' boosting rounds run thousands of short ones, on [`crate::pool`].
 //!
 //! Everything run here is a pure function of its index (a feature, a row, a leaf), and
 //! the results are combined in index order, so nothing depends on the number of threads.
@@ -10,10 +11,9 @@ use std::sync::OnceLock;
 use rayon::prelude::*;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 
-/// At most this many threads unless `RAYON_NUM_THREADS` says otherwise. A boosting round
-/// has many short parallel sections, and memory bandwidth limits the long ones. Measured
-/// on 16 cores with 32 logical CPUs: 12 threads train within about 9% of the best count
-/// on Windows and in WSL; 32 threads gain 8% at most on Windows and lose 31% in WSL.
+/// At most this many threads unless `RAYON_NUM_THREADS` says otherwise: memory bandwidth limits
+/// the long sections of a boosting round. Measured on 16 cores with 32 logical CPUs, the trees
+/// train about as fast on 8 to 16 threads, and more only lose time (`reports/training/`).
 const MAX_THREADS: usize = 12;
 
 /// Below this many rows, [`map_rows`] stays on the calling thread.

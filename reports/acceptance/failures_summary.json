@@ -89,8 +89,8 @@
       "scenario": "f10-time-split-refused",
       "expected_code": "E_SPLIT_UNSUPPORTED",
       "code": "E_SPLIT_UNSUPPORTED",
-      "message": "a chronological (time) split is required but not implemented in tabular-binary@0.1",
-      "next_action": "Tabsmith will not fall back to a random split for time-dependent data; split the file by time yourself into train/test files, or remove data.time_column if rows are truly independent",
+      "message": "data.time_column is declared but data.split is not \"time\": a random split would put future rows into training",
+      "next_action": "set data.split = \"time\" (or pass --time <column>) for a chronological split, or remove data.time_column if rows are truly independent",
       "retained": [],
       "actionable": true
     },

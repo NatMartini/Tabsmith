@@ -8,6 +8,51 @@ Before 1.0, minor versions may contain breaking changes.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-03
+
+The trees train 1.5 to 4.9 times faster, between LightGBM and XGBoost, in safe Rust, with a model
+that no thread count or optimisation can change by a byte. Their weights change
+once, because the arithmetic does; bundles built before keep predicting the same bits.
+
+### Changed
+
+- **The trees add integers.** A row's gradient and hessian become integers at a scale fixed per
+  tree, and a histogram cell is a sum of integers, which has no rounding and no order. Every
+  decision is a pure function of those sums, so threads, row order and how the sums are computed
+  cannot change the model ([D15](docs/design-decisions.md#d15-the-trees-add-integers-on-workers-that-spin)).
+  Test metrics stay on par (`reports/training/`). A checkpoint of an earlier version is refused,
+  as its arithmetic differs.
+- **Thresholds come from counts**, of values in cells of their binary form, refined where a cell
+  holds more than its share of the rows. They read less cleanly (`3.0000305` for a value that
+  occurs once) and split the same way. A value that repeats gets a threshold of exactly itself, so
+  one-hot splits stay at `x <= 0.0`.
+- **Sections run on workers that spin** for about a millisecond before they park, in about 190
+  lines of safe Rust (`pool.rs`). Under rayon a section costs 20 to 80 µs on Windows and 300 to
+  1,400 µs in WSL 2; here a microsecond or two. The trees now scale to about 8 threads, where they
+  stopped at about 4.
+- **Exclusive one-hot columns share a pass**, and a pass adds its rows to two tables in turn.
+- **A round computes each row's probabilities once.** The training loss in a run's history is now
+  measured on a fixed sample of about 4,096 rows; the validation loss, which decides early
+  stopping, still covers every row.
+- `gbdt.rs` became `gbdt/`: `bins.rs`, `rows.rs`, `grow.rs`, `mod.rs` and `tests.rs`.
+- A short run checkpoints at its end, not also after 50 rounds: the interval counts from the start.
+- The acceptance report is made again, on this version; the one before came from 0.1.0. Its
+  trees train in 78 ms instead of 797 ms, and after new data they are the model chosen.
+
+### Added
+
+- **The first comparison with LightGBM and XGBoost**, on one machine and the same rows and settings
+  (`reports/training/`, `tools/datasets/compare_gbm.py`).
+- **CI compares the trees' bytes** on Linux, macOS and Windows, for all three tasks
+  (`tasks.rs::the_trees_have_the_same_bytes_on_every_system`).
+
+### Fixed
+
+- A property test failed about once in fifteen runs when a random edit hit the bundle's build time,
+  which the bundle's id leaves out on purpose.
+- The dataset reports give each download's address and SHA-256. Their steps to reproduce
+  pointed to links that were not there.
+
 ## [0.3.0] - 2026-11-01
 
 Speed, with every bit kept. The trees train 11 to 36 times faster, and a batch of records
@@ -235,7 +280,8 @@ system with its evidence.
   run on Windows.
 - macOS is checked only by CI's Apple Silicon runners; nobody has run Tabsmith on a Mac by hand.
 
-[Unreleased]: https://github.com/NatMartini/Tabsmith/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/NatMartini/Tabsmith/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/NatMartini/Tabsmith/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/NatMartini/Tabsmith/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/NatMartini/Tabsmith/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/NatMartini/Tabsmith/releases/tag/v0.1.0

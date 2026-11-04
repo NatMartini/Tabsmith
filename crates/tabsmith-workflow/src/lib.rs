@@ -14,6 +14,7 @@ pub mod fit;
 pub mod gbdt;
 pub mod metrics;
 mod parallel;
+mod pool;
 pub mod project;
 pub mod report;
 pub mod rng;

@@ -48,6 +48,33 @@ fn examples(p: &Predictor) -> Vec<Record> {
     p.bundle().examples.records.iter().map(|v| Record::from_json(v).unwrap()).collect()
 }
 
+/// The weights of the trees, byte for byte, for each task. CI runs this on Linux, macOS and Windows,
+/// where the trees promise the same bytes (`docs/design-decisions.md`, D5). If one system fails, its
+/// arithmetic differs and the promise does not hold there. If all fail after a change to the trainer,
+/// the new model may be intended: then update the hashes in the same commit, and say why.
+#[test]
+fn the_trees_have_the_same_bytes_on_every_system() {
+    let gbdt = RunOptions {
+        candidates: Some(vec![Candidate::Gbdt]),
+        ..Default::default()
+    };
+    let hashes = [Task::Binary, Task::Multiclass, Task::Regression].map(|task| {
+        let tmp = tempfile::tempdir().unwrap();
+        let ws = project(tmp.path(), task, 2500);
+        ws.run(&quick(), &gbdt, &mut |_| {}).unwrap().runs.remove(0).artifacts[0]
+            .sha256
+            .clone()
+    });
+    assert_eq!(
+        hashes,
+        [
+            "93a29d37b5d984480041382b1863a6af0d89629e7ce0dd7086b172821e5eb594",
+            "d5b0f4a6f15e13ef18f934ad34e54d29e0717015c2281b7146763c046eadced1",
+            "7b16d72f17f67e0cd7f71e89f5e28e2a1b47d47433556007eb5850ce89b68cc3",
+        ]
+    );
+}
+
 #[test]
 fn multiclass_trains_evaluates_and_predicts_probabilities() {
     let tmp = tempfile::tempdir().unwrap();

@@ -6,8 +6,8 @@ standard library: on a server, in WebAssembly, or on a microcontroller.
 
 ```toml
 [dependencies]
-tabsmith-macros = "0.3"
-tabsmith-embedded = "0.3"   # the kernels the generated code calls (no_std)
+tabsmith-macros = "0.4"
+tabsmith-embedded = "0.4"   # the kernels the generated code calls (no_std)
 ```
 
 ```rust

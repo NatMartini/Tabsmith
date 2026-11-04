@@ -21,7 +21,7 @@ that prediction never panics for any input. Around the compiled model, Tabsmith 
 the discipline that makes the model worth compiling: leakage-free splits, one
 preprocessing implementation, a test set used once, exact resume, conformal intervals,
 and bundles that carry their own evidence. On a 10,000-row problem the trained models
-match scikit-learn's quality; a new process predicts after 1 ms instead of 550 ms, in
+match scikit-learn's quality; a new process predicts after 1 ms instead of about 750 ms, in
 12 MB instead of 162 MB, and the application ships 1.9 MB instead of 354 MB.
 
 ## 1. Introduction
@@ -119,7 +119,7 @@ evaluation. When new data arrives, the previous bundle and the new model are sco
 the same rows that neither has seen.
 
 *Determinism is a contract.* Randomness comes from a versioned PRNG; CPU training is
-single-threaded; trees sum each feature in row order on one thread at a time, so their
+single-threaded; the trees' histograms are sums of integers, which have no order, so their
 result does not depend on the thread count; checkpoints hold the optimizer state, so
 that resuming after a crash gives the same weights, bit for bit, as an uninterrupted
 run. The trees' training takes its transcendental functions (`exp`, `log`) from a pure
@@ -274,25 +274,23 @@ same objective, and the metrics agree to 10⁻¹²; CI guards these with frozen 
 The README benchmark trains Tabsmith's three candidates and scikit-learn's
 `LogisticRegression`, `MLPClassifier` and `HistGradientBoostingClassifier` on the same
 10,000 rows, split, features and settings, on one machine
-(`reports/benchmarks/2026-10-31-linux-x86_64/`). Quality is on par: the trees match
-`HistGradientBoostingClassifier` (ROC AUC 0.8188 against 0.8184) and the small MLP did
+(`reports/benchmarks/2026-11-01-wsl-linux-x86_64/`). Quality is on par: the trees match
+`HistGradientBoostingClassifier` (ROC AUC 0.8220 against 0.8172) and the small MLP did
 better than `MLPClassifier` here (0.8250 against 0.7928). Tabsmith trains each candidate
 in a fraction of a second. The difference is in shipping: a single-record prediction in an
-application takes about 3 µs instead of 2–3 ms; a new process predicts after 1 ms
-instead of 550 ms, in 12 MB instead of 162 MB; the application is a 1.9 MB binary
+application takes about 3 µs instead of 2–4 ms; a new process predicts after 1 ms
+instead of about 750 ms, in 12 MB instead of 162 MB; the application is a 1.9 MB binary
 instead of a 354 MB Python environment. On three public datasets, one per task (UCI
 Adult, California Housing, UCI Covertype; `reports/datasets/`), every candidate matches
 its scikit-learn equivalent on the same rows and split to within the test split's
-resolution; the trees agree to the third decimal. The trees train in about the time of
-`HistGradientBoosting` (Section 5.5): on Windows 1.4 to 2.1 times faster, in WSL faster
-on the smallest problem and about 1.4 times slower on the others. LightGBM and XGBoost,
-the faster trainers on large data, were not measured.
+resolution; the trees agree to the third decimal. The trees train faster than XGBoost and close to
+LightGBM on the same machine, rows and settings (Section 5.5).
 
 ### 5.3 Robustness
 
 The bundle loader was fuzzed with libFuzzer for 5.3 million inputs without a crash
 (`reports/fuzz/`). Every workspace crate forbids `unsafe`. Property tests cover
-predictions, metrics, splits, epoch orders and damaged bundles; 214 automated tests and
+predictions, metrics, splits, epoch orders and damaged bundles; 224 automated tests and
 11 doctests run on Linux, macOS and Windows in CI, including process-level tests that
 drive the real binary and a crash-and-resume test that aborts the process.
 
@@ -315,15 +313,21 @@ architecture, which is expected for the same reason but was not measured.
 
 ### 5.5 Scale
 
-Determinism did not have to cost speed. A histogram is built one feature at a time and
-each feature sums its rows in row order on one thread, so every `(feature, bin)` sees
-the same additions in the same order on any number of threads, with no partial sums to
-merge. One child's histogram is the parent's minus its sibling's, and which child that
-is depends on the row counts alone. Measured weights are the same at 1 to 32 threads
-and on Windows and Linux (`reports/reproducibility/`). On 1,000,000 rows (a 172 MB CSV,
-35 features) the whole `tabsmith train` runs in 18 s on a 16-core desktop with a 1.6 GB
-working set; the 148 boosting rounds take 4.5 s, 30 ms per round over 698,621 training
-rows, and the validation ROC AUC is 0.840 (`reports/scaling/`). The data is held in
+Determinism did not have to cost speed. A row's gradient and hessian become integers at a
+scale fixed per tree, and a histogram cell is a sum of integers, which has no rounding and no
+order. Every decision is a pure function of those sums, so how they are computed cannot change the
+model: not the number of threads, not the order of the rows, not which features share a pass. That
+freedom is what made the trainer fast. Exclusive one-hot columns share a pass, a pass adds its rows
+to two tables in turn, and parallel sections run on workers that spin between them, in safe Rust,
+which start in a microsecond or two where rayon's sleeping workers take 20 to 80 µs on Windows and
+300 to 1,400 µs in WSL 2. Measured against LightGBM and XGBoost on one machine, with the same rows
+and settings, Covertype's 400 rounds take 8.0 s, against 6.3 s and 12.2 s, at test accuracy 0.8985,
+0.8903 and 0.8546; on the two smallest problems LightGBM stays 1.5 to 1.8 times as fast
+(`reports/training/`). Weights are the same at any thread count and on Windows and Linux, and CI
+compares their bytes on three systems. On 1,000,000 rows (a 172 MB CSV,
+35 features) the whole `tabsmith train` runs in 15 s on a 16-core desktop; the 140 boosting rounds take
+1.2 s, 8 ms per round over 698,621 training rows, and the validation ROC AUC is 0.840
+(`reports/training/`). The data is held in
 memory, so ten million rows would need about 16 GB; out-of-core training is future work.
 
 ## 6. Related work
@@ -350,9 +354,8 @@ them. The output bounds of a network over all inputs are infinite; the useful bo
 need a box, and the box is the user's claim about the inputs. Conformal coverage is
 calibrated on the validation split, which also selected the model, so it is approximate;
 the exact guarantee needs rows the model never saw. The trees have no native categorical
-splits and no sampling, and their training is on a par with scikit-learn's
-`HistGradientBoosting`, not ahead of it everywhere; LightGBM and XGBoost were not
-measured. Training of the
+splits and no sampling, and LightGBM stays faster, by little on large data and 1.5 to 1.8
+times on the smallest problems. Training of the
 networks is reproducible across processes, not across operating systems. GPU training
 is certified only on the hardware it was run on. There has been no user study: every
 number here is about the machine, not about the people who would use it. Per-prediction

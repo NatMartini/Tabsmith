@@ -1,0 +1,42 @@
+0.3 with phase timers and integer sums at scale 2^30, Covertype's 40 rounds (seconds).
+The softmax of a round was not timed separately: it is the rest of the total, about 1.0 and 0.35.
+threads 1 (total 8.391)
+histogram 4.463; best_split 0.056; partition 0.365; subtract 0.006; gradients 0.613; scores 0.186; add_tree_valid 0.242; losses_metric 1.221; checkpoint 0.030; bins 0.197; grow_tree_total 5.006
+threads 8 (total 3.757)
+histogram 1.671; best_split 0.058; partition 0.589; subtract 0.006; gradients 0.269; scores 0.250; add_tree_valid 0.217; losses_metric 0.282; checkpoint 0.030; bins 0.037; grow_tree_total 2.449
+
+This version with phase timers, the same problem:
+threads 1
+phase gradients 0.314
+phase grow_total 1.884
+phase add_leaves 0.089
+phase valid_trees 0.234
+phase probabilities 0.849
+phase train_loss 0.025
+phase valid_loss 0.204
+phase metric 0.015
+phase checkpoint 0.020
+phase bins 0.208
+phase fill_root 0.731
+phase fill_node 0.598
+phase partition 0.470
+phase subtract 0.008
+phase best_split 0.050
+phase - 0.000
+threads 8
+phase gradients 0.046
+phase grow_total 0.538
+phase add_leaves 0.016
+phase valid_trees 0.038
+phase probabilities 0.154
+phase train_loss 0.022
+phase valid_loss 0.047
+phase metric 0.016
+phase checkpoint 0.032
+phase bins 0.043
+phase fill_root 0.181
+phase fill_node 0.164
+phase partition 0.127
+phase subtract 0.009
+phase best_split 0.049
+phase - 0.000

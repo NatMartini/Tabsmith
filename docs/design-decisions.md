@@ -19,10 +19,11 @@ application receives, then how it is produced, then how the code is kept honest.
 | [D7](#d7-stages-are-content-addressed) | Stages are content-addressed | snapshot, split and transform ids |
 | [D8](#d8-errors-are-data-and-nothing-falls-back-silently) | Errors are data, and nothing falls back silently | `TabsmithError`, `docs/errors.md` |
 | [D9](#d9-the-task-is-part-of-the-type-system) | The task is part of the type system | `Task`, `Targets`, `Metrics`, `Outcome` |
-| [D10](#d10-gradient-boosted-trees-in-rust-not-bound-from-c) | Gradient-boosted trees written in Rust, not bound from C++ | `gbdt.rs`, `tabsmith.trees.v1` |
+| [D10](#d10-gradient-boosted-trees-in-rust-not-bound-from-c) | Gradient-boosted trees written in Rust, not bound from C++ | `gbdt/`, `tabsmith.trees.v1` |
 | [D11](#d11-gpu-training-is-opt-in-planned-and-certified) | GPU training is opt-in, planned, and certified per device | `DevicePlan`, `certified_devices.json`, `tools/gpu_certify.py` |
 | [D12](#d12-flex-instead-of-ndarray) | Burn's Flex backend instead of NdArray | `device::ENGINE` |
 | [D13](#d13-no-unsafe-and-the-untrusted-input-is-fuzzed) | No `unsafe`, and the untrusted input is fuzzed | workspace lints, `fuzz/`, proptest |
+| [D15](#d15-the-trees-add-integers-on-workers-that-spin) | The trees add integers, on workers that spin | `gbdt/`, `pool.rs`, `tasks.rs::the_trees_have_the_same_bytes_on_every_system` |
 | [D14](#d14-models-compile-into-rust-code-with-the-runtimes-kernels) | A model can be compiled into Rust code, and it shares the runtime's kernels | `tabsmith-embedded`, `model!`, equivalence and portability tests |
 
 ---
@@ -152,27 +153,24 @@ bit for bit.
   in the same order. Inference over many rows (validation after every epoch,
   evaluation) does use every core: the runtime's rows are split between threads. Each
   row is computed exactly as on one thread, so the results are bit-identical.
-- **Trees** run on several threads without any reduction whose order could vary. A
-  histogram is built one feature at a time, and each feature sums its rows in row order
-  on one thread, so every `(feature, bin)` sees the same additions in the same order
-  however the features are spread over threads. One child's histogram is the parent's
-  minus its sibling's, and which child that is depends on the row counts alone. Row-wise
-  work (gradients, partitions, losses) is a pure function of its row or piece of rows,
-  combined in order. The trees were measured to be the same at 1 to 32 threads. Ties
-  between splits are broken by `(feature, bin)`, and ties between leaves by creation
-  order. Their `exp` and `log`
-  (gradients, starting score, losses) come from the pure-Rust `libm`, not the platform
-  C library, so the same data gives the same trees on every operating system: measured
-  on Windows and Linux, the weight file has the same hash and the training history is
-  identical. The networks' training is reproducible on one machine but not across
-  operating systems (Burn's CPU backend), and the report says so.
+- **Trees** add integers. A row's gradient and hessian become integers at a scale fixed
+  per tree, and a histogram cell is a sum of integers, which has no rounding and no order.
+  So a cell holds the same value on any number of threads, whichever rows a thread takes,
+  and one child's histogram is exactly its parent's minus its sibling's. Every decision is
+  a pure function of those sums; ties between splits are broken by `(feature, bin)`, and
+  ties between leaves by creation order ([D15](#d15-the-trees-add-integers-on-workers-that-spin)).
+  Their `exp` and `log` (gradients, starting score, losses) come from the pure-Rust `libm`,
+  not the platform C library, so the same data gives the same trees on every operating
+  system: `tasks.rs::the_trees_have_the_same_bytes_on_every_system` pins the bytes, and CI
+  runs it on Linux, macOS and Windows. The networks' training is reproducible on one machine
+  but not across operating systems (Burn's CPU backend), and the report says so.
 - **Checkpoints** hold everything: model record, Adam state, loop state and best weights.
   Resuming from one equals the uninterrupted run bitwise.
 - **GPU training** runs without autotuning. CubeCL's autotuner picks kernels by timing.
   In a probe on an RTX 5090 this made two CUDA processes train different weights, while
   each process was consistent with itself.
 
-**Cost.** CPU training uses one core. At the scale Tabsmith targets (the README
+**Cost.** The networks' CPU training uses one core. At the scale Tabsmith targets (the README
 benchmark's 10,000 rows train each candidate in well under a second) that is the right
 trade. GPU training without autotuning gives up some kernel speed.
 
@@ -180,7 +178,7 @@ trade. GPU training without autotuning gives up some kernel speed.
 - `end_to_end.rs::exact_resume_matches_uninterrupted_training_bitwise`,
   `cli.rs::crash_then_resume_equals_uninterrupted_run_bitwise` (a real process abort)
   and `review_regressions.rs::mid_epoch_cancel_resume_is_exact_and_children_are_resumable`;
-- `gbdt.rs::gbdt_is_reproducible_resumable_and_bundled`;
+- `tests/gbdt.rs::gbdt_is_reproducible_resumable_and_bundled`;
 - `reports/reproducibility/2026-10-29-windows-vs-linux/` (the trees across operating systems);
 - `gpu.rs::every_usable_gpu_trains_deterministically_and_close_to_the_cpu`;
 - `properties.rs::epoch_order_is_a_reproducible_permutation`.
@@ -271,9 +269,9 @@ LightGBM and XGBoost would mean three things:
 - multi-threaded floating-point sums, whose order depends on the thread count;
 - a model format the runtime would have to depend on or re-implement.
 
-**Decision.** A histogram GBDT in about 600 lines of safe Rust (`gbdt.rs`):
-- split points come from the training rows, up to `max_bins` per feature (255 by
-  default, at most 256);
+**Decision.** A histogram GBDT in about 1,700 lines of safe Rust (`gbdt/`):
+- split points come from counts of the training rows' values, up to `max_bins` per feature
+  (255 by default, at most 256);
 - trees grow best-first, with leaf, depth and minimum-rows limits and an L2 penalty on
   leaf values;
 - the loss is the task's: class-weighted log loss, softmax cross-entropy with one tree per
@@ -288,12 +286,12 @@ cancellation and exact resume came for free.
 **Cost.** The trees do less than LightGBM: categorical features arrive one-hot from the
 shared transform, and there are no sampling schemes (monotone constraints exist, kept by
 construction as in XGBoost, and checked again by the loader and the compiler). Speed against
-scikit-learn's `HistGradientBoostingClassifier` is measured in the benchmark report.
+LightGBM and XGBoost is measured in `reports/training/`.
 
 **Evidence.**
 - engine Δ = 0 for trees;
-- `gbdt.rs::gbdt_is_reproducible_resumable_and_bundled`;
-- the unit tests inside `gbdt.rs`.
+- `tests/gbdt.rs::gbdt_is_reproducible_resumable_and_bundled`;
+- `gbdt/tests.rs`.
 
 ## D11. GPU training is opt-in, planned, and certified
 
@@ -445,6 +443,78 @@ while the application builds:
   nothing below about 20,000 nodes, so the runtime and `outputs_batch` switch at 32,768
   nodes, where it gains 1.6× or more in the arrays.
 
+## D15. The trees add integers, on workers that spin
+
+**Context.** Measured on one machine against LightGBM and XGBoost, on the same rows and settings
+(`reports/training/`), the trees of version 0.3 took 2.3 to 5.9 times as long as LightGBM at each
+one's best thread count, with quality on par. Three causes, each measured:
+- **Threads barely helped.** Under rayon, a parallel section after a short idle gap costs 20 to
+  80 µs on Windows and 300 to 1,400 µs in WSL 2, where waking a sleeping virtual CPU goes through
+  the hypervisor. A boosting round has hundreds of sections, most of them short.
+- **One-hot columns took a pass each.** 44 of Covertype's 54 columns and 99 of Adult's 105 features.
+- **Floating-point sums stood in the way of the fixes.** A float sum depends on its order, so a
+  `(feature, bin)` had to see its rows in one fixed order. Summing several features in one pass, or
+  a row into either of two tables, changes that order, and with it the weights.
+
+**Decision.**
+- A row's gradient and hessian become `i32` at a scale fixed per tree, chosen from a bound on them
+  so that the largest is at most 2^30. A cell of a histogram holds `i64` sums. Up to 2^32 rows fit,
+  so no data can overflow a cell.
+- Thresholds are a pure function of counts of values in cells of their ordered form: 256 cells,
+  and a cell with more than its share of the rows is refined into 256 more, down to single values
+  (`bins.rs`). Rows held in several places can sum their counts and get the same thresholds.
+- Sections run on workers that spin for about a millisecond before they park, so one starts in a
+  microsecond or two (`pool.rs`, about 190 lines of safe Rust). What the items of a
+  section share are relaxed atomics, which compile to plain loads and stores on x86-64 and AArch64
+  and let the compiler see that no data race is possible.
+- Features whose non-dominant rows never meet share a pass, as in LightGBM's exclusive feature
+  bundling (`plan_passes`). The rows of a pass go to two tables in turn, so that a row does not wait
+  for the store of the row before it.
+- A round computes each row's probabilities once, not per tree, and its training loss on a fixed
+  sample of about 4,096 rows. The validation loss, which decides early stopping, still covers
+  every validation row, through a fixed-point sum.
+
+**Why nothing but the data can change the model.** By induction over trees and splits:
+1. A row's gradient and hessian depend only on that row and the trees so far. Its score is the sum
+   of the leaves it reached, in tree order.
+2. A cell is a sum of integers over the rows of a node. Integer addition has no rounding and no
+   order, so the cell does not depend on which thread adds which row, in what order, or in which pass.
+3. Every decision is a pure function of the cells and of nothing else: the largest gain, first in
+   `(feature, bin)` order; the leaf with the largest gain, first in creation order; a leaf's value.
+   Those float operations are IEEE's and `libm`'s, the same on every system.
+
+So threads, row order and passes can change only the time, and the same holds for any other way
+of computing the sums. Tests train with each of them changed and compare bytes, and CI compares
+bytes across three operating systems. The single-threaded path is the reference, and every faster
+path must match it byte for byte, the discipline of simulators such as [Days](https://days.sh).
+
+**Cost.**
+- Precision: a row is rounded to 2^-30 of the largest in its tree. In a sweep the test metrics do
+  not move until about 8 bits (`reports/training/`).
+- Thresholds are boundaries of cells, not values from the data, so they read less cleanly:
+  `3.0000305` where the data has `3`. A value that repeats gets a threshold of exactly itself, which
+  keeps a one-hot split at `x <= 0.0`.
+- `order`, `gh` and the scores are atomics, so the code says `.load(Relaxed)` where a C++ trainer
+  would index a pointer. Auto-vectorisation is off on those loops; nothing there vectorised anyway.
+- A spinning worker burns up to a millisecond of CPU per pause, while training only.
+- The training loss in the history is an estimate, on the same rows every round.
+
+**Rejected.**
+- Keeping `f64` and reproducible summation: slower per addition, and no help for merging sums from
+  several places in general.
+- LightGBM's quantized training, with 2 or 3 bits per gradient: it gains little here (a cell is 64
+  bits either way) and on Covertype's 400 rounds it reached accuracy 0.8463 against 0.8903.
+- Raising rayon's thresholds until sections are long enough: most of a round's work is in short ones.
+- `unsafe` shared slices (D13).
+
+**Evidence.**
+- `gbdt/tests.rs`: `the_model_does_not_depend_on_threads_or_passes`,
+  `the_model_does_not_depend_on_the_order_of_the_rows`,
+  `shortcuts_give_exactly_what_summing_every_row_gives`, `thresholds_do_not_depend_on_where_the_rows_are`;
+- `tasks.rs::the_trees_have_the_same_bytes_on_every_system`;
+- `pool.rs`: every item once, a late worker never mixes two sections, parking, panics;
+- `reports/training/` (the comparison and the cost of a section), `reports/reproducibility/`.
+
 ---
 
 ## 中文摘要
@@ -465,3 +535,4 @@ while the application builds:
 | D12 | 用 Flex 代替 NdArray | 约 1.4 倍速度，与 NdArray 相差 9e-8 |
 | D13 | 禁止 `unsafe`，对不可信输入做模糊测试 | 全工作区 `forbid(unsafe_code)`；对 `Bundle::from_memory` 做 cargo-fuzz；proptest 检查不变量 |
 | D14 | 模型可以编译进 Rust 代码，并与运行时共用内核 | `model!` 在编译期按运行时的规则校验模型包，把输入契约生成为类型、权重生成为常量；推理不分配内存、不依赖 `std`；与运行时逐位相同，跨平台也逐位相同（CI 在三个平台上验证）。编译器还知道模型的更多性质：由 rustc 常量求值得到的可靠输出范围（树精确，网络用区间算术并为舍入留余量）、由此导出的概率/数值范围、单次预测的最大运算量、单调约束的编译期检查；`kani` 选项让宏自己生成 Kani 证明（循环上界取自模型形状），9 个证明 81 秒通过。每棵树生成为嵌套 `if` 的 `const fn`（默认到 32,768 个节点），比数组快 2–2.8 倍、在 Cortex-M4F 上少占三分之一 flash，所有树能放进一个证明，由逐节点测试保证比特相同 |
+| D15 | 树的求和用整数，工作线程自旋等待 | 梯度和 Hessian 按每棵树的比例转成整数，直方图是整数和，没有舍入也没有顺序，所以线程数、行序和合并方式都改变不了模型的任何一个字节；阈值只取决于计数；并行段用安全 Rust 写的自旋线程池 |

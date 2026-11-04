@@ -41,7 +41,7 @@ use crate::rng::{SplitMix64, epoch_permutation};
 
 /// Fixed training choices of tabular-binary@0.1 that are not configurable; recorded
 /// in every Run and in the exact-resume key so changes are visible and refused.
-pub const RECIPE_CONSTANTS: &str = "optimizer=adam(beta1=0.9,beta2=0.999,eps=1e-8); init=tabsmith.init.v1(linear:zeros; mlp:uniform(+-1/sqrt(fan_in)) from SplitMix64(seed,\"init\")); loss=class-weighted mean BCE-with-logits + l2/2*sum(W^2) (biases excluded); batches=tabsmith.rng.v1 epoch permutation";
+pub const RECIPE_CONSTANTS: &str = "optimizer=adam(beta1=0.9,beta2=0.999,eps=1e-8); init=tabsmith.init.v1(linear:zeros; mlp:uniform(+-1/sqrt(fan_in)) from SplitMix64(seed,\"init\")); loss=class-weighted mean BCE-with-logits + l2/2*sum(W^2) (biases excluded); batches=tabsmith.rng.v1 epoch permutation; trees=tabsmith.trees.exact.v1(integer histograms, thresholds from counts)";
 
 /// Engine-side network: dense layers with ReLU between them.
 #[derive(Module, Debug)]
@@ -405,13 +405,7 @@ pub fn encode_targets(t: &Targets, output: &OutputSchema, weights: &[f32]) -> (V
 pub fn task_loss(outputs: &Matrix, t: &Targets, output: &OutputSchema, weights: &[f32]) -> f64 {
     match t {
         Targets::Binary(y) => weighted_bce_from_logits(&outputs.data, y, weights[0], weights[1]),
-        Targets::Classes { y, .. } => crate::parallel::mean_in_row_order(y.len(), |r| {
-            let row = outputs.row(r);
-            let c = y[r] as usize;
-            let max = row.iter().map(|&v| f64::from(v)).fold(f64::NEG_INFINITY, f64::max);
-            let lse = max + libm::log(row.iter().map(|&v| libm::exp(f64::from(v) - max)).sum::<f64>());
-            (lse - f64::from(row[c])) * f64::from(weights[c])
-        }),
+        Targets::Classes { y, .. } => crate::parallel::mean_in_row_order(y.len(), |r| softmax_loss(outputs.row(r), y[r] as usize, weights)),
         Targets::Values(y) => {
             let sc = output.target_scale.expect("regression schema");
             let s: f64 = y
@@ -425,6 +419,32 @@ pub fn task_loss(outputs: &Matrix, t: &Targets, output: &OutputSchema, weights: 
             s / y.len().max(1) as f64
         }
     }
+}
+
+/// The loss of row `r` with outputs `z`, as [`task_loss`] adds it up.
+pub(crate) fn row_loss(t: &Targets, output: &OutputSchema, weights: &[f32], r: usize, z: &[f32]) -> f64 {
+    match t {
+        Targets::Binary(y) => bce_from_logit(f64::from(z[0]), y[r], weights[0], weights[1]),
+        Targets::Classes { y, .. } => softmax_loss(z, y[r] as usize, weights),
+        Targets::Values(y) => {
+            let sc = output.target_scale.expect("regression schema");
+            let d = f64::from(z[0]) - (y[r] - sc.mean) / sc.std;
+            d * d
+        }
+    }
+}
+
+/// Class-weighted softmax cross-entropy of one row's outputs.
+fn softmax_loss(row: &[f32], c: usize, weights: &[f32]) -> f64 {
+    let max = row.iter().map(|&v| f64::from(v)).fold(f64::NEG_INFINITY, f64::max);
+    let lse = max + libm::log(row.iter().map(|&v| libm::exp(f64::from(v) - max)).sum::<f64>());
+    (lse - f64::from(row[c])) * f64::from(weights[c])
+}
+
+/// Class-weighted binary cross-entropy of one row's logit (stable).
+fn bce_from_logit(z: f64, t: bool, w_neg: f32, w_pos: f32) -> f64 {
+    let l = z.max(0.0) - if t { z } else { 0.0 } + libm::log1p(libm::exp(-z.abs()));
+    l * f64::from(if t { w_pos } else { w_neg })
 }
 
 /// Per-sample weights for the training loss.
@@ -444,11 +464,7 @@ pub(crate) fn class_weights(y: &[bool], mode: ClassWeight) -> (f32, f32) {
 /// `log1p` come from `libm`, so the loss, and the early stopping it drives, are the
 /// same on every operating system.
 pub fn weighted_bce_from_logits(logits: &[f32], y: &[bool], w_neg: f32, w_pos: f32) -> f64 {
-    crate::parallel::mean_in_row_order(y.len(), |r| {
-        let (z, t) = (f64::from(logits[r]), y[r]);
-        let l = z.max(0.0) - if t { z } else { 0.0 } + libm::log1p(libm::exp(-z.abs()));
-        l * f64::from(if t { w_pos } else { w_neg })
-    })
+    crate::parallel::mean_in_row_order(y.len(), |r| bce_from_logit(f64::from(logits[r]), y[r], w_neg, w_pos))
 }
 
 /// Training objective for one minibatch: class-weighted mean BCE-with-logits plus

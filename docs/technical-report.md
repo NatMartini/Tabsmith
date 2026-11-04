@@ -19,7 +19,7 @@
 > explicit), and an in-house gradient-boosted tree learner. The evidence:
 > - parity with scikit-learn: preprocessing to 2.3e-7, metrics below 1e-15;
 > - single-record prediction latency 700–880× lower than an equivalent scikit-learn
->   deployment, and a 1 ms cold start instead of 0.6 s;
+>   deployment, and a 1 ms cold start instead of about 0.75 s;
 > - certification of GPU paths on real hardware;
 > - fuzzing of the bundle loader;
 > - the unchanged runtime compiled to WebAssembly;
@@ -86,7 +86,7 @@ four reasons:
 
 ### Scope
 
-Release 0.3 covers supervised learning on one table: binary classification, multiclass
+Release 0.4 covers supervised learning on one table: binary classification, multiclass
 classification and regression. It trains three candidate families (a linear model, a
 small multilayer perceptron, and gradient-boosted trees) on the CPU, and optionally the
 networks on a GPU. It is aimed at datasets that fit in memory (thousands to millions of
@@ -94,8 +94,8 @@ rows), which is where most tabular problems are.
 
 **Related tools.** scikit-learn [11], LightGBM [9] and XGBoost [10] are the reference
 training libraries; Tabsmith's trees are a plain histogram GBDT in their style, without
-sampling or native categorical splits, and LightGBM and XGBoost remain the faster
-trainers on large data (they were not measured here). In Rust, linfa and smartcore
+sampling or native categorical splits, and they train between the two in speed on the
+problems measured here (§7.2). In Rust, linfa and smartcore
 collect algorithms in the spirit of scikit-learn; Tabsmith does not compete on the
 number of algorithms but on what surrounds them: the leakage-free workflow, the
 bundle, the evidence, and the model as a Rust program. Burn [5] and candle are
@@ -230,7 +230,7 @@ the hash of their weights. And a report is only evidence if it can be regenerate
 | Random number generator algorithms changing between library versions | Tabsmith's own SplitMix64 [4] with Lemire's unbiased bounded sampling [5]. Streams are derived from `(seed, label)`. The `rand` crate does not promise that `StdRng` stays the same across releases. |
 | Minibatch order | A pure function of `(seed, epoch)`, so it can be recomputed at resume |
 | Stochastic layers | None (no dropout) |
-| Parallel reductions | Single-threaded CPU backend for the networks; the trees sum each feature in row order on one thread, with no merge of partial sums, so the result is the same on any number of threads. Inference over many rows (validation, evaluation) is split by rows across cores, which changes no row's arithmetic |
+| Parallel reductions | Single-threaded CPU backend for the networks; the trees' histograms are sums of integers, which have no order, so the result is the same on any number of threads. Inference over many rows (validation, evaluation) is split by rows across cores, which changes no row's arithmetic |
 | Ties | Splits are ordered by `(feature, bin)`, leaves by creation order |
 | Optimizer state | Checkpoints hold model, Adam moments, loop state and best weights |
 
@@ -306,13 +306,12 @@ Tabsmith's PRNG, not Burn's, so that it is versioned with the project.
 
 **Gradient-boosted trees.** Tree ensembles remain the strongest general method for
 tabular data [8], so a third candidate was essential. The two mature libraries,
-LightGBM [9] and XGBoost [10], are C++ with multi-threaded floating-point sums and their
-own model formats. Binding one would have broken three properties: the pure-Rust build,
-determinism, and the runtime's independence. Tabsmith implements the standard histogram
-algorithm instead (in the style of LightGBM and scikit-learn's
+LightGBM [9] and XGBoost [10], are C++ with their own model formats. Binding one would have
+broken three properties: the pure-Rust build, determinism across systems and partitions, and
+the runtime's independence. Tabsmith implements the standard histogram algorithm instead (in the style of LightGBM and scikit-learn's
 `HistGradientBoosting` [11]):
-- **Bins.** Candidate thresholds come from the training rows, up to `max_bins` per
-  feature (255 by default).
+- **Bins.** Candidate thresholds come from counts of the training rows' values in cells of
+  their binary form, up to `max_bins` per feature (255 by default).
 - **Histograms.** Gradient and Hessian sums are taken per bin, so evaluating every split
   of a leaf costs one pass over its rows.
 - **Growth.** Trees grow best-first: the leaf with the largest gain splits next. Growth
@@ -322,21 +321,22 @@ algorithm instead (in the style of LightGBM and scikit-learn's
   cross-entropy with one tree per class and round; or squared error on the standardised
   target.
 
-Three details make it deterministic and exactly portable to the runtime:
-1. a histogram is built one feature at a time, and each feature sums its rows in row
-   order on one thread, so every `(feature, bin)` sees the same additions in the same
-   order on any number of threads; one child's histogram is the parent's minus its
-   sibling's, and which child that is depends on the row counts alone;
-2. ties are broken by `(feature, bin)`;
-3. leaf values are summed from the leaf's rows and rounded to f32 before they update the
-   training scores.
+Exact arithmetic makes it deterministic and portable to the runtime:
+1. a row's gradient and hessian become integers at a scale fixed per tree, chosen so that the
+   largest is at most 2^30, and a histogram cell is a sum of integers. It has no rounding and no
+   order, so it holds the same value on any number of threads and in any order of the rows, and
+   one child's histogram is exactly its parent's minus its sibling's;
+2. every decision is a pure function of those sums: the largest gain, first in
+   `(feature, bin)` order on ties; the leaf with the largest gain, first in creation order;
+3. leaf values are rounded to f32 before they update the training scores.
 
-Parallelism therefore costs determinism nothing. What costs time is everything around
-the sums, and an earlier version got most of it wrong: it started threads and allocated
-histograms per node and chunk, summed one-hot columns whose rows nearly all fall in one
-bin, built both children from their rows, and rewrote and synced the run record after every
-round. Removing these made the trees 11 to 36 times faster with the same test metrics
-(`reports/datasets/2026-10-31-windows-x86_64`).
+With the order of the sums out of the way, the rest is free to be fast
+([D15](design-decisions.md#d15-the-trees-add-integers-on-workers-that-spin)). Exclusive one-hot
+columns share a pass, a pass adds its rows to two tables in turn, and sections run on workers that
+spin between them, which start in a microsecond or two where rayon's sleeping workers take 20 to
+80 µs on Windows and 300 to 1,400 µs in WSL 2. Against LightGBM and XGBoost on one machine, the
+same rows and the same settings, with quality on par or better, the whole training of Covertype
+takes 8.0 s, against 6.3 s and 12.2 s (`reports/training/`).
 
 The trainer's validation scores are therefore exactly what the runtime computes, and the
 recorded engine difference for trees is 0. One boosting round is one "epoch" of the
@@ -551,31 +551,30 @@ equivalent pandas + scikit-learn code. Both sides get the same rows, split, feat
 training settings, and each candidate is paired with its scikit-learn counterpart. The
 run was on WSL2 on the same Ryzen 9 9950X3D2, with Python 3.14, scikit-learn 1.9.1 and
 pandas 3.1. The full table, with p99 latency, batch throughput and artifact sizes, is in
-`reports/benchmarks/2026-10-31-linux-x86_64`.
+`reports/benchmarks/2026-11-01-wsl-linux-x86_64`.
 
 | | Tabsmith linear | logistic regression | Tabsmith MLP | `MLPClassifier` | Tabsmith GBDT | `HistGradientBoosting` |
 |---|---|---|---|---|---|---|
-| Test balanced accuracy | 0.7528 | 0.7516 | 0.7729 | 0.7314 | 0.7332 | 0.7295 |
-| Test ROC AUC | 0.8202 | 0.8209 | 0.8250 | 0.7928 | 0.8188 | 0.8184 |
-| Training time | 0.09 s | 0.03 s | 0.11 s | 0.14 s | 0.12 s | 3.53 s |
-| One prediction in an application (p50) | 2.5 µs | 2,021 µs | 2.8 µs | 1,990 µs | 3.0 µs | 2,592 µs |
-| A batch of 10,000 records | 4.6 M rows/s | 0.64 M rows/s | 4.1 M rows/s | 0.38 M rows/s | 3.5 M rows/s | 0.45 M rows/s |
-| New process: load, predict one record | 1 ms | 570 ms | 1 ms | 550 ms | 1 ms | 573 ms |
+| Test balanced accuracy | 0.7528 | 0.7516 | 0.7729 | 0.7314 | 0.7356 | 0.7260 |
+| Test ROC AUC | 0.8202 | 0.8209 | 0.8250 | 0.7928 | 0.8220 | 0.8172 |
+| Training time | 0.09 s | 0.05 s | 0.13 s | 0.15 s | 0.08 s | 3.93 s |
+| One prediction in an application (p50) | 2.6 µs | 2,326 µs | 2.9 µs | 2,413 µs | 3.7 µs | 3,709 µs |
+| A batch of 10,000 records | 4.7 M rows/s | 0.45 M rows/s | 3.5 M rows/s | 0.21 M rows/s | 2.7 M rows/s | 0.34 M rows/s |
+| New process: load, predict one record | 1 ms | 738 ms | 1 ms | 770 ms | 1 ms | 797 ms |
 | Peak memory of that process | 12 MB | 162 MB | 12 MB | 162 MB | 12 MB | 165 MB |
 
-Quality is on par for the linear model and for the trees (ROC AUC 0.8188 against
-0.8184). Tabsmith's small MLP is ahead of `MLPClassifier`, which was given the same
-number of epochs. Tabsmith's GBDT trained its 54 rounds in 0.12 s, while
-`HistGradientBoostingClassifier` took 3.53 s for the same 54 rounds. Most of that goes to
+Quality is on par for the linear model and for the trees (ROC AUC 0.8220 against
+0.8172). Tabsmith's small MLP is ahead of `MLPClassifier`, which was given the same
+number of epochs. Tabsmith's GBDT trained its 62 rounds in 0.08 s, while
+`HistGradientBoostingClassifier` took 3.93 s for the same 62 rounds. Most of that goes to
 the class weights both sides use (a separate fit took 3.3 s with them and 0.13 s
-without), so this says little about the trees themselves; on larger data the two are
-about even (below).
+without), so this says little about the trees themselves; larger data is below.
 
 The decisive differences are in deployment:
-- a prediction from an application costs 2.5–3.0 µs instead of 2.0–2.6 ms;
-- a batch of records runs 7 to 11 times faster, on up to 16 threads, and 1.5 to 2.5 times
+- a prediction from an application costs 2.6–3.7 µs instead of 2.3–3.7 ms;
+- a batch of records runs 8 to 16 times faster, on up to 16 threads, and 1.3 to 3 times
   faster on one;
-- a new process answers after 1 ms instead of about 0.6 s, in 12 MB instead of 160 MB;
+- a new process answers after 1 ms instead of about 0.75 s, in 12 MB instead of 160 MB;
 - the application is a 1.9 MB binary instead of a 354 MB Python environment.
 
 **Public datasets.** The same comparison on three public datasets, one per task (UCI
@@ -583,13 +582,12 @@ Adult, California Housing, UCI Covertype; `reports/datasets/`), gives the same p
 for quality: every candidate matches its scikit-learn equivalent on the same rows and
 split to within the test split's resolution, and the trees agree to the third decimal
 (Adult: ROC AUC 0.9301 against 0.9297; California: R² 0.8438 on both sides; Covertype:
-accuracy 0.8995 against 0.8984). The trees now train in about the time of
-`HistGradientBoosting`. On one operating system at a time, with Tabsmith on 12 threads and
-scikit-learn on 16: on Windows they are 1.4 to 2.1 times faster, and in WSL they are 1.9 times
-faster on California and about 1.4 times slower on Adult and Covertype (table in
-`reports/datasets/2026-10-31-windows-x86_64`). The linear model and the network train as
-fast or faster on one thread. LightGBM and XGBoost, which are faster than
-`HistGradientBoosting` on large data, were not measured.
+accuracy 0.8995 against 0.8984). The trees now train faster than XGBoost and close to
+LightGBM, on one machine and the same rows and settings: Covertype's 400 rounds take
+8.0 s, against 6.3 s and 12.2 s, at accuracy 0.8985, 0.8903 and 0.8546; Adult's 180 rounds 0.20 s,
+against 0.12 s and 0.39 s; California's 334 rounds 0.15 s, against 0.10 s and 0.36 s
+(`reports/training/`). The linear model and the network train as fast or faster on one thread
+than scikit-learn's.
 
 ### 7.3 GPU certification
 
@@ -623,7 +621,7 @@ from 49 to 32 ms.
 
 ### 7.4 Robustness
 
-The workspace has 214 tests and 11 doctests. They include property tests (proptest) that
+The workspace has 224 tests and 11 doctests. They include property tests (proptest) that
 check these invariants on random inputs:
 - predictions are total and independent of batch composition;
 - a compiled model and the runtime return the same bits, and refuse the same records;
@@ -648,15 +646,13 @@ execute.
 - **Scale.** Data is held in memory. The networks train on one thread by design (§4);
   the trees run on up to 12 threads, with a result that does not depend on the count
   (§5). On 1,000,000 rows (a 172 MB CSV, 35 features) the whole `tabsmith train` runs in
-  18 s with a 1.6 GB working set, 148 rounds in 4.5 s (`reports/scaling/`). Out-of-core
+  15 s, 140 rounds in 1.2 s (`reports/training/`). Out-of-core
   training (reading the data in row groups) is not implemented, so ten million rows
   would need about 16 GB.
 - **Trees.** There are no native categorical splits or sampling schemes such as GOSS.
   (Monotone constraints exist: kept by construction, recorded in the bundle, checked by
   the loader and by the compiler.) The learner trades breadth for determinism and
-  auditability. The next speed-ups would be bundling one-hot columns, which are nearly
-  all one bin, and thread dispatch cheaper than a work-stealing pool's: in WSL more than
-  about 8 threads bring nothing or make training slower.
+  auditability. LightGBM stays 1.5 to 1.8 times as fast on the two smallest problems.
 - **GPU.** Fp32 on CUDA waits on an upstream switch. A draft issue for `cubek-matmul`
   proposes a precision policy modelled on PyTorch's
   `set_float32_matmul_precision`. A second draft, for `cubecl-wgpu`, reports the panic

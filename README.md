@@ -33,13 +33,13 @@ $ tabsmith train machines.csv --target defect --group device_id
 · run-002: training small-mlp (up to 3480 steps)
 · run-002: completed (early stopping after epoch 13; weights of best epoch 5 kept)
 · run-003: training gbdt (up to 400 steps)
-· run-003: completed (early stopping after epoch 54; weights of best epoch 29 kept)
+· run-003: completed (early stopping after epoch 62; weights of best epoch 37 kept)
 
 comparison on the validation split (metric: balanced_accuracy)
   run      candidate  balanced_accuracy  AUC     F1      params  p95 latency  train time
-  run-001  linear     0.7644             0.8385  0.4602  36      1 µs         106 ms
-  run-002  small-mlp  0.7665             0.8427  0.4843  1697    1 µs         96 ms
-  run-003  gbdt       0.7530             0.8461  0.4784  1769    1 µs         797 ms
+  run-001  linear     0.7644             0.8385  0.4602  36      1 µs         88 ms
+  run-002  small-mlp  0.7665             0.8427  0.4843  1697    1 µs         117 ms
+  run-003  gbdt       0.7565             0.8490  0.4894  2257    2 µs         78 ms
 
 chosen on validation: run-002 (small-mlp)
 test split (1386 rows, used once): balanced accuracy 0.7729  AUC 0.8250  F1 0.4624  precision 0.3325  recall 0.7588
@@ -61,7 +61,7 @@ once, and packages the winner with its preprocessing, schema and evidence. When 
 it retrains and tells you whether the new model beats the one you shipped,
 on rows neither of them has seen.
 
-Release 0.3 does **tabular binary classification, multiclass classification and
+Release 0.4 does **tabular binary classification, multiclass classification and
 regression** (churn, defect, fraud, failure mode, remaining life, …). It trains on the
 CPU, and optionally the neural networks on a GPU (Vulkan, CUDA). The runtime also
 runs in a web page, compiled to WebAssembly, and a model can be compiled into your Rust
@@ -74,9 +74,10 @@ yet, and the [design decisions](docs/design-decisions.md) and
 - **One command, safe defaults.** `tabsmith train data.csv --target y` does split → preprocess → train three models → compare on validation → test once → bundle. Every step is recorded and reproducible.
 - **Ship without Python.** Your application depends on `tabsmith-runtime` only (no Burn, no Polars, no Python). The example app is a 1.9 MB binary.
 - **Or compile the model in.** `tabsmith_macros::model!` turns a bundle into Rust code while your crate builds: typed inputs, no allocation, no `std`, and the same bits as the runtime on every platform. In the embedded example, the Kani model checker proves that prediction never panics, for every possible input ([below](#compiled-into-your-code)).
+- **Trains close to LightGBM's speed, in safe Rust, with exact arithmetic.** The trees add integers on workers that spin, so threads and optimisations cannot change a byte of the model. On Covertype's 581,012 rows: 8.0 s, against 6.3 s for LightGBM and 12.2 s for XGBoost, on the same machine, rows and settings, at accuracy 0.8985, 0.8903 and 0.8546; on smaller data LightGBM stays 1.5 to 1.8 times as fast ([measured](reports/training/2026-11-01-wsl-linux-x86_64/)).
 - **Fast where it matters in production.** Single-record prediction in microseconds, about a millisecond from process start to first prediction, about 12 MB of memory ([numbers below](#tabsmith-vs-python)).
 - **Same quality as scikit-learn.** Preprocessing matches scikit-learn's to about 2e-7, the linear model lands within about 0.1 % of scikit-learn's optimum of the same objective, and metrics match to 1e-12 ([measured](reports/implementation-acceptance.md#reference-check-against-scikit-learn); CI guards 1e-5, 1 % and 1e-12 with [frozen goldens](fixtures/reference/)).
-- **Deterministic, to the bit.** Same data and settings, same weights: an interrupted run resumes to exactly the weights of an uninterrupted one, on the CPU and on certified GPUs ([why that took work on GPUs](docs/design-decisions.md#d5-determinism-is-a-contract)). The trees are the same on every operating system and any number of threads: [measured](reports/reproducibility/) on Windows and Linux at 1 to 32 threads, same weight hash, same history.
+- **Deterministic, to the bit.** Same data and settings, same weights: an interrupted run resumes to exactly the weights of an uninterrupted one, on the CPU and on certified GPUs ([why that took work on GPUs](docs/design-decisions.md#d5-determinism-is-a-contract)). The trees are the same on every operating system and any number of threads, because their histograms are sums of integers ([why](docs/design-decisions.md#d15-the-trees-add-integers-on-workers-that-spin)): CI compares their bytes on Linux, macOS and Windows, and [the report](reports/training/2026-11-01-wsl-linux-x86_64/#windows) shows the same weights on Windows and Linux at 1 to 16 threads.
 - **Mistakes are hard to make.** No train/test leakage by construction, one use of the test set per data version, entity-aware and chronological splits, refusal instead of silent fallback, integrity-checked bundles, and errors that say what to do next.
 - **Says what it knows.** Every bundle carries a conformal calibration, so each prediction comes with an interval or a prediction set at a stated coverage, and the permutation importance of its inputs. Trees can be trained under monotone constraints, which the bundle loader and the compiler both verify. `tabsmith serve` reports input drift against the training statistics.
 - **Updates you can trust.** New data → new runs; the old bundle is scored on the same unseen rows; applications swap bundles only after the new one passes its self-check, and can roll back.
@@ -144,7 +145,7 @@ tabsmith train hours.csv --target remaining_hours --group device_id --task regre
 
 ```toml
 [dependencies]
-tabsmith-runtime = "0.3"
+tabsmith-runtime = "0.4"
 ```
 
 ```rust
@@ -235,7 +236,7 @@ enabled for the repository).
 ```sh
 tabsmith serve --port 8080              # the newest evaluated bundle, or --bundle <dir>
 curl -s localhost:8080/predict --data-binary @bundles/run-002/examples/input.json
-# {"bundle_id":"b-…","predictions":[{"is_positive":false,"label":"0","probability":0.2474},…]}
+# {"bundle_id":"b-…","predictions":[{"is_positive":true,"label":"1","prediction_set":["0","1"],"probability":0.5369…},…]}
 ```
 
 Endpoints: `POST /predict` (one record, an array, or `{"records": [...]}`),
@@ -254,13 +255,13 @@ Append to (or replace) the file and run `tabsmith train` again:
 $ tabsmith train
 · new data version: machines.csv is now snapshot s-dc9fc115c6c7, while run-001, run-002, … used snapshot s-0a8635d0d212. …
 …
-chosen on validation: run-008 (small-mlp)
-test split (1844 rows, used once): balanced accuracy 0.7567  AUC 0.8282  F1 0.4688  precision 0.3355  recall 0.7778
+chosen on validation: run-009 (gbdt)
+test split (1844 rows, used once): balanced accuracy 0.7658  AUC 0.8250  F1 0.4969  precision 0.3720  recall 0.7481
 previous bundle bundles/run-002 (run-002) on the 1844 test rows it never saw: balanced accuracy 0.7737  AUC 0.8334  F1 0.4936  …
-new model run-008 on the same 1844 rows: balanced accuracy 0.7567  AUC 0.8282  F1 0.4688  …
-  → about the same: the balanced accuracy difference (-0.0170) is below the ±0.023 resolution of 1844 rows
+new model run-009 on the same 1844 rows: balanced accuracy 0.7658  AUC 0.8250  F1 0.4969  …
+  → about the same: the balanced accuracy difference (-0.0080) is below the ±0.023 resolution of 1844 rows
   `tabsmith predict` uses the newest evaluated bundle; to keep serving the previous one pass --bundle bundles/run-002
-bundle: bundles/run-008 (b-…, evaluated; self-check passed)
+bundle: bundles/run-009 (b-…, evaluated; self-check passed)
 ```
 
 *(Abridged output of the [acceptance run](reports/implementation-acceptance.md#one-command-tabsmith-train),
@@ -277,11 +278,11 @@ The same task done with the standard Python stack (pandas + scikit-learn
 `ColumnTransformer` + `LogisticRegression` / `MLPClassifier` /
 `HistGradientBoostingClassifier`), on the same rows, split, features and training
 settings, same machine. Reproduce with [`tools/bench/bench.py`](tools/bench/bench.py);
-full results and logs in [reports/benchmarks](reports/benchmarks/2026-10-31-linux-x86_64/).
+full results and logs in [reports/benchmarks](reports/benchmarks/2026-11-01-wsl-linux-x86_64/).
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/bench-dark.svg">
-  <img src="docs/assets/bench-light.svg" alt="Tabsmith's small MLP against scikit-learn's MLPClassifier, lower is better: cold start 1 ms against 550 ms, one prediction in an app 2.8 µs against 2.0 ms, peak memory 12 MB against 162 MB, and the application ships 1.9 MB against a 354 MB Python environment.">
+  <img src="docs/assets/bench-light.svg" alt="Tabsmith's small MLP against scikit-learn's MLPClassifier, lower is better: cold start 1 ms against 770 ms, one prediction in an app 2.9 µs against 2.4 ms, peak memory 12 MB against 162 MB, and the application ships 1.9 MB against a 354 MB Python environment.">
 </picture>
 
 *The small MLP against scikit-learn's `MLPClassifier`; each row has its own linear scale.
@@ -293,56 +294,59 @@ Machine: AMD Ryzen 9 9950X3D2 16-Core Processor, 32 logical CPUs, Linux 6.6.87.2
 
 | | Tabsmith linear | scikit-learn logistic | Tabsmith small-mlp | scikit-learn MLP | Tabsmith gbdt | scikit-learn HGB |
 |---|---|---|---|---|---|---|
-| Test balanced accuracy | 0.7528 | 0.7516 | 0.7729 | 0.7314 | 0.7332 | 0.7295 |
-| Test ROC AUC | 0.8202 | 0.8209 | 0.8250 | 0.7928 | 0.8188 | 0.8184 |
-| Epochs / rounds / solver iterations | 39 | 25 | 13 | 13 | 54 | 54 |
-| Training time | 0.09 s | 0.03 s | 0.11 s | 0.14 s | 0.12 s | 3.53 s |
-| Single-record prediction in an app (p50) | 2.5 µs | 2021.0 µs | 2.8 µs | 1990.0 µs | 3.0 µs | 2592.0 µs |
-| Single-record prediction (p99) | 3.3 µs | 3474.9 µs | 4.1 µs | 2680.0 µs | 3.9 µs | 4450.4 µs |
-| Batch prediction from records | 4,608,335 rows/s | 638,634 rows/s | 4,130,750 rows/s | 377,607 rows/s | 3,544,374 rows/s | 446,299 rows/s |
-| Batch prediction from a table in memory | 7,044,560 rows/s | 913,099 rows/s | 5,878,694 rows/s | 538,933 rows/s | 4,625,413 rows/s | 663,986 rows/s |
-| Batch prediction from records, Tabsmith on one thread | 1,255,742 rows/s | – | 961,563 rows/s | – | 690,197 rows/s | – |
-| Cold start: new process, load model, predict 1 record | 1 ms | 570 ms | 1 ms | 550 ms | 1 ms | 573 ms |
+| Test balanced accuracy | 0.7528 | 0.7516 | 0.7729 | 0.7314 | 0.7356 | 0.7260 |
+| Test ROC AUC | 0.8202 | 0.8209 | 0.8250 | 0.7928 | 0.8220 | 0.8172 |
+| Epochs / rounds / solver iterations | 39 | 25 | 13 | 13 | 62 | 62 |
+| Training time | 0.09 s | 0.05 s | 0.13 s | 0.15 s | 0.08 s | 3.93 s |
+| Single-record prediction in an app (p50) | 2.6 µs | 2326.3 µs | 2.9 µs | 2413.1 µs | 3.7 µs | 3709.3 µs |
+| Single-record prediction (p99) | 5.2 µs | 4450.8 µs | 6.0 µs | 4909.9 µs | 14.2 µs | 6217.3 µs |
+| Batch prediction from records | 4,659,031 rows/s | 448,437 rows/s | 3,458,234 rows/s | 214,183 rows/s | 2,742,566 rows/s | 340,452 rows/s |
+| Batch prediction from a table in memory | 6,462,791 rows/s | 713,870 rows/s | 5,048,756 rows/s | 373,519 rows/s | 3,622,087 rows/s | 603,976 rows/s |
+| Batch prediction from records, Tabsmith on one thread | 921,550 rows/s | – | 662,739 rows/s | – | 441,195 rows/s | – |
+| Cold start: new process, load model, predict 1 record | 1 ms | 738 ms | 1 ms | 770 ms | 1 ms | 797 ms |
 | Peak memory of that process | 12 MB | 162 MB | 12 MB | 162 MB | 12 MB | 165 MB |
-| Model artifact | 0.0 MB | 0.0 MB | 0.0 MB | 0.1 MB | 0.1 MB | 0.2 MB |
+| Model artifact | 0.0 MB | 0.0 MB | 0.0 MB | 0.1 MB | 0.1 MB | 0.3 MB |
 
 | Deployment footprint | Tabsmith | Python |
 |---|---|---|
-| What the application ships | 1.9 MB binary (depends on tabsmith-runtime only) | 354.1 MB environment (Python + numpy + scipy + scikit-learn + pandas + joblib) |
+| What the application ships | 1.9 MB binary (depends on tabsmith-runtime only) | 354.4 MB environment (Python + numpy + scipy + scikit-learn + pandas + joblib) |
 | Training tool | 29.9 MB `tabsmith` binary | the same environment |
-| Train all three candidates from the CSV | 0.51 s for the whole `tabsmith run` process (read, profile, split, preprocess, train, validate, checkpoints), peak 49 MB | 3.71 s for read_csv + three fits (imports and process start not included) |
+| Train all three candidates from the CSV | 0.49 s for the whole `tabsmith run` process (read, profile, split, preprocess, train, validate, checkpoints), peak 47 MB | 4.15 s for read_csv + three fits (imports and process start not included) |
 <!-- BENCH:END -->
 
 What the table says: quality is on par. The trees match `HistGradientBoostingClassifier`
-(ROC AUC 0.8188 against 0.8184), and the small MLP did better than `MLPClassifier` here.
+(ROC AUC 0.8220 against 0.8172), and the small MLP did better than `MLPClassifier` here.
 Tabsmith trains each candidate in a fraction of a second. scikit-learn's lbfgs fits the
 linear model a little faster than Tabsmith's minibatch Adam, and `HistGradientBoosting`
 spends most of its time here on the class weights both sides use (a separate fit took
-3.3 s with them and 0.13 s without). Tabsmith's trees run on up to 12 threads, and each
-feature sums its rows in row order on one of them, so the result is the same on any
-number of threads.
+3.3 s with them and 0.13 s without). Tabsmith's trees run on up to 12 threads, and their
+histograms are sums of integers, so the result is the same on any number of threads.
 The difference is in **shipping the model**:
 - single-record prediction in an application takes about 3 µs instead of 2–3 ms;
-- a batch of records runs at 3.5–4.6 million rows per second instead of 0.4–0.6 million, on up
+- a batch of records runs at 2.7–4.7 million rows per second instead of 0.2–0.4 million, on up
   to 16 threads from 4,096 rows on, with the same predictions as on one thread;
-- a new process predicts after 1 ms instead of 0.6 s, in 12 MB instead of 160 MB;
+- a new process predicts after 1 ms instead of 0.7–0.8 s, in 12 MB instead of 160 MB;
 - the application is a 1.9 MB binary instead of a 354 MB Python environment.
 
 On three public datasets (UCI Adult, California Housing, UCI Covertype), every
 candidate matches its scikit-learn equivalent on the same rows and split to within the
-noise of the test split; the trees agree to the third decimal. The trees also train in
-about the same time as `HistGradientBoosting`, here with Tabsmith on its default 12 threads
-and scikit-learn on 16, one operating system at a time
-([reports/datasets](reports/datasets/2026-10-31-windows-x86_64/)):
+noise of the test split ([reports/datasets](reports/datasets/2026-10-31-windows-x86_64/)).
+The trees train faster than XGBoost and slower than LightGBM, close to it on the largest data,
+each at its best thread count, on one machine and the same rows and settings
+([reports/training](reports/training/2026-11-01-wsl-linux-x86_64/)):
 
-| Training the trees | Windows: Tabsmith | Windows: scikit-learn | Linux (WSL): Tabsmith | Linux (WSL): scikit-learn |
+| Training the trees (WSL, seconds) | Tabsmith 0.3 | Tabsmith 0.4 | LightGBM | XGBoost |
 |---|---|---|---|---|
-| California, 334 rounds | 0.19 s | 0.40 s | 0.25 s | 0.47 s |
-| Adult, 180 rounds | 0.50 s | 0.91 s | 0.88 s | 0.65 s |
-| Covertype, 40 rounds | 3.09 s | 4.43 s | 4.09 s | 2.89 s |
+| California, 334 rounds | 0.22 | 0.15 | 0.10 | 0.36 |
+| Adult, 180 rounds | 0.68 | 0.20 | 0.12 | 0.39 |
+| Covertype, 40 rounds | 3.71 | 0.92 | 0.85 | 1.74 |
+| Covertype, 400 rounds | 39.2 | 8.0 | 6.3 | 12.2 |
+| Covertype's test accuracy after 400 rounds | 0.8995 | 0.8985 | 0.8903 | 0.8546 |
 
-Tabsmith is faster on Windows and on the smallest problem, and about 1.4 times slower on
-the other two in WSL. LightGBM and XGBoost were not measured.
+LightGBM stays 1.5 to 1.8 times as fast on the two smallest problems. All of Tabsmith's code
+here is safe Rust and its model is byte-identical at every thread count, which neither library
+promises: LightGBM gave two different models in two runs at the same thread count on Covertype's
+400 rounds, and its model with quantized gradients changes with the thread count.
 
 ### What you would otherwise write yourself
 
@@ -360,7 +364,7 @@ the other two in WSL. LightGBM and XGBoost were not measured.
 
 | | What it is | Where Tabsmith differs |
 |---|---|---|
-| **scikit-learn, LightGBM, XGBoost** | the reference training libraries, in Python and C++ | Tabsmith is one tool for the whole job, from the CSV to a verified bundle, and ships the model without Python. Its trees are a plain histogram GBDT (no sampling, no native categorical splits); against scikit-learn's `HistGradientBoostingClassifier` they match in quality on the README problem ([above](#tabsmith-vs-python)). LightGBM and XGBoost are faster trainers on large data and were not measured here |
+| **scikit-learn, LightGBM, XGBoost** | the reference training libraries, in Python and C++ | Tabsmith is one tool for the whole job, from the CSV to a verified bundle, and ships the model without Python. Its trees are a plain histogram GBDT (no sampling, no native categorical splits); against LightGBM and XGBoost they are on par in quality and between the two in speed ([above](#tabsmith-vs-python)), and LightGBM has the larger feature set |
 | **[linfa](https://github.com/rust-ml/linfa), [smartcore](https://github.com/smartcorelib/smartcore)** | machine-learning algorithm collections in Rust, in the spirit of scikit-learn | They give you algorithms; Tabsmith gives you the workflow around them: splits without leakage, one preprocessing implementation, the test-set ledger, bundles, exact resume, conformal intervals, and a model compiled into `no_std` code with proofs. Tabsmith does not aim to offer every algorithm |
 | **[Burn](https://burn.dev), [candle](https://github.com/huggingface/candle)** | deep-learning frameworks in Rust | Tabsmith trains its networks with Burn and would be a user of either. Its runtime depends on neither: inference is 200 lines of kernels shared with the compiled models |
 | **[PyO3](https://pyo3.rs), ONNX runtimes** | call Python from Rust, or run exported models | Both keep the model outside Rust's type system. Tabsmith's `model!` makes the model's contract types and its weights constants, so a misspelled field or category does not compile, and the compiler can bound the outputs and generate the proofs |
@@ -389,21 +393,24 @@ Every step has a step-by-step command too (`tabsmith plan`, `run`, `compare`,
 
 ## Status
 
-Tabsmith 0.3 is young. What is solid and tested (214 automated tests and 11 doctests,
+Tabsmith 0.4 is young. What is solid and tested (224 automated tests and 11 doctests,
 including process-level ones that drive the real binary, and property tests): the
 workflow above for all three tasks, exact resume, bundles and the runtime, models
 compiled into code (with [Kani proofs](reports/kani/) that their prediction never panics), and
-reference checks against scikit-learn. The
-[acceptance report](reports/implementation-acceptance.md) has measured evidence for
-each of these. Three GPU paths are [certified](reports/gpu/), and the bundle loader was
+reference checks against scikit-learn. The measured evidence: the
+[acceptance report](reports/implementation-acceptance.md), made on version 0.4, for the
+binary workflow, exact resume, bundles and the reference checks;
+[three public datasets](reports/datasets/2026-10-31-windows-x86_64/) for all three tasks; the
+[inference report](reports/inference/2026-10-31-windows-x86_64/) for compiled models.
+Three GPU paths are [certified](reports/gpu/), and the bundle loader was
 [fuzzed](reports/fuzz/) for 5.3 million inputs without a crash. The trees train
-[1,000,000 rows](reports/scaling/) end to end in 18 s with 1.6 GB of memory, and give
-[the same model on Windows and Linux](reports/reproducibility/).
+[1,000,000 rows](reports/training/2026-11-01-wsl-linux-x86_64/#a-million-rows) end to end in 15 s, 1.2 s of it the boosting rounds, and give
+[the same model on Windows and Linux](reports/training/2026-11-01-wsl-linux-x86_64/#windows).
 
 Not done yet, by design or for lack of hardware:
 
 - **GPU**: an opt-in build. GPU paths are certified only where they were run (an RTX 5090 and an AMD integrated GPU on Windows, [reports/gpu](reports/gpu/)); CUDA trains in TF32, which must be requested explicitly (`execution.precision = "tf32"`), because the matmul library has no fp32 switch. Asking for a GPU that is not there is an error, never a silent fallback.
-- **Platforms**: certified on Linux x86_64, where the acceptance run above was made. The full test suite also passes on Windows x86_64 and, in CI, on macOS (Apple Silicon); both are reported as "not certified" by design in 0.3. The Linux arm64 and macOS Intel binaries are built but not tested.
+- **Platforms**: certified on Linux x86_64, where the acceptance run above was made. The full test suite also passes on Windows x86_64 and, in CI, on macOS (Apple Silicon); both are reported as "not certified" by design in 0.4. The Linux arm64 and macOS Intel binaries are built but not tested.
 - **Tasks**: binary, multiclass and regression on one table, with stratified, grouped (`--group`) or chronological (`--time`) splits. Ranking, survival and multi-table data are not supported.
 - **macOS**: checked only by CI's Apple Silicon runners; nobody has run Tabsmith on a Mac by hand. The Linux results in the reports come from WSL on the development machine.
 - **Users**: no formal user study yet — feedback and issues are very welcome.

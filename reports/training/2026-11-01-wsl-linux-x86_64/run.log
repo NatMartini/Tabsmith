@@ -1,0 +1,246 @@
+run folder <work>/gbm-20261101-125309
+kernel 6.6.87.2-microsoft-standard-WSL2, 32 cpus
+other load: 0.00 0.00 0.00
+versions: lightgbm 4.7.0 xgboost 3.4.1 scikit-learn 1.9.1 numpy 2.5.4 rustc 1.98.1 (48a229cea 2026-09-01)
+built tabsmith 0.3.0
+tabsmith california t=1 r=334: 0.187 s, 334 rounds, weights a45b46ddcbc328d6
+tabsmith california t=1 r=334: 0.181 s, 334 rounds, weights a45b46ddcbc328d6
+tabsmith california t=1 r=334: 0.184 s, 334 rounds, weights a45b46ddcbc328d6
+tabsmith california t=4 r=334: 0.147 s, 334 rounds, weights a45b46ddcbc328d6
+tabsmith california t=4 r=334: 0.148 s, 334 rounds, weights a45b46ddcbc328d6
+tabsmith california t=4 r=334: 0.148 s, 334 rounds, weights a45b46ddcbc328d6
+tabsmith california t=8 r=334: 0.147 s, 334 rounds, weights a45b46ddcbc328d6
+tabsmith california t=8 r=334: 0.152 s, 334 rounds, weights a45b46ddcbc328d6
+tabsmith california t=8 r=334: 0.149 s, 334 rounds, weights a45b46ddcbc328d6
+tabsmith california t=12 r=334: 0.172 s, 334 rounds, weights a45b46ddcbc328d6
+tabsmith california t=12 r=334: 0.171 s, 334 rounds, weights a45b46ddcbc328d6
+tabsmith california t=12 r=334: 0.173 s, 334 rounds, weights a45b46ddcbc328d6
+tabsmith california t=16 r=334: 0.181 s, 334 rounds, weights a45b46ddcbc328d6
+tabsmith california t=16 r=334: 0.178 s, 334 rounds, weights a45b46ddcbc328d6
+tabsmith california t=16 r=334: 0.183 s, 334 rounds, weights a45b46ddcbc328d6
+tabsmith california test {'rmse': 46008.0476, 'mae': 30671.4209, 'r2': 0.8425}
+lightgbm project-california-r334 t=1 r=334 eval=True: 0.229 s, 213 MB, 453c558c41fffafc {'rmse': 46146.1518, 'mae': 30614.7319, 'r2': 0.8415}
+lightgbm project-california-r334 t=1 r=334 eval=True: 0.224 s, 214 MB, 453c558c41fffafc {'rmse': 46146.1518, 'mae': 30614.7319, 'r2': 0.8415}
+lightgbm project-california-r334 t=1 r=334 eval=True: 0.226 s, 214 MB, 453c558c41fffafc {'rmse': 46146.1518, 'mae': 30614.7319, 'r2': 0.8415}
+lightgbm project-california-r334 t=1 r=334 eval=False: 0.183 s, 213 MB, 453c558c41fffafc {'rmse': 46146.1518, 'mae': 30614.7319, 'r2': 0.8415}
+lightgbm project-california-r334 t=4 r=334 eval=True: 0.102 s, 214 MB, 453c558c41fffafc {'rmse': 46146.1518, 'mae': 30614.7319, 'r2': 0.8415}
+lightgbm project-california-r334 t=4 r=334 eval=True: 0.098 s, 215 MB, 453c558c41fffafc {'rmse': 46146.1518, 'mae': 30614.7319, 'r2': 0.8415}
+lightgbm project-california-r334 t=4 r=334 eval=True: 0.102 s, 214 MB, 453c558c41fffafc {'rmse': 46146.1518, 'mae': 30614.7319, 'r2': 0.8415}
+lightgbm project-california-r334 t=4 r=334 eval=False: 0.089 s, 213 MB, 453c558c41fffafc {'rmse': 46146.1518, 'mae': 30614.7319, 'r2': 0.8415}
+lightgbm project-california-r334 t=8 r=334 eval=True: 0.096 s, 215 MB, 453c558c41fffafc {'rmse': 46146.1518, 'mae': 30614.7319, 'r2': 0.8415}
+lightgbm project-california-r334 t=8 r=334 eval=True: 0.110 s, 215 MB, 453c558c41fffafc {'rmse': 46146.1518, 'mae': 30614.7319, 'r2': 0.8415}
+lightgbm project-california-r334 t=8 r=334 eval=True: 0.090 s, 215 MB, 453c558c41fffafc {'rmse': 46146.1518, 'mae': 30614.7319, 'r2': 0.8415}
+lightgbm project-california-r334 t=8 r=334 eval=False: 0.095 s, 214 MB, 453c558c41fffafc {'rmse': 46146.1518, 'mae': 30614.7319, 'r2': 0.8415}
+lightgbm project-california-r334 t=12 r=334 eval=True: 0.161 s, 213 MB, 453c558c41fffafc {'rmse': 46146.1518, 'mae': 30614.7319, 'r2': 0.8415}
+lightgbm project-california-r334 t=12 r=334 eval=True: 0.155 s, 213 MB, 453c558c41fffafc {'rmse': 46146.1518, 'mae': 30614.7319, 'r2': 0.8415}
+lightgbm project-california-r334 t=12 r=334 eval=True: 0.163 s, 213 MB, 453c558c41fffafc {'rmse': 46146.1518, 'mae': 30614.7319, 'r2': 0.8415}
+lightgbm project-california-r334 t=12 r=334 eval=False: 0.145 s, 213 MB, 453c558c41fffafc {'rmse': 46146.1518, 'mae': 30614.7319, 'r2': 0.8415}
+lightgbm project-california-r334 t=16 r=334 eval=True: 0.196 s, 213 MB, 453c558c41fffafc {'rmse': 46146.1518, 'mae': 30614.7319, 'r2': 0.8415}
+lightgbm project-california-r334 t=16 r=334 eval=True: 0.194 s, 214 MB, 453c558c41fffafc {'rmse': 46146.1518, 'mae': 30614.7319, 'r2': 0.8415}
+lightgbm project-california-r334 t=16 r=334 eval=True: 0.193 s, 213 MB, 453c558c41fffafc {'rmse': 46146.1518, 'mae': 30614.7319, 'r2': 0.8415}
+lightgbm project-california-r334 t=16 r=334 eval=False: 0.186 s, 213 MB, 453c558c41fffafc {'rmse': 46146.1518, 'mae': 30614.7319, 'r2': 0.8415}
+lightgbm-quantized project-california-r334 t=1 r=334 eval=True: 0.226 s, 213 MB, a40276bd904ffc6b {'rmse': 46260.189, 'mae': 30990.0627, 'r2': 0.8407}
+lightgbm-quantized project-california-r334 t=1 r=334 eval=True: 0.208 s, 214 MB, a40276bd904ffc6b {'rmse': 46260.189, 'mae': 30990.0627, 'r2': 0.8407}
+lightgbm-quantized project-california-r334 t=1 r=334 eval=True: 0.213 s, 214 MB, a40276bd904ffc6b {'rmse': 46260.189, 'mae': 30990.0627, 'r2': 0.8407}
+lightgbm-quantized project-california-r334 t=1 r=334 eval=False: 0.181 s, 214 MB, a40276bd904ffc6b {'rmse': 46260.189, 'mae': 30990.0627, 'r2': 0.8407}
+lightgbm-quantized project-california-r334 t=4 r=334 eval=True: 0.111 s, 214 MB, 71e1fe855a319a71 {'rmse': 46531.5113, 'mae': 31280.7717, 'r2': 0.8388}
+lightgbm-quantized project-california-r334 t=4 r=334 eval=True: 0.110 s, 214 MB, 71e1fe855a319a71 {'rmse': 46531.5113, 'mae': 31280.7717, 'r2': 0.8388}
+lightgbm-quantized project-california-r334 t=4 r=334 eval=True: 0.100 s, 214 MB, 71e1fe855a319a71 {'rmse': 46531.5113, 'mae': 31280.7717, 'r2': 0.8388}
+lightgbm-quantized project-california-r334 t=4 r=334 eval=False: 0.090 s, 213 MB, 71e1fe855a319a71 {'rmse': 46531.5113, 'mae': 31280.7717, 'r2': 0.8388}
+lightgbm-quantized project-california-r334 t=8 r=334 eval=True: 0.098 s, 213 MB, b0576db4c35f9900 {'rmse': 46543.8089, 'mae': 31289.0981, 'r2': 0.8388}
+lightgbm-quantized project-california-r334 t=8 r=334 eval=True: 0.097 s, 213 MB, b0576db4c35f9900 {'rmse': 46543.8089, 'mae': 31289.0981, 'r2': 0.8388}
+lightgbm-quantized project-california-r334 t=8 r=334 eval=True: 0.107 s, 213 MB, b0576db4c35f9900 {'rmse': 46543.8089, 'mae': 31289.0981, 'r2': 0.8388}
+lightgbm-quantized project-california-r334 t=8 r=334 eval=False: 0.102 s, 213 MB, b0576db4c35f9900 {'rmse': 46543.8089, 'mae': 31289.0981, 'r2': 0.8388}
+lightgbm-quantized project-california-r334 t=12 r=334 eval=True: 0.196 s, 213 MB, 0600be94563ec443 {'rmse': 46621.8021, 'mae': 31196.0889, 'r2': 0.8382}
+lightgbm-quantized project-california-r334 t=12 r=334 eval=True: 0.220 s, 213 MB, 0600be94563ec443 {'rmse': 46621.8021, 'mae': 31196.0889, 'r2': 0.8382}
+lightgbm-quantized project-california-r334 t=12 r=334 eval=True: 0.211 s, 213 MB, 0600be94563ec443 {'rmse': 46621.8021, 'mae': 31196.0889, 'r2': 0.8382}
+lightgbm-quantized project-california-r334 t=12 r=334 eval=False: 0.193 s, 212 MB, 0600be94563ec443 {'rmse': 46621.8021, 'mae': 31196.0889, 'r2': 0.8382}
+lightgbm-quantized project-california-r334 t=16 r=334 eval=True: 0.252 s, 214 MB, 6be6bf3ec649d157 {'rmse': 46508.4914, 'mae': 31200.6725, 'r2': 0.839}
+lightgbm-quantized project-california-r334 t=16 r=334 eval=True: 0.264 s, 214 MB, 6be6bf3ec649d157 {'rmse': 46508.4914, 'mae': 31200.6725, 'r2': 0.839}
+lightgbm-quantized project-california-r334 t=16 r=334 eval=True: 0.263 s, 213 MB, 6be6bf3ec649d157 {'rmse': 46508.4914, 'mae': 31200.6725, 'r2': 0.839}
+lightgbm-quantized project-california-r334 t=16 r=334 eval=False: 0.247 s, 212 MB, 6be6bf3ec649d157 {'rmse': 46508.4914, 'mae': 31200.6725, 'r2': 0.839}
+xgboost project-california-r334 t=1 r=334 eval=True: 0.546 s, 333 MB, b2bbc2238fbebd0e {'rmse': 46112.3763, 'mae': 30689.7125, 'r2': 0.8417}
+xgboost project-california-r334 t=1 r=334 eval=True: 0.451 s, 334 MB, b2bbc2238fbebd0e {'rmse': 46112.3763, 'mae': 30689.7125, 'r2': 0.8417}
+xgboost project-california-r334 t=1 r=334 eval=True: 0.471 s, 334 MB, b2bbc2238fbebd0e {'rmse': 46112.3763, 'mae': 30689.7125, 'r2': 0.8417}
+xgboost project-california-r334 t=1 r=334 eval=False: 0.436 s, 333 MB, b2bbc2238fbebd0e {'rmse': 46112.3763, 'mae': 30689.7125, 'r2': 0.8417}
+xgboost project-california-r334 t=4 r=334 eval=True: 0.361 s, 334 MB, b2bbc2238fbebd0e {'rmse': 46112.3763, 'mae': 30689.7125, 'r2': 0.8417}
+xgboost project-california-r334 t=4 r=334 eval=True: 0.360 s, 334 MB, b2bbc2238fbebd0e {'rmse': 46112.3763, 'mae': 30689.7125, 'r2': 0.8417}
+xgboost project-california-r334 t=4 r=334 eval=True: 0.349 s, 334 MB, b2bbc2238fbebd0e {'rmse': 46112.3763, 'mae': 30689.7125, 'r2': 0.8417}
+xgboost project-california-r334 t=4 r=334 eval=False: 0.325 s, 333 MB, b2bbc2238fbebd0e {'rmse': 46112.3763, 'mae': 30689.7125, 'r2': 0.8417}
+xgboost project-california-r334 t=8 r=334 eval=True: 0.359 s, 334 MB, b2bbc2238fbebd0e {'rmse': 46112.3763, 'mae': 30689.7125, 'r2': 0.8417}
+xgboost project-california-r334 t=8 r=334 eval=True: 0.333 s, 334 MB, b2bbc2238fbebd0e {'rmse': 46112.3763, 'mae': 30689.7125, 'r2': 0.8417}
+xgboost project-california-r334 t=8 r=334 eval=True: 0.358 s, 334 MB, b2bbc2238fbebd0e {'rmse': 46112.3763, 'mae': 30689.7125, 'r2': 0.8417}
+xgboost project-california-r334 t=8 r=334 eval=False: 0.323 s, 333 MB, b2bbc2238fbebd0e {'rmse': 46112.3763, 'mae': 30689.7125, 'r2': 0.8417}
+xgboost project-california-r334 t=12 r=334 eval=True: 0.486 s, 333 MB, b2bbc2238fbebd0e {'rmse': 46112.3763, 'mae': 30689.7125, 'r2': 0.8417}
+xgboost project-california-r334 t=12 r=334 eval=True: 0.453 s, 333 MB, b2bbc2238fbebd0e {'rmse': 46112.3763, 'mae': 30689.7125, 'r2': 0.8417}
+xgboost project-california-r334 t=12 r=334 eval=True: 0.480 s, 333 MB, b2bbc2238fbebd0e {'rmse': 46112.3763, 'mae': 30689.7125, 'r2': 0.8417}
+xgboost project-california-r334 t=12 r=334 eval=False: 0.456 s, 333 MB, b2bbc2238fbebd0e {'rmse': 46112.3763, 'mae': 30689.7125, 'r2': 0.8417}
+xgboost project-california-r334 t=16 r=334 eval=True: 0.528 s, 333 MB, b2bbc2238fbebd0e {'rmse': 46112.3763, 'mae': 30689.7125, 'r2': 0.8417}
+xgboost project-california-r334 t=16 r=334 eval=True: 0.520 s, 333 MB, b2bbc2238fbebd0e {'rmse': 46112.3763, 'mae': 30689.7125, 'r2': 0.8417}
+xgboost project-california-r334 t=16 r=334 eval=True: 0.504 s, 334 MB, b2bbc2238fbebd0e {'rmse': 46112.3763, 'mae': 30689.7125, 'r2': 0.8417}
+xgboost project-california-r334 t=16 r=334 eval=False: 0.489 s, 333 MB, b2bbc2238fbebd0e {'rmse': 46112.3763, 'mae': 30689.7125, 'r2': 0.8417}
+tabsmith adult t=1 r=180: 0.393 s, 180 rounds, weights 9eaafb8ddd7ffa1d
+tabsmith adult t=1 r=180: 0.412 s, 180 rounds, weights 9eaafb8ddd7ffa1d
+tabsmith adult t=1 r=180: 0.406 s, 180 rounds, weights 9eaafb8ddd7ffa1d
+tabsmith adult t=4 r=180: 0.239 s, 180 rounds, weights 9eaafb8ddd7ffa1d
+tabsmith adult t=4 r=180: 0.226 s, 180 rounds, weights 9eaafb8ddd7ffa1d
+tabsmith adult t=4 r=180: 0.228 s, 180 rounds, weights 9eaafb8ddd7ffa1d
+tabsmith adult t=8 r=180: 0.202 s, 180 rounds, weights 9eaafb8ddd7ffa1d
+tabsmith adult t=8 r=180: 0.201 s, 180 rounds, weights 9eaafb8ddd7ffa1d
+tabsmith adult t=8 r=180: 0.202 s, 180 rounds, weights 9eaafb8ddd7ffa1d
+tabsmith adult t=12 r=180: 0.227 s, 180 rounds, weights 9eaafb8ddd7ffa1d
+tabsmith adult t=12 r=180: 0.223 s, 180 rounds, weights 9eaafb8ddd7ffa1d
+tabsmith adult t=12 r=180: 0.222 s, 180 rounds, weights 9eaafb8ddd7ffa1d
+tabsmith adult t=16 r=180: 0.255 s, 180 rounds, weights 9eaafb8ddd7ffa1d
+tabsmith adult t=16 r=180: 0.243 s, 180 rounds, weights 9eaafb8ddd7ffa1d
+tabsmith adult t=16 r=180: 0.249 s, 180 rounds, weights 9eaafb8ddd7ffa1d
+tabsmith adult test {'roc_auc': 0.9304, 'balanced_accuracy': 0.8443, 'accuracy': 0.8344, 'log_loss': 0.33}
+lightgbm project-adult-r180 t=1 r=180 eval=True: 0.318 s, 308 MB, f9415f8f833e164c {'balanced_accuracy': 0.8437, 'roc_auc': 0.93, 'log_loss': 0.3294}
+lightgbm project-adult-r180 t=1 r=180 eval=True: 0.304 s, 307 MB, f9415f8f833e164c {'balanced_accuracy': 0.8437, 'roc_auc': 0.93, 'log_loss': 0.3294}
+lightgbm project-adult-r180 t=1 r=180 eval=True: 0.343 s, 308 MB, f9415f8f833e164c {'balanced_accuracy': 0.8437, 'roc_auc': 0.93, 'log_loss': 0.3294}
+lightgbm project-adult-r180 t=1 r=180 eval=False: 0.267 s, 306 MB, f9415f8f833e164c {'balanced_accuracy': 0.8437, 'roc_auc': 0.93, 'log_loss': 0.3294}
+lightgbm project-adult-r180 t=4 r=180 eval=True: 0.129 s, 307 MB, f9415f8f833e164c {'balanced_accuracy': 0.8437, 'roc_auc': 0.93, 'log_loss': 0.3294}
+lightgbm project-adult-r180 t=4 r=180 eval=True: 0.129 s, 309 MB, f9415f8f833e164c {'balanced_accuracy': 0.8437, 'roc_auc': 0.93, 'log_loss': 0.3294}
+lightgbm project-adult-r180 t=4 r=180 eval=True: 0.139 s, 308 MB, f9415f8f833e164c {'balanced_accuracy': 0.8437, 'roc_auc': 0.93, 'log_loss': 0.3294}
+lightgbm project-adult-r180 t=4 r=180 eval=False: 0.116 s, 304 MB, f9415f8f833e164c {'balanced_accuracy': 0.8437, 'roc_auc': 0.93, 'log_loss': 0.3294}
+lightgbm project-adult-r180 t=8 r=180 eval=True: 0.112 s, 308 MB, f9415f8f833e164c {'balanced_accuracy': 0.8437, 'roc_auc': 0.93, 'log_loss': 0.3294}
+lightgbm project-adult-r180 t=8 r=180 eval=True: 0.124 s, 308 MB, f9415f8f833e164c {'balanced_accuracy': 0.8437, 'roc_auc': 0.93, 'log_loss': 0.3294}
+lightgbm project-adult-r180 t=8 r=180 eval=True: 0.115 s, 310 MB, f9415f8f833e164c {'balanced_accuracy': 0.8437, 'roc_auc': 0.93, 'log_loss': 0.3294}
+lightgbm project-adult-r180 t=8 r=180 eval=False: 0.099 s, 304 MB, f9415f8f833e164c {'balanced_accuracy': 0.8437, 'roc_auc': 0.93, 'log_loss': 0.3294}
+lightgbm project-adult-r180 t=12 r=180 eval=True: 0.151 s, 310 MB, f9415f8f833e164c {'balanced_accuracy': 0.8437, 'roc_auc': 0.93, 'log_loss': 0.3294}
+lightgbm project-adult-r180 t=12 r=180 eval=True: 0.160 s, 306 MB, f9415f8f833e164c {'balanced_accuracy': 0.8437, 'roc_auc': 0.93, 'log_loss': 0.3294}
+lightgbm project-adult-r180 t=12 r=180 eval=True: 0.161 s, 307 MB, f9415f8f833e164c {'balanced_accuracy': 0.8437, 'roc_auc': 0.93, 'log_loss': 0.3294}
+lightgbm project-adult-r180 t=12 r=180 eval=False: 0.142 s, 304 MB, f9415f8f833e164c {'balanced_accuracy': 0.8437, 'roc_auc': 0.93, 'log_loss': 0.3294}
+lightgbm project-adult-r180 t=16 r=180 eval=True: 0.181 s, 307 MB, f9415f8f833e164c {'balanced_accuracy': 0.8437, 'roc_auc': 0.93, 'log_loss': 0.3294}
+lightgbm project-adult-r180 t=16 r=180 eval=True: 0.195 s, 308 MB, f9415f8f833e164c {'balanced_accuracy': 0.8437, 'roc_auc': 0.93, 'log_loss': 0.3294}
+lightgbm project-adult-r180 t=16 r=180 eval=True: 0.191 s, 308 MB, f9415f8f833e164c {'balanced_accuracy': 0.8437, 'roc_auc': 0.93, 'log_loss': 0.3294}
+lightgbm project-adult-r180 t=16 r=180 eval=False: 0.172 s, 305 MB, f9415f8f833e164c {'balanced_accuracy': 0.8437, 'roc_auc': 0.93, 'log_loss': 0.3294}
+lightgbm-quantized project-adult-r180 t=1 r=180 eval=True: 0.334 s, 310 MB, 301cc7141c3df236 {'balanced_accuracy': 0.8425, 'roc_auc': 0.9292, 'log_loss': 0.3329}
+lightgbm-quantized project-adult-r180 t=1 r=180 eval=True: 0.332 s, 308 MB, 301cc7141c3df236 {'balanced_accuracy': 0.8425, 'roc_auc': 0.9292, 'log_loss': 0.3329}
+lightgbm-quantized project-adult-r180 t=1 r=180 eval=True: 0.356 s, 311 MB, 301cc7141c3df236 {'balanced_accuracy': 0.8425, 'roc_auc': 0.9292, 'log_loss': 0.3329}
+lightgbm-quantized project-adult-r180 t=1 r=180 eval=False: 0.260 s, 303 MB, 301cc7141c3df236 {'balanced_accuracy': 0.8425, 'roc_auc': 0.9292, 'log_loss': 0.3329}
+lightgbm-quantized project-adult-r180 t=4 r=180 eval=True: 0.138 s, 310 MB, e668e5a68c1440e2 {'balanced_accuracy': 0.8409, 'roc_auc': 0.9297, 'log_loss': 0.3327}
+lightgbm-quantized project-adult-r180 t=4 r=180 eval=True: 0.194 s, 310 MB, e668e5a68c1440e2 {'balanced_accuracy': 0.8409, 'roc_auc': 0.9297, 'log_loss': 0.3327}
+lightgbm-quantized project-adult-r180 t=4 r=180 eval=True: 0.140 s, 310 MB, e668e5a68c1440e2 {'balanced_accuracy': 0.8409, 'roc_auc': 0.9297, 'log_loss': 0.3327}
+lightgbm-quantized project-adult-r180 t=4 r=180 eval=False: 0.149 s, 304 MB, e668e5a68c1440e2 {'balanced_accuracy': 0.8409, 'roc_auc': 0.9297, 'log_loss': 0.3327}
+lightgbm-quantized project-adult-r180 t=8 r=180 eval=True: 0.130 s, 307 MB, 903725014dc46cbc {'balanced_accuracy': 0.844, 'roc_auc': 0.9293, 'log_loss': 0.3336}
+lightgbm-quantized project-adult-r180 t=8 r=180 eval=True: 0.132 s, 307 MB, 903725014dc46cbc {'balanced_accuracy': 0.844, 'roc_auc': 0.9293, 'log_loss': 0.3336}
+lightgbm-quantized project-adult-r180 t=8 r=180 eval=True: 0.124 s, 309 MB, 903725014dc46cbc {'balanced_accuracy': 0.844, 'roc_auc': 0.9293, 'log_loss': 0.3336}
+lightgbm-quantized project-adult-r180 t=8 r=180 eval=False: 0.103 s, 304 MB, 903725014dc46cbc {'balanced_accuracy': 0.844, 'roc_auc': 0.9293, 'log_loss': 0.3336}
+lightgbm-quantized project-adult-r180 t=12 r=180 eval=True: 0.187 s, 307 MB, 2e73bff87626f252 {'balanced_accuracy': 0.8451, 'roc_auc': 0.9288, 'log_loss': 0.3346}
+lightgbm-quantized project-adult-r180 t=12 r=180 eval=True: 0.174 s, 310 MB, 2e73bff87626f252 {'balanced_accuracy': 0.8451, 'roc_auc': 0.9288, 'log_loss': 0.3346}
+lightgbm-quantized project-adult-r180 t=12 r=180 eval=True: 0.176 s, 309 MB, 2e73bff87626f252 {'balanced_accuracy': 0.8451, 'roc_auc': 0.9288, 'log_loss': 0.3346}
+lightgbm-quantized project-adult-r180 t=12 r=180 eval=False: 0.171 s, 305 MB, 2e73bff87626f252 {'balanced_accuracy': 0.8451, 'roc_auc': 0.9288, 'log_loss': 0.3346}
+lightgbm-quantized project-adult-r180 t=16 r=180 eval=True: 0.237 s, 311 MB, 08938f7dca8f4652 {'balanced_accuracy': 0.8441, 'roc_auc': 0.9292, 'log_loss': 0.3334}
+lightgbm-quantized project-adult-r180 t=16 r=180 eval=True: 0.229 s, 311 MB, 08938f7dca8f4652 {'balanced_accuracy': 0.8441, 'roc_auc': 0.9292, 'log_loss': 0.3334}
+lightgbm-quantized project-adult-r180 t=16 r=180 eval=True: 0.223 s, 308 MB, 08938f7dca8f4652 {'balanced_accuracy': 0.8441, 'roc_auc': 0.9292, 'log_loss': 0.3334}
+lightgbm-quantized project-adult-r180 t=16 r=180 eval=False: 0.213 s, 305 MB, 08938f7dca8f4652 {'balanced_accuracy': 0.8441, 'roc_auc': 0.9292, 'log_loss': 0.3334}
+xgboost project-adult-r180 t=1 r=180 eval=True: 0.755 s, 457 MB, 1dfa5cd341096176 {'balanced_accuracy': 0.8421, 'roc_auc': 0.9298, 'log_loss': 0.3293}
+xgboost project-adult-r180 t=1 r=180 eval=True: 0.747 s, 457 MB, 1dfa5cd341096176 {'balanced_accuracy': 0.8421, 'roc_auc': 0.9298, 'log_loss': 0.3293}
+xgboost project-adult-r180 t=1 r=180 eval=True: 0.736 s, 462 MB, 1dfa5cd341096176 {'balanced_accuracy': 0.8421, 'roc_auc': 0.9298, 'log_loss': 0.3293}
+xgboost project-adult-r180 t=1 r=180 eval=False: 0.691 s, 452 MB, 1dfa5cd341096176 {'balanced_accuracy': 0.8421, 'roc_auc': 0.9298, 'log_loss': 0.3293}
+xgboost project-adult-r180 t=4 r=180 eval=True: 0.398 s, 467 MB, 1dfa5cd341096176 {'balanced_accuracy': 0.8421, 'roc_auc': 0.9298, 'log_loss': 0.3293}
+xgboost project-adult-r180 t=4 r=180 eval=True: 0.405 s, 465 MB, 1dfa5cd341096176 {'balanced_accuracy': 0.8421, 'roc_auc': 0.9298, 'log_loss': 0.3293}
+xgboost project-adult-r180 t=4 r=180 eval=True: 0.425 s, 465 MB, 1dfa5cd341096176 {'balanced_accuracy': 0.8421, 'roc_auc': 0.9298, 'log_loss': 0.3293}
+xgboost project-adult-r180 t=4 r=180 eval=False: 0.369 s, 459 MB, 1dfa5cd341096176 {'balanced_accuracy': 0.8421, 'roc_auc': 0.9298, 'log_loss': 0.3293}
+xgboost project-adult-r180 t=8 r=180 eval=True: 0.389 s, 468 MB, 1dfa5cd341096176 {'balanced_accuracy': 0.8421, 'roc_auc': 0.9298, 'log_loss': 0.3293}
+xgboost project-adult-r180 t=8 r=180 eval=True: 0.373 s, 469 MB, 1dfa5cd341096176 {'balanced_accuracy': 0.8421, 'roc_auc': 0.9298, 'log_loss': 0.3293}
+xgboost project-adult-r180 t=8 r=180 eval=True: 0.399 s, 471 MB, 1dfa5cd341096176 {'balanced_accuracy': 0.8421, 'roc_auc': 0.9298, 'log_loss': 0.3293}
+xgboost project-adult-r180 t=8 r=180 eval=False: 0.351 s, 461 MB, 1dfa5cd341096176 {'balanced_accuracy': 0.8421, 'roc_auc': 0.9298, 'log_loss': 0.3293}
+xgboost project-adult-r180 t=12 r=180 eval=True: 0.462 s, 467 MB, 1dfa5cd341096176 {'balanced_accuracy': 0.8421, 'roc_auc': 0.9298, 'log_loss': 0.3293}
+xgboost project-adult-r180 t=12 r=180 eval=True: 0.439 s, 468 MB, 1dfa5cd341096176 {'balanced_accuracy': 0.8421, 'roc_auc': 0.9298, 'log_loss': 0.3293}
+xgboost project-adult-r180 t=12 r=180 eval=True: 0.458 s, 471 MB, 1dfa5cd341096176 {'balanced_accuracy': 0.8421, 'roc_auc': 0.9298, 'log_loss': 0.3293}
+xgboost project-adult-r180 t=12 r=180 eval=False: 0.408 s, 466 MB, 1dfa5cd341096176 {'balanced_accuracy': 0.8421, 'roc_auc': 0.9298, 'log_loss': 0.3293}
+xgboost project-adult-r180 t=16 r=180 eval=True: 0.484 s, 471 MB, 1dfa5cd341096176 {'balanced_accuracy': 0.8421, 'roc_auc': 0.9298, 'log_loss': 0.3293}
+xgboost project-adult-r180 t=16 r=180 eval=True: 0.490 s, 468 MB, 1dfa5cd341096176 {'balanced_accuracy': 0.8421, 'roc_auc': 0.9298, 'log_loss': 0.3293}
+xgboost project-adult-r180 t=16 r=180 eval=True: 0.489 s, 469 MB, 1dfa5cd341096176 {'balanced_accuracy': 0.8421, 'roc_auc': 0.9298, 'log_loss': 0.3293}
+xgboost project-adult-r180 t=16 r=180 eval=False: 0.448 s, 462 MB, 1dfa5cd341096176 {'balanced_accuracy': 0.8421, 'roc_auc': 0.9298, 'log_loss': 0.3293}
+tabsmith covertype t=1 r=40: 3.871 s, 40 rounds, weights cf1898624256e85a
+tabsmith covertype t=1 r=40: 3.833 s, 40 rounds, weights cf1898624256e85a
+tabsmith covertype t=1 r=40: 3.865 s, 40 rounds, weights cf1898624256e85a
+tabsmith covertype t=4 r=40: 1.311 s, 40 rounds, weights cf1898624256e85a
+tabsmith covertype t=4 r=40: 1.328 s, 40 rounds, weights cf1898624256e85a
+tabsmith covertype t=4 r=40: 1.305 s, 40 rounds, weights cf1898624256e85a
+tabsmith covertype t=8 r=40: 0.947 s, 40 rounds, weights cf1898624256e85a
+tabsmith covertype t=8 r=40: 0.929 s, 40 rounds, weights cf1898624256e85a
+tabsmith covertype t=8 r=40: 0.940 s, 40 rounds, weights cf1898624256e85a
+tabsmith covertype t=12 r=40: 0.952 s, 40 rounds, weights cf1898624256e85a
+tabsmith covertype t=12 r=40: 0.908 s, 40 rounds, weights cf1898624256e85a
+tabsmith covertype t=12 r=40: 0.915 s, 40 rounds, weights cf1898624256e85a
+tabsmith covertype t=16 r=40: 0.946 s, 40 rounds, weights cf1898624256e85a
+tabsmith covertype t=16 r=40: 0.944 s, 40 rounds, weights cf1898624256e85a
+tabsmith covertype t=16 r=40: 0.937 s, 40 rounds, weights cf1898624256e85a
+tabsmith covertype test {'roc_auc': 0.9644, 'balanced_accuracy': 0.8551, 'accuracy': 0.7304, 'log_loss': 0.6081}
+lightgbm project-covertype-r40 t=1 r=40 eval=True: 3.576 s, 860 MB, e85b9fb305c79fee {'balanced_accuracy': 0.8485, 'accuracy': 0.7203, 'roc_auc': 0.9618, 'log_loss': 0.636}
+lightgbm project-covertype-r40 t=1 r=40 eval=True: 3.650 s, 814 MB, e85b9fb305c79fee {'balanced_accuracy': 0.8485, 'accuracy': 0.7203, 'roc_auc': 0.9618, 'log_loss': 0.636}
+lightgbm project-covertype-r40 t=1 r=40 eval=True: 3.480 s, 808 MB, e85b9fb305c79fee {'balanced_accuracy': 0.8485, 'accuracy': 0.7203, 'roc_auc': 0.9618, 'log_loss': 0.636}
+lightgbm project-covertype-r40 t=1 r=40 eval=False: 2.960 s, 807 MB, e85b9fb305c79fee {'balanced_accuracy': 0.8485, 'accuracy': 0.7203, 'roc_auc': 0.9618, 'log_loss': 0.636}
+lightgbm project-covertype-r40 t=4 r=40 eval=True: 1.181 s, 910 MB, e85b9fb305c79fee {'balanced_accuracy': 0.8485, 'accuracy': 0.7203, 'roc_auc': 0.9618, 'log_loss': 0.636}
+lightgbm project-covertype-r40 t=4 r=40 eval=True: 1.267 s, 808 MB, e85b9fb305c79fee {'balanced_accuracy': 0.8485, 'accuracy': 0.7203, 'roc_auc': 0.9618, 'log_loss': 0.636}
+lightgbm project-covertype-r40 t=4 r=40 eval=True: 1.188 s, 804 MB, e85b9fb305c79fee {'balanced_accuracy': 0.8485, 'accuracy': 0.7203, 'roc_auc': 0.9618, 'log_loss': 0.636}
+lightgbm project-covertype-r40 t=4 r=40 eval=False: 1.121 s, 847 MB, e85b9fb305c79fee {'balanced_accuracy': 0.8485, 'accuracy': 0.7203, 'roc_auc': 0.9618, 'log_loss': 0.636}
+lightgbm project-covertype-r40 t=8 r=40 eval=True: 0.829 s, 867 MB, e85b9fb305c79fee {'balanced_accuracy': 0.8485, 'accuracy': 0.7203, 'roc_auc': 0.9618, 'log_loss': 0.636}
+lightgbm project-covertype-r40 t=8 r=40 eval=True: 0.952 s, 848 MB, e85b9fb305c79fee {'balanced_accuracy': 0.8485, 'accuracy': 0.7203, 'roc_auc': 0.9618, 'log_loss': 0.636}
+lightgbm project-covertype-r40 t=8 r=40 eval=True: 0.846 s, 809 MB, e85b9fb305c79fee {'balanced_accuracy': 0.8485, 'accuracy': 0.7203, 'roc_auc': 0.9618, 'log_loss': 0.636}
+lightgbm project-covertype-r40 t=8 r=40 eval=False: 0.772 s, 810 MB, e85b9fb305c79fee {'balanced_accuracy': 0.8485, 'accuracy': 0.7203, 'roc_auc': 0.9618, 'log_loss': 0.636}
+lightgbm project-covertype-r40 t=12 r=40 eval=True: 0.963 s, 851 MB, e85b9fb305c79fee {'balanced_accuracy': 0.8485, 'accuracy': 0.7203, 'roc_auc': 0.9618, 'log_loss': 0.636}
+lightgbm project-covertype-r40 t=12 r=40 eval=True: 0.957 s, 847 MB, e85b9fb305c79fee {'balanced_accuracy': 0.8485, 'accuracy': 0.7203, 'roc_auc': 0.9618, 'log_loss': 0.636}
+lightgbm project-covertype-r40 t=12 r=40 eval=True: 0.979 s, 857 MB, e85b9fb305c79fee {'balanced_accuracy': 0.8485, 'accuracy': 0.7203, 'roc_auc': 0.9618, 'log_loss': 0.636}
+lightgbm project-covertype-r40 t=12 r=40 eval=False: 0.868 s, 817 MB, e85b9fb305c79fee {'balanced_accuracy': 0.8485, 'accuracy': 0.7203, 'roc_auc': 0.9618, 'log_loss': 0.636}
+lightgbm project-covertype-r40 t=16 r=40 eval=True: 1.031 s, 850 MB, e85b9fb305c79fee {'balanced_accuracy': 0.8485, 'accuracy': 0.7203, 'roc_auc': 0.9618, 'log_loss': 0.636}
+lightgbm project-covertype-r40 t=16 r=40 eval=True: 0.996 s, 860 MB, e85b9fb305c79fee {'balanced_accuracy': 0.8485, 'accuracy': 0.7203, 'roc_auc': 0.9618, 'log_loss': 0.636}
+lightgbm project-covertype-r40 t=16 r=40 eval=True: 0.996 s, 814 MB, e85b9fb305c79fee {'balanced_accuracy': 0.8485, 'accuracy': 0.7203, 'roc_auc': 0.9618, 'log_loss': 0.636}
+lightgbm project-covertype-r40 t=16 r=40 eval=False: 0.927 s, 848 MB, e85b9fb305c79fee {'balanced_accuracy': 0.8485, 'accuracy': 0.7203, 'roc_auc': 0.9618, 'log_loss': 0.636}
+lightgbm-quantized project-covertype-r40 t=1 r=40 eval=True: 3.067 s, 846 MB, 30b744f03a2c5525 {'balanced_accuracy': 0.8483, 'accuracy': 0.7132, 'roc_auc': 0.9607, 'log_loss': 0.6548}
+lightgbm-quantized project-covertype-r40 t=1 r=40 eval=True: 3.113 s, 850 MB, 30b744f03a2c5525 {'balanced_accuracy': 0.8483, 'accuracy': 0.7132, 'roc_auc': 0.9607, 'log_loss': 0.6548}
+lightgbm-quantized project-covertype-r40 t=1 r=40 eval=True: 3.227 s, 808 MB, 30b744f03a2c5525 {'balanced_accuracy': 0.8483, 'accuracy': 0.7132, 'roc_auc': 0.9607, 'log_loss': 0.6548}
+lightgbm-quantized project-covertype-r40 t=1 r=40 eval=False: 2.565 s, 809 MB, 30b744f03a2c5525 {'balanced_accuracy': 0.8483, 'accuracy': 0.7132, 'roc_auc': 0.9607, 'log_loss': 0.6548}
+lightgbm-quantized project-covertype-r40 t=4 r=40 eval=True: 1.166 s, 849 MB, 3659b6122126cfb0 {'balanced_accuracy': 0.8462, 'accuracy': 0.7127, 'roc_auc': 0.9604, 'log_loss': 0.656}
+lightgbm-quantized project-covertype-r40 t=4 r=40 eval=True: 1.257 s, 848 MB, 3659b6122126cfb0 {'balanced_accuracy': 0.8462, 'accuracy': 0.7127, 'roc_auc': 0.9604, 'log_loss': 0.656}
+lightgbm-quantized project-covertype-r40 t=4 r=40 eval=True: 1.271 s, 812 MB, 3659b6122126cfb0 {'balanced_accuracy': 0.8462, 'accuracy': 0.7127, 'roc_auc': 0.9604, 'log_loss': 0.656}
+lightgbm-quantized project-covertype-r40 t=4 r=40 eval=False: 0.989 s, 804 MB, 3659b6122126cfb0 {'balanced_accuracy': 0.8462, 'accuracy': 0.7127, 'roc_auc': 0.9604, 'log_loss': 0.656}
+lightgbm-quantized project-covertype-r40 t=8 r=40 eval=True: 0.771 s, 809 MB, 10bf73fd7fe7dc9b {'balanced_accuracy': 0.8459, 'accuracy': 0.7093, 'roc_auc': 0.96, 'log_loss': 0.6576}
+lightgbm-quantized project-covertype-r40 t=8 r=40 eval=True: 0.831 s, 848 MB, 10bf73fd7fe7dc9b {'balanced_accuracy': 0.8459, 'accuracy': 0.7093, 'roc_auc': 0.96, 'log_loss': 0.6576}
+lightgbm-quantized project-covertype-r40 t=8 r=40 eval=True: 0.881 s, 895 MB, 10bf73fd7fe7dc9b {'balanced_accuracy': 0.8459, 'accuracy': 0.7093, 'roc_auc': 0.96, 'log_loss': 0.6576}
+lightgbm-quantized project-covertype-r40 t=8 r=40 eval=False: 0.723 s, 808 MB, 10bf73fd7fe7dc9b {'balanced_accuracy': 0.8459, 'accuracy': 0.7093, 'roc_auc': 0.96, 'log_loss': 0.6576}
+lightgbm-quantized project-covertype-r40 t=12 r=40 eval=True: 0.903 s, 848 MB, 16bb0dd2d0b98812 {'balanced_accuracy': 0.8449, 'accuracy': 0.7127, 'roc_auc': 0.9602, 'log_loss': 0.6577}
+lightgbm-quantized project-covertype-r40 t=12 r=40 eval=True: 0.901 s, 816 MB, 16bb0dd2d0b98812 {'balanced_accuracy': 0.8449, 'accuracy': 0.7127, 'roc_auc': 0.9602, 'log_loss': 0.6577}
+lightgbm-quantized project-covertype-r40 t=12 r=40 eval=True: 0.893 s, 811 MB, 16bb0dd2d0b98812 {'balanced_accuracy': 0.8449, 'accuracy': 0.7127, 'roc_auc': 0.9602, 'log_loss': 0.6577}
+lightgbm-quantized project-covertype-r40 t=12 r=40 eval=False: 0.816 s, 844 MB, 16bb0dd2d0b98812 {'balanced_accuracy': 0.8449, 'accuracy': 0.7127, 'roc_auc': 0.9602, 'log_loss': 0.6577}
+lightgbm-quantized project-covertype-r40 t=16 r=40 eval=True: 0.925 s, 816 MB, db5768dd11b41a06 {'balanced_accuracy': 0.8461, 'accuracy': 0.7119, 'roc_auc': 0.9604, 'log_loss': 0.6556}
+lightgbm-quantized project-covertype-r40 t=16 r=40 eval=True: 0.953 s, 816 MB, db5768dd11b41a06 {'balanced_accuracy': 0.8461, 'accuracy': 0.7119, 'roc_auc': 0.9604, 'log_loss': 0.6556}
+lightgbm-quantized project-covertype-r40 t=16 r=40 eval=True: 0.972 s, 817 MB, db5768dd11b41a06 {'balanced_accuracy': 0.8461, 'accuracy': 0.7119, 'roc_auc': 0.9604, 'log_loss': 0.6556}
+lightgbm-quantized project-covertype-r40 t=16 r=40 eval=False: 0.847 s, 860 MB, db5768dd11b41a06 {'balanced_accuracy': 0.8461, 'accuracy': 0.7119, 'roc_auc': 0.9604, 'log_loss': 0.6556}
+xgboost project-covertype-r40 t=1 r=40 eval=True: 6.229 s, 1106 MB, e1fd63d8d4ac2896 {'balanced_accuracy': 0.8318, 'accuracy': 0.6853, 'roc_auc': 0.9549, 'log_loss': 0.7494}
+xgboost project-covertype-r40 t=1 r=40 eval=True: 6.716 s, 1103 MB, e1fd63d8d4ac2896 {'balanced_accuracy': 0.8318, 'accuracy': 0.6853, 'roc_auc': 0.9549, 'log_loss': 0.7494}
+xgboost project-covertype-r40 t=1 r=40 eval=True: 6.541 s, 1102 MB, e1fd63d8d4ac2896 {'balanced_accuracy': 0.8318, 'accuracy': 0.6853, 'roc_auc': 0.9549, 'log_loss': 0.7494}
+xgboost project-covertype-r40 t=1 r=40 eval=False: 6.094 s, 1061 MB, e1fd63d8d4ac2896 {'balanced_accuracy': 0.8318, 'accuracy': 0.6853, 'roc_auc': 0.9549, 'log_loss': 0.7494}
+xgboost project-covertype-r40 t=4 r=40 eval=True: 2.270 s, 1108 MB, e1fd63d8d4ac2896 {'balanced_accuracy': 0.8318, 'accuracy': 0.6853, 'roc_auc': 0.9549, 'log_loss': 0.7494}
+xgboost project-covertype-r40 t=4 r=40 eval=True: 2.308 s, 1070 MB, e1fd63d8d4ac2896 {'balanced_accuracy': 0.8318, 'accuracy': 0.6853, 'roc_auc': 0.9549, 'log_loss': 0.7494}
+xgboost project-covertype-r40 t=4 r=40 eval=True: 4.727 s, 1061 MB, e1fd63d8d4ac2896 {'balanced_accuracy': 0.8318, 'accuracy': 0.6853, 'roc_auc': 0.9549, 'log_loss': 0.7494}
+xgboost project-covertype-r40 t=4 r=40 eval=False: 2.253 s, 1025 MB, e1fd63d8d4ac2896 {'balanced_accuracy': 0.8318, 'accuracy': 0.6853, 'roc_auc': 0.9549, 'log_loss': 0.7494}
+xgboost project-covertype-r40 t=8 r=40 eval=True: 2.020 s, 1068 MB, e1fd63d8d4ac2896 {'balanced_accuracy': 0.8318, 'accuracy': 0.6853, 'roc_auc': 0.9549, 'log_loss': 0.7494}
+xgboost project-covertype-r40 t=8 r=40 eval=True: 1.568 s, 1067 MB, e1fd63d8d4ac2896 {'balanced_accuracy': 0.8318, 'accuracy': 0.6853, 'roc_auc': 0.9549, 'log_loss': 0.7494}
+xgboost project-covertype-r40 t=8 r=40 eval=True: 1.739 s, 1115 MB, e1fd63d8d4ac2896 {'balanced_accuracy': 0.8318, 'accuracy': 0.6853, 'roc_auc': 0.9549, 'log_loss': 0.7494}
+xgboost project-covertype-r40 t=8 r=40 eval=False: 1.687 s, 1069 MB, e1fd63d8d4ac2896 {'balanced_accuracy': 0.8318, 'accuracy': 0.6853, 'roc_auc': 0.9549, 'log_loss': 0.7494}
+xgboost project-covertype-r40 t=12 r=40 eval=True: 1.755 s, 1069 MB, e1fd63d8d4ac2896 {'balanced_accuracy': 0.8318, 'accuracy': 0.6853, 'roc_auc': 0.9549, 'log_loss': 0.7494}
+xgboost project-covertype-r40 t=12 r=40 eval=True: 1.762 s, 1069 MB, e1fd63d8d4ac2896 {'balanced_accuracy': 0.8318, 'accuracy': 0.6853, 'roc_auc': 0.9549, 'log_loss': 0.7494}
+xgboost project-covertype-r40 t=12 r=40 eval=True: 1.785 s, 1113 MB, e1fd63d8d4ac2896 {'balanced_accuracy': 0.8318, 'accuracy': 0.6853, 'roc_auc': 0.9549, 'log_loss': 0.7494}
+xgboost project-covertype-r40 t=12 r=40 eval=False: 1.627 s, 1115 MB, e1fd63d8d4ac2896 {'balanced_accuracy': 0.8318, 'accuracy': 0.6853, 'roc_auc': 0.9549, 'log_loss': 0.7494}
+xgboost project-covertype-r40 t=16 r=40 eval=True: 1.978 s, 1072 MB, e1fd63d8d4ac2896 {'balanced_accuracy': 0.8318, 'accuracy': 0.6853, 'roc_auc': 0.9549, 'log_loss': 0.7494}
+xgboost project-covertype-r40 t=16 r=40 eval=True: 1.783 s, 1115 MB, e1fd63d8d4ac2896 {'balanced_accuracy': 0.8318, 'accuracy': 0.6853, 'roc_auc': 0.9549, 'log_loss': 0.7494}
+xgboost project-covertype-r40 t=16 r=40 eval=True: 1.865 s, 1071 MB, e1fd63d8d4ac2896 {'balanced_accuracy': 0.8318, 'accuracy': 0.6853, 'roc_auc': 0.9549, 'log_loss': 0.7494}
+xgboost project-covertype-r40 t=16 r=40 eval=False: 1.725 s, 1066 MB, e1fd63d8d4ac2896 {'balanced_accuracy': 0.8318, 'accuracy': 0.6853, 'roc_auc': 0.9549, 'log_loss': 0.7494}
+tabsmith covertype t=8 r=400: 8.342 s, 400 rounds, weights 0dc79ca330c16a80
+tabsmith covertype t=12 r=400: 7.927 s, 400 rounds, weights 0dc79ca330c16a80
+tabsmith covertype t=8 r=400: 8.507 s, 400 rounds, weights 0dc79ca330c16a80
+tabsmith covertype t=12 r=400: 8.113 s, 400 rounds, weights 0dc79ca330c16a80
+tabsmith covertype test {'roc_auc': 0.9923, 'balanced_accuracy': 0.9339, 'accuracy': 0.8985, 'log_loss': 0.2633}
+lightgbm project-covertype-r400 t=8 r=400 eval=True: 6.262 s, 813 MB, 36c1cb4a53e8adfd {'balanced_accuracy': 0.9321, 'accuracy': 0.8903, 'roc_auc': 0.9912, 'log_loss': 0.2818}
+lightgbm-quantized project-covertype-r400 t=8 r=400 eval=True: 5.956 s, 811 MB, bcd61d0694f0c52c {'balanced_accuracy': 0.9169, 'accuracy': 0.8463, 'roc_auc': 0.9847, 'log_loss': 0.3805}
+xgboost project-covertype-r400 t=8 r=400 eval=True: 12.208 s, 1115 MB, 906cba112c649c70 {'balanced_accuracy': 0.9179, 'accuracy': 0.8546, 'roc_auc': 0.9859, 'log_loss': 0.3607}
+lightgbm project-covertype-r400 t=8 r=400 eval=True: 6.399 s, 812 MB, d773e07988a70955 {'balanced_accuracy': 0.9321, 'accuracy': 0.8903, 'roc_auc': 0.9912, 'log_loss': 0.2818}
+lightgbm-quantized project-covertype-r400 t=8 r=400 eval=True: 5.652 s, 853 MB, 96e2fce69f100986 {'balanced_accuracy': 0.9169, 'accuracy': 0.8463, 'roc_auc': 0.9847, 'log_loss': 0.3805}
+xgboost project-covertype-r400 t=8 r=400 eval=True: 12.275 s, 1073 MB, 906cba112c649c70 {'balanced_accuracy': 0.9179, 'accuracy': 0.8546, 'roc_auc': 0.9859, 'log_loss': 0.3607}
+load at the end: 4.63 3.53 2.10
+done

@@ -312,7 +312,7 @@ dependencies = [
 
 [[package]]
 name = "tabsmith-contracts"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -323,14 +323,14 @@ dependencies = [
 
 [[package]]
 name = "tabsmith-embedded"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "libm",
 ]
 
 [[package]]
 name = "tabsmith-runtime"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "safetensors",
  "serde",

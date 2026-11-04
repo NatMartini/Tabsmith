@@ -1,7 +1,7 @@
 {
   "parent": "run-001",
   "parent_status": "interrupted",
-  "parent_steps": 116,
+  "parent_steps": 58,
   "resumed_from_step": 58,
   "resumed_run": "run-002",
   "resumed_model_sha256": "cba79c74ba76ffb102fb9252bdf4378c3126c1cbfb6220a9b3e05871a31a87cb",

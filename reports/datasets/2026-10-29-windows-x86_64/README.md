@@ -22,6 +22,15 @@ mirror). UCI Covertype (forest cover type, 7 classes: multiclass, 581,012 rows, 
 numeric inputs; CC BY 4.0). `datasets-prep.py` builds a CSV with a header from each
 download; nothing else is changed. The downloads are not in the repository.
 
+**Sources.** The files used, as downloaded on 2026-10-29. scikit-learn publishes the same
+SHA-256 for `cal_housing.tgz`.
+
+| Dataset | Download | Bytes | SHA-256 | Unpack into |
+|---|---|---|---|---|
+| Adult | <https://archive.ics.uci.edu/static/public/2/adult.zip> | 620,237 | `7537312dd56c2b98035880805ce99e68183a30ee468aa5329d6df0fbb3cc21bb` | `<folder>/adult/files/` |
+| California Housing | <https://ndownloader.figshare.com/files/5976036> (`cal_housing.tgz`) | 441,963 | `aaa5c9a6afe2225cc2aed2723682ae403280c4a3695a2ddda4ffb5d8215ea681` | `<folder>/california/files/` |
+| Covertype | <https://archive.ics.uci.edu/static/public/31/covertype.zip> | 11,251,206 | `89a975c2457cd48e824238ae43c5a3cb762e42c4b4078d9b44a4514055105f6d` | `<folder>/covertype/files/` |
+
 **How.** For each dataset, one `tabsmith train` on Windows (`datasets-train.ps1`;
 stratified split 70/15/15 keyed by row content, every candidate, CPU). Tabsmith chose
 its model on the validation split and evaluated it once on the test split; for this
@@ -110,8 +119,8 @@ the README benchmark measures (`reports/benchmarks/`).
 
 ## Reproduce
 
-1. Download the three datasets (links above) and run
-   `python -I -B datasets-prep.py <folder>` to build the CSVs.
+1. Download the three datasets (links above), check their SHA-256, unpack each into the
+   folder the table names, and run `python -I -B datasets-prep.py <folder>` to build the CSVs.
 2. `datasets-train.ps1` (Windows; the same `tabsmith train` lines work in any shell),
    then `datasets-evaluate.ps1`.
 3. With a Python that has scikit-learn, pandas and numpy: `datasets-compare.sh`, or

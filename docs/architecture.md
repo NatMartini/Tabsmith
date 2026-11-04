@@ -67,13 +67,14 @@ no stochastic layers, so a checkpoint (model record + Adam state + loop state + 
 weights) is enough for an exact resume. Validation after each epoch runs the runtime on
 all cores, rows split between threads; every row is computed exactly as on one thread.
 
-`gbdt` is Tabsmith's own histogram gradient boosting (`tabsmith-workflow/src/gbdt.rs`),
+`gbdt` is Tabsmith's own histogram gradient boosting (`tabsmith-workflow/src/gbdt/`),
 trained on the same fitted features. One boosting round is one epoch of the same
 training state, so checkpoints, cancellation and exact resume work alike. It runs on
-up to 12 threads (`RAYON_NUM_THREADS` overrides that): each feature sums its rows in row
-order on one thread, so the result does not depend on the thread count, and leaf values
-are rounded to f32 before they update the scores, so the runtime reproduces the trainer
-exactly.
+up to 12 threads (`RAYON_NUM_THREADS` overrides that), on workers that spin between sections
+(`pool.rs`). Its histograms are sums of integers, which have no order, so the result does not
+depend on the thread count ([D15](design-decisions.md#d15-the-trees-add-integers-on-workers-that-spin)),
+and leaf values are rounded to f32 before they update the scores, so the runtime reproduces
+the trainer exactly.
 
 The runtime executes the engine-neutral model (`model.config.json`: dense layers, or a
 `tabsmith.trees.v1` tree ensemble) with its own small FP32 kernels. Each run records
@@ -143,7 +144,7 @@ recipe 决定任务：`tabular-binary@0.1`、`tabular-multiclass@0.1` 或 `tabul
 
 神经网络（`linear`、`small-mlp`）使用 Burn 0.22 的 Flex CPU 后端（单线程）训练，也可以在 GPU 上训练（见下）。Tabsmith 用自带的、有版本的伪随机数生成器初始化权重；小批次顺序只取决于 `(seed, epoch)`；没有随机层。因此检查点（模型记录 + Adam 状态 + 循环状态 + 最佳权重）足以精确续训。每个 epoch 之后的验证在所有核心上运行运行时，按行分给各线程；每一行的计算与单线程完全相同。
 
-`gbdt` 是 Tabsmith 自己实现的直方图梯度提升树（`tabsmith-workflow/src/gbdt.rs`），使用同样的拟合特征。一轮提升就是同一训练状态中的一个 epoch，因此检查点、取消和精确续训的机制完全相同。它最多用 12 个线程（可用 `RAYON_NUM_THREADS` 覆盖）：每个特征在一个线程上按行序求和，所以结果与线程数无关；叶子值在更新得分前先舍入到 f32，所以运行时能精确复现训练端的输出。
+`gbdt` 是 Tabsmith 自己实现的直方图梯度提升树（`tabsmith-workflow/src/gbdt/`），使用同样的拟合特征。一轮提升就是同一训练状态中的一个 epoch，因此检查点、取消和精确续训的机制完全相同。它最多用 12 个线程（可用 `RAYON_NUM_THREADS` 覆盖），工作线程在并行段之间自旋等待（`pool.rs`）。直方图是整数和，没有顺序，所以结果与线程数无关；叶子值在更新得分前先舍入到 f32，所以运行时能精确复现训练端的输出。
 
 运行时用自己的小型 FP32 内核执行与引擎无关的模型（`model.config.json`：全连接层，或 `tabsmith.trees.v1` 树集成）；每个 Run 记录引擎与运行时在验证集上输出的最大差异（“engine Δ”，网络约 1e-7，树为 0）。
 

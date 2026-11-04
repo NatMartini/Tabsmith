@@ -18,8 +18,8 @@ abstract: >-
   prediction intervals or sets and permutation importance.
 authors:
   - name: "Tabsmith contributors"
-version: 0.3.0
-date-released: 2026-11-01
+version: 0.4.0
+date-released: 2026-11-03
 license:
   - MIT
   - Apache-2.0

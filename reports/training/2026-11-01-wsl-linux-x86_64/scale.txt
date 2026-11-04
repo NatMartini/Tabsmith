@@ -1,0 +1,5 @@
+t=1: train 5.005 s, 140 rounds, weights 27ce54751205a455, valid auc 0.8397072689001893, process 21.03 s, 2477556 KB
+t=4: train 1.761 s, 140 rounds, weights 27ce54751205a455, valid auc 0.8397072689001893, process 15.86 s, 2497816 KB
+t=8: train 1.184 s, 140 rounds, weights 27ce54751205a455, valid auc 0.8397072689001893, process 14.97 s, 2502556 KB
+t=12: train 1.153 s, 140 rounds, weights 27ce54751205a455, valid auc 0.8397072689001893, process 14.88 s, 2333596 KB
+t=16: train 1.161 s, 140 rounds, weights 27ce54751205a455, valid auc 0.8397072689001893, process 15.08 s, 2369856 KB

@@ -429,6 +429,8 @@ fn apply(files: &mut BTreeMap<String, Vec<u8>>, d: &Damage) {
         Damage::EditManifest { at, value } => edit_manifest(files, |m| {
             let mut all = Vec::new();
             leaves(m, &mut Vec::new(), &mut all);
+            // The bundle's id leaves out the time it was built, on purpose, so that is no damage.
+            all.retain(|path| path.first().and_then(|k| k.as_str()) != Some("created_at"));
             if all.is_empty() {
                 return;
             }

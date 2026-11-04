@@ -4,7 +4,6 @@
 use tabsmith_contracts::METRICS_VERSION;
 use tabsmith_contracts::evaluation::{BinaryMetrics, ConfusionMatrix, Metrics, MulticlassMetrics, RegressionMetrics};
 use tabsmith_contracts::schema::OutputSchema;
-use tabsmith_embedded::kernels;
 use tabsmith_runtime::Matrix;
 use tabsmith_runtime::model::{sigmoid, softmax};
 
@@ -54,18 +53,14 @@ pub fn selected_metric(outputs: &Matrix, targets: &Targets, schema: &OutputSchem
         }
         Targets::Classes { y, k } => {
             let k = *k;
-            let predicted: Vec<u32> = crate::parallel::map_rows_with(
-                y.len(),
-                || vec![0.0f64; k],
-                |p, r| {
-                    kernels::softmax(outputs.row(r), p);
-                    kernels::argmax(p) as u32
-                },
-            );
             let (mut right, mut total) = (vec![0u64; k], vec![0u64; k]);
-            for (&a, &b) in predicted.iter().zip(y) {
+            for (r, &b) in y.iter().enumerate() {
+                // The largest logit is the largest probability: no exponential is needed, and
+                // the first of equal logits is the first of equal probabilities.
+                let row = outputs.row(r);
+                let a = row.iter().enumerate().fold(0, |best, (c, &v)| if v > row[best] { c } else { best });
                 total[b as usize] += 1;
-                right[b as usize] += u64::from(a == b);
+                right[b as usize] += u64::from(a == b as usize);
             }
             let present: Vec<usize> = (0..k).filter(|&c| total[c] > 0).collect();
             let sum: f64 = present.iter().map(|&c| right[c] as f64 / total[c] as f64).sum();

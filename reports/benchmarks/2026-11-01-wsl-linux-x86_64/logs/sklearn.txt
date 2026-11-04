@@ -1,0 +1,4 @@
+$ <work>/venv/bin/python -I <work>/repo/tools/bench/sklearn_bench.py <work>/report/work/bench run-001 run-002 run-003 <work>/report/work/records.jsonl <work>/report/work/sklearn
+
+--- stderr ---
+{"__rc": 0, "__s": 25.362680703000024, "__rss": 291.59375}

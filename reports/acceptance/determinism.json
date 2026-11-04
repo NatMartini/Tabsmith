@@ -9,8 +9,8 @@
       "model.config.json": "5c22df1e0652055c0fbc87a5decbf22c825c8944b642e1ad6497c320118a7ae7"
     },
     {
-      "model.safetensors": "6c6d4a51b55e7ff5c5bcaa683a3fe247cc0e8e443dfcd7f3c8f6b6a2dc86b12d",
-      "model.config.json": "4494542abb6056ff74866aa1b7a376819317461f6e796cf3817a7e5fdccd670d"
+      "model.safetensors": "91d508c02a88599d709685dd7445ae10a4c0db6524dafcfcee9b5ac5d82d0ecd",
+      "model.config.json": "a42afef244ead38f235af26f1193c192fc041e23fac239fe6232ce8aa4c5296a"
     }
   ],
   "det_2": [
@@ -23,8 +23,8 @@
       "model.config.json": "5c22df1e0652055c0fbc87a5decbf22c825c8944b642e1ad6497c320118a7ae7"
     },
     {
-      "model.safetensors": "6c6d4a51b55e7ff5c5bcaa683a3fe247cc0e8e443dfcd7f3c8f6b6a2dc86b12d",
-      "model.config.json": "4494542abb6056ff74866aa1b7a376819317461f6e796cf3817a7e5fdccd670d"
+      "model.safetensors": "91d508c02a88599d709685dd7445ae10a4c0db6524dafcfcee9b5ac5d82d0ecd",
+      "model.config.json": "a42afef244ead38f235af26f1193c192fc041e23fac239fe6232ce8aa4c5296a"
     }
   ],
   "identical": true
