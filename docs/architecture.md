@@ -86,15 +86,30 @@ standalone Cargo project whose dependency tree proves it, and `examples/wasm-pre
 compiles the unchanged runtime to WebAssembly. A batch of 4,096 rows or more runs on up to
 16 plain scoped threads, with the same predictions in the same order at any thread count.
 
-The kernels live in `tabsmith-embedded`, a `no_std` crate without allocation whose only
-dependency is `libm`. `tabsmith-macros` uses them too: `model!(name, "path")` verifies a
+The kernels live in `tabsmith-embedded`, a `no_std` crate without allocation or
+dependencies, whose kernels are all `const fn`s. `tabsmith-macros` uses them too: `model!(name, "path")` verifies a
 bundle with the runtime while the application compiles, and generates a module with the
 model's input contract as types, the weights as constants, each tree as a function of nested
 `if`s, and a `predict` with the same arithmetic. A compiled model therefore predicts exactly
-what the runtime predicts, and `exp` from `libm` makes both the same on every platform
-(`tests/equivalence.rs`, `tests/portable.rs` and `tests/tree_code.rs` in `tabsmith-macros`).
+what the runtime predicts, and `exp`, libm's algorithm written in the kernel crate, makes both
+the same on every platform and in the compiler (D17; `tests/equivalence.rs`,
+`tests/portable.rs`, `tests/tree_code.rs` and `tests/const_eval.rs` in `tabsmith-macros`).
 `examples/embedded-predict` builds two
 compiled models for a Cortex-M4F microcontroller (D14).
+
+Rules over regions of inputs go through `tabsmith_runtime::audit` (D18): `tabsmith audit`,
+`Predictor::audit` and `model!(…, rule(…))` parse the same text, search boxes of features with
+the kernels' bounds, confirm every counterexample with `predict_one`, and check every proof
+again with the `const fn` walk of `tabsmith_embedded::rules`, which a compiled model also hands
+to the compiler.
+
+Models trained by XGBoost and LightGBM enter through `tabsmith_workflow::import` (D19):
+`tabsmith import` reads XGBoost's JSON or LightGBM's text, renumbers each tree in preorder,
+puts the trees in the runtime's order and writes a bundle like any other, with an identity
+transform, status `imported` and the closeness to the library in its notes. An XGBoost model
+says `"sum": "f32"`, and every walk of it adds its leaves as XGBoost does, so its margins come
+out bit for bit; a field whose splits send a missing value both ways refuses one. Nothing in the
+runtime, the macros or the kernels depends on where a bundle came from.
 
 ## Devices
 
@@ -150,7 +165,11 @@ recipe 决定任务：`tabular-binary@0.1`、`tabular-multiclass@0.1` 或 `tabul
 
 运行时 crate 不依赖 Burn 或 Polars。`examples/predict-app` 是独立的 Cargo 项目，其依赖树可以证明这一点；`examples/wasm-predict` 把未经修改的运行时编译成 WebAssembly。4,096 行以上的批量最多用 16 个普通的 scoped 线程，线程数不影响预测和顺序。
 
-这些内核放在 `tabsmith-embedded` 中：一个不分配内存的 `no_std` crate，唯一的依赖是 `libm`。`tabsmith-macros` 也调用它们：`model!(name, "path")` 在应用编译时用运行时校验模型包，并生成一个模块——模型的输入契约是类型，权重是常量，每棵树是嵌套 `if` 的函数，`predict` 的算术相同。因此编译进代码的模型与运行时的预测完全相同；`exp` 来自 `libm`，两者在所有平台上也相同（见 `tabsmith-macros` 的 `tests/equivalence.rs` 和 `tests/portable.rs`）。`examples/embedded-predict` 把两个模型编译进可在 Cortex-M4F 微控制器上运行的库（D14）。
+这些内核放在 `tabsmith-embedded` 中：一个不分配内存、没有任何依赖的 `no_std` crate，所有内核都是 `const fn`。`tabsmith-macros` 也调用它们：`model!(name, "path")` 在应用编译时用运行时校验模型包，并生成一个模块——模型的输入契约是类型，权重是常量，每棵树是嵌套 `if` 的函数，`predict` 的算术相同。因此编译进代码的模型与运行时的预测完全相同；`exp` 是写在内核 crate 里的 libm 算法，两者在所有平台上、在编译器里也相同（D17；见 `tabsmith-macros` 的 `tests/equivalence.rs`、`tests/portable.rs` 和 `tests/const_eval.rs`）。`examples/embedded-predict` 把两个模型编译进可在 Cortex-M4F 微控制器上运行的库（D14）。
+
+输入区域上的规则走 `tabsmith_runtime::audit`（D18）：`tabsmith audit`、`Predictor::audit` 和 `model!(…, rule(…))` 读同一种文本，用内核的界搜索特征盒子，每个反例都用 `predict_one` 确认，每个证明都用 `tabsmith_embedded::rules` 的 `const fn` 再走一遍，编译进代码的模型还把它交给编译器。
+
+XGBoost 和 LightGBM 训练的模型经 `tabsmith_workflow::import` 进入（D19）：`tabsmith import` 读取 XGBoost 的 JSON 或 LightGBM 的文本，按前序重新编号每棵树，把树排成运行时的顺序，写出和其他模型包一样的模型包：恒等变换、状态 `imported`，附注写明和库有多接近。XGBoost 模型声明 `"sum": "f32"`，所有遍历都按 XGBoost 的方式相加叶子，所以 margin 逐位一致；某字段的切分把缺失值两边都送时，该字段拒收缺失值。运行时、宏和内核都不关心模型包从哪里来。
 
 ### 设备
 

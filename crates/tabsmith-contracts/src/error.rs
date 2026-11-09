@@ -40,6 +40,7 @@ error_codes! {
     ConfigNotFound => "E_CONFIG_NOT_FOUND", 2;
     ConfigUnknownField => "E_CONFIG_UNKNOWN_FIELD", 2;
     ConfigInvalid => "E_CONFIG_INVALID", 2;
+    RuleInvalid => "E_RULE_INVALID", 2;
     DataSourceNotFound => "E_DATA_SOURCE_NOT_FOUND", 3;
     DataSourceChanged => "E_DATA_SOURCE_CHANGED", 3;
     DataReadFailed => "E_DATA_READ_FAILED", 3;
@@ -73,6 +74,8 @@ error_codes! {
     BundleIncompatible => "E_BUNDLE_INCOMPATIBLE", 4;
     BundleExists => "E_BUNDLE_EXISTS", 4;
     PredictorUpdateFailed => "E_PREDICTOR_UPDATE_FAILED", 4;
+    ImportInvalid => "E_IMPORT_INVALID", 4;
+    ImportUnsupported => "E_IMPORT_UNSUPPORTED", 4;
     Io => "E_IO", 1;
     Internal => "E_INTERNAL", 1;
 }
@@ -101,6 +104,10 @@ pub enum Phase {
     Bundle,
     Load,
     Predict,
+    /// Checking rules over regions of inputs (`tabsmith audit`, `model!(…, rule(…))`).
+    Audit,
+    /// Turning a model trained by another library into a bundle (`tabsmith import`).
+    Import,
     Device,
     Report,
     Internal,

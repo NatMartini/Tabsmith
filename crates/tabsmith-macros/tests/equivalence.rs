@@ -20,6 +20,8 @@ tabsmith_macros::model!(multiclass_gbdt, "../../fixtures/bundles/multiclass-gbdt
 tabsmith_macros::model!(regression_mlp, "../../fixtures/bundles/regression-mlp");
 tabsmith_macros::model!(regression_gbdt, "../../fixtures/bundles/regression-gbdt");
 tabsmith_macros::model!(policies_linear, "../../fixtures/bundles/policies-linear");
+tabsmith_macros::model!(imported_xgboost, "../../fixtures/bundles/imported-xgboost-binary");
+tabsmith_macros::model!(imported_lightgbm, "../../fixtures/bundles/imported-lightgbm-multiclass");
 
 fn runtime(name: &str) -> Predictor {
     let dir = format!("{}/../../fixtures/bundles/{name}", env!("CARGO_MANIFEST_DIR"));
@@ -204,6 +206,24 @@ compiled_equals_runtime!(policies_linear_matches_the_runtime, policies_linear, "
     label: p.label.as_str().to_string(),
     numbers: vec![p.probability.to_bits()],
 });
+compiled_equals_runtime!(
+    imported_xgboost_matches_the_runtime,
+    imported_xgboost,
+    "imported-xgboost-binary",
+    |p| Bits {
+        label: p.label.as_str().to_string(),
+        numbers: vec![p.probability.to_bits()],
+    }
+);
+compiled_equals_runtime!(
+    imported_lightgbm_matches_the_runtime,
+    imported_lightgbm,
+    "imported-lightgbm-multiclass",
+    |p| Bits {
+        label: p.class.as_str().to_string(),
+        numbers: p.probabilities.iter().map(|v| v.to_bits()).collect(),
+    }
+);
 
 #[test]
 fn the_policies_bundle_types_its_fields_strictly() {

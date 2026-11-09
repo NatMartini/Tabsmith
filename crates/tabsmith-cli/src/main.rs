@@ -1,5 +1,6 @@
 //! `tabsmith` — data to a verified model bundle for Rust applications.
 
+mod audit;
 mod commands;
 mod output;
 mod serve;
@@ -218,6 +219,73 @@ pub enum Command {
         /// Enable POST /reload {"bundle": "<dir>"} for bundles in the served bundle's folder (the new bundle must load and self-check).
         #[arg(long)]
         allow_reload: bool,
+    },
+    /// Check rules over regions of inputs: every input of a rule's region must get a
+    /// prediction that meets its claim. Each rule ends proved, with a counterexample (an
+    /// input predicted like any other), or undecided. Exit 0 when every rule holds, 8 when
+    /// one fails, 9 when none fails but one is undecided.
+    #[command(after_help = "Rules: conditions => claim, for example\n  \
+'age in 17..=25, capital_gain == 0, workclass in [\"Private\", \"State-gov\"] => probability <= 0.9'\n  \
+'hours_per_week <= 20 => label != \">50K\"'      '_ within 3 sd => value <= 600000'\n\
+A condition is `field in a..=b`, `field <= b`, `field >= a`, `field == value`, `field in [value, ...]`\n\
+or `field within k sd` (k standard deviations of the training mean); `_ within k sd` limits every\n\
+numeric field no other condition names. The claim is `probability <= p`, `probability >= p` (binary),\n\
+`label == \"...\"`, `label != \"...\"` (classification), `value <= v` or `value >= v` (regression).\n\
+A field without a condition takes any value the model accepts, realistic or not.")]
+    Audit {
+        /// Bundle directory (default: the project's newest evaluated bundle, or its newest bundle when none was evaluated).
+        #[arg(long)]
+        bundle: Option<std::path::PathBuf>,
+        /// A rule to check (repeatable).
+        #[arg(long = "rule", value_name = "RULE")]
+        rules: Vec<String>,
+        /// A file of rules, one per line; blank lines and lines starting with `#` are skipped.
+        #[arg(long = "rules", value_name = "FILE")]
+        rules_file: Option<std::path::PathBuf>,
+        /// Boxes the search may visit per rule before the rule is reported undecided. The
+        /// search is deterministic: the same budget gives the same answer on every machine.
+        #[arg(long, default_value_t = 1_000_000)]
+        boxes: usize,
+        /// Also stop a rule's search after this many seconds (the answer then depends on the machine).
+        #[arg(long)]
+        seconds: Option<f64>,
+        /// Check the label of every record of --input: does it stay when each number moves by
+        /// up to this many standard deviations (the field's, in training), with the categories
+        /// and missing values kept? A record whose label can change is shown with an input that
+        /// changes it.
+        #[arg(long, value_name = "SD", requires = "input")]
+        stability: Option<f64>,
+        /// Records for --stability: .csv, .parquet, .json or .jsonl.
+        #[arg(long, value_name = "FILE", requires = "stability")]
+        input: Option<std::path::PathBuf>,
+    },
+    /// Turn a model trained by XGBoost (JSON) or LightGBM (text) into a bundle. XGBoost's
+    /// margins come out bit for bit, LightGBM's raw scores within a bound the import
+    /// reports. A field whose splits send a missing value left at some and right at others
+    /// refuses missing values rather than predict differently from the library.
+    Import {
+        /// The model file: XGBoost's `save_model("model.json")` or LightGBM's `save_model("model.txt")`.
+        model: std::path::PathBuf,
+        /// Bundle directory to create.
+        #[arg(long)]
+        out: std::path::PathBuf,
+        /// Bundle name (default: the model file's name without its extension).
+        #[arg(long)]
+        name: Option<String>,
+        /// Name of the predicted column.
+        #[arg(long, default_value = "target")]
+        target: String,
+        /// Class labels in the model's order, comma-separated: negative,positive (binary) or
+        /// one per class (multiclass). Default: 0,1,…
+        #[arg(long, value_delimiter = ',')]
+        labels: Vec<String>,
+        /// Input field names in the model's feature order, comma-separated. Default: the
+        /// model's own names, or XGBoost's f0,f1,… when it has none.
+        #[arg(long, value_delimiter = ',')]
+        features: Vec<String>,
+        /// Binary: the decision threshold on the probability (default 0.5).
+        #[arg(long)]
+        threshold: Option<f64>,
     },
     /// Write a static HTML + JSON report of the project to .tabsmith/reports/.
     Report,

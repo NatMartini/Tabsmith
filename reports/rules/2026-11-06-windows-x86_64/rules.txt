@@ -1,0 +1,72 @@
+
+<adult bundle>
+  => probability <= 0.999
+    fails: >50K p=(0.9995608902123446) v=None
+      {"age":56,"capital_gain":4651,"capital_loss":1511,"education":"11th","education_num":5,"fnlwgt":92298,"hours_per_week":80,"marital_status":"Widowed","native_country":"United-States","occupation":"Exec-managerial","race":"Asian-Pac-Islander","relationship":"Unmarried","sex":"Male","workclass":"Private"}
+    65 visited, 0.00 s in all
+  age in 17..=25, capital_gain == 0, capital_loss == 0 => probability <= 0.999
+    holds: 24587 boxes in the proof, 49173 steps, depth 39; checked again true in 0.41 s
+    49173 visited, 0.81 s in all
+  age in 17..=25, capital_gain == 0, capital_loss == 0 => probability <= 0.99
+    holds: 338266 boxes in the proof, 676531 steps, depth 52; checked again true in 4.43 s
+    676531 visited, 7.91 s in all
+  age in 17..=25, capital_gain == 0, capital_loss == 0 => probability <= 0.9
+    fails: >50K p=(0.9079312125513462) v=None
+      {"age":25,"capital_gain":0,"capital_loss":0,"education":"HS-grad","education_num":13,"fnlwgt":27661,"hours_per_week":37,"marital_status":"Married-civ-spouse","native_country":"Ireland","occupation":"Adm-clerical","race":"Asian-Pac-Islander","relationship":"Not-in-family","sex":"Male","workclass":"Local-gov"}
+    184 visited, 0.00 s in all
+  education_num in 1..=9, capital_gain == 0, capital_loss == 0 => probability <= 0.999
+    holds: 57938 boxes in the proof, 115875 steps, depth 41; checked again true in 1.03 s
+    115875 visited, 1.91 s in all
+  education_num in 1..=9, capital_gain == 0, capital_loss == 0 => probability <= 0.99
+    undecided: the budget of 1000000 boxes ran out
+    1000000 visited, 5.64 s in all
+  hours_per_week in 1..=20, education_num in 1..=9, age in 17..=25, capital_gain == 0, capital_loss == 0 => probability <= 0.9
+    holds: 47271 boxes in the proof, 94541 steps, depth 45; checked again true in 0.56 s
+    94541 visited, 1.15 s in all
+  hours_per_week in 1..=20, education_num in 1..=9, age in 17..=25, capital_gain == 0, capital_loss == 0 => label == "<=50K"
+    fails: >50K p=(0.5700799660503092) v=None
+      {"age":25,"capital_gain":0,"capital_loss":0,"education":"11th","education_num":8,"fnlwgt":38772,"hours_per_week":20,"marital_status":"Married-AF-spouse","native_country":"United-States","occupation":"Exec-managerial","race":"Asian-Pac-Islander","relationship":"Unmarried","sex":"Male","workclass":"Private"}
+    1 visited, 0.00 s in all
+
+<california bundle>
+  => value <= 1500000
+    holds: 10 boxes in the proof, 19 steps, depth 7; checked again true in 0.00 s
+    19 visited, 0.00 s in all
+  => value <= 1000000
+    holds: 17937 boxes in the proof, 35873 steps, depth 42; checked again true in 0.72 s
+    35873 visited, 1.36 s in all
+  => value <= 800000
+    fails: 803579.4396181613 p=None v=(803579.4396181613)
+      {"households":14.0,"housing_median_age":30.0,"latitude":32.9,"longitude":-119.6,"median_income":4.73,"population":41.0,"total_bedrooms":419.0,"total_rooms":9602.0}
+    818900 visited, 7.79 s in all
+  => value <= 600000
+    fails: 690372.3667404098 p=None v=(690372.3667404098)
+      {"households":379.0,"housing_median_age":28.0,"latitude":32.84,"longitude":-119.6,"median_income":4.15,"population":67.0,"total_bedrooms":690.0,"total_rooms":4242.0}
+    65 visited, 0.00 s in all
+  median_income in 0..=2 => value <= 800000
+    holds: 5936 boxes in the proof, 11871 steps, depth 30; checked again true in 0.19 s
+    11871 visited, 0.32 s in all
+  median_income in 0..=2 => value <= 700000
+    holds: 70517 boxes in the proof, 141033 steps, depth 37; checked again true in 1.69 s
+    141033 visited, 3.06 s in all
+  median_income in 0..=2, housing_median_age in 1..=20 => value <= 700000
+    holds: 16848 boxes in the proof, 33695 steps, depth 35; checked again true in 0.41 s
+    33695 visited, 0.78 s in all
+  _ within 3 sd => value <= 600000
+    fails: 695384.6084841237 p=None v=(695384.6084841237)
+      {"households":499.0,"housing_median_age":28.0,"latitude":32.84,"longitude":-119.6,"median_income":4.15,"population":67.0,"total_bedrooms":690.0,"total_rooms":4242.0}
+    65 visited, 0.00 s in all
+
+<covertype bundle>
+  => label != "4"
+    fails: 4 p=(0.5738646208243702) v=None
+      {"aspect":258,"elevation":3365,"hillshade_3pm":180,"hillshade_9am":205,"hillshade_noon":188,"horizontal_distance_to_fire_points":3571,"horizontal_distance_to_hydrology":268,"horizontal_distance_to_roadways":6343.0,"slope":16,"soil_type_1":0.0,"soil_type_10":0.0,"soil_type_11":0.0,"soil_type_12":0.0,"soil_type_13":1.0,"soil_type_14":0.0,"soil_type_15":0.0,"soil_type_16":0.0,"soil_type_17":0.0,"soil_type_18":0.0,"soil_type_19":0.0,"soil_type_2":0.0,"soil_type_20":1.0,"soil_type_21":1.0,"soil_type_22":0.0,"soil_type_23":1.0,"soil_type_24":0.0,"soil_type_25":0.0,"soil_type_26":1.0,"soil_type_27":0.0,"soil_type_28":0.0,"soil_type_29":1.0,"soil_type_3":1.0,"soil_type_30":1.0,"soil_type_31":0.0,"soil_type_32":1.0,"soil_type_33":0.0,"soil_type_34":0.0,"soil_type_35":0.0,"soil_type_36":0.0,"soil_type_37":0.0,"soil_type_38":0.0,"soil_type_39":0.0,"soil_type_4":1.0,"soil_type_40":1.0,"soil_type_5":1.0,"soil_type_6":0.0,"soil_type_7":0.0,"soil_type_8":0.0,"soil_type_9":0.0,"vertical_distance_to_hydrology":7,"wilderness_area_1":1.0,"wilderness_area_2":1.0,"wilderness_area_3":0.0,"wilderness_area_4":1.0}
+    1 visited, 0.00 s in all
+  elevation >= 3500 => label != "4"
+    fails: 4 p=(0.7137535589083172) v=None
+      {"aspect":325.0,"elevation":3500.0,"hillshade_3pm":170,"hillshade_9am":239,"hillshade_noon":155,"horizontal_distance_to_fire_points":2949,"horizontal_distance_to_hydrology":1061.0,"horizontal_distance_to_roadways":4769,"slope":16,"soil_type_1":0.0,"soil_type_10":0.0,"soil_type_11":0.0,"soil_type_12":0.0,"soil_type_13":0.0,"soil_type_14":0.0,"soil_type_15":0.0,"soil_type_16":0.0,"soil_type_17":0.0,"soil_type_18":0.0,"soil_type_19":0.0,"soil_type_2":0.0,"soil_type_20":0.0,"soil_type_21":0.0,"soil_type_22":0.0,"soil_type_23":0.0,"soil_type_24":1.0,"soil_type_25":0.0,"soil_type_26":1.0,"soil_type_27":0.0,"soil_type_28":0.0,"soil_type_29":0.0,"soil_type_3":0.0,"soil_type_30":1.0,"soil_type_31":0.0,"soil_type_32":0.0,"soil_type_33":0.0,"soil_type_34":0.0,"soil_type_35":1.0,"soil_type_36":0.0,"soil_type_37":0.0,"soil_type_38":1.0,"soil_type_39":0.0,"soil_type_4":0.0,"soil_type_40":0.0,"soil_type_5":1.0,"soil_type_6":0.0,"soil_type_7":0.0,"soil_type_8":0.0,"soil_type_9":0.0,"vertical_distance_to_hydrology":-1.0,"wilderness_area_1":0.0,"wilderness_area_2":0.0,"wilderness_area_3":0.0,"wilderness_area_4":1.0}
+    1 visited, 0.00 s in all
+  elevation <= 2200 => label != "7"
+    fails: 7 p=(0.999631940301933) v=None
+      {"aspect":156.0,"elevation":2200,"hillshade_3pm":129.0,"hillshade_9am":193,"hillshade_noon":235,"horizontal_distance_to_fire_points":3571,"horizontal_distance_to_hydrology":625,"horizontal_distance_to_roadways":2352,"slope":14.0,"soil_type_1":1.0,"soil_type_10":0.0,"soil_type_11":0.0,"soil_type_12":1.0,"soil_type_13":0.0,"soil_type_14":0.0,"soil_type_15":0.0,"soil_type_16":0.0,"soil_type_17":0.0,"soil_type_18":1.0,"soil_type_19":0.0,"soil_type_2":0.0,"soil_type_20":1.0,"soil_type_21":0.0,"soil_type_22":0.0,"soil_type_23":0.0,"soil_type_24":0.0,"soil_type_25":0.0,"soil_type_26":0.0,"soil_type_27":0.0,"soil_type_28":0.0,"soil_type_29":0.0,"soil_type_3":0.0,"soil_type_30":0.0,"soil_type_31":0.0,"soil_type_32":0.0,"soil_type_33":0.0,"soil_type_34":1.0,"soil_type_35":0.0,"soil_type_36":0.0,"soil_type_37":0.0,"soil_type_38":0.0,"soil_type_39":1.0,"soil_type_4":1.0,"soil_type_40":0.0,"soil_type_5":0.0,"soil_type_6":1.0,"soil_type_7":0.0,"soil_type_8":0.0,"soil_type_9":0.0,"vertical_distance_to_hydrology":215,"wilderness_area_1":1.0,"wilderness_area_2":0.0,"wilderness_area_3":1.0,"wilderness_area_4":0.0}
+    1 visited, 0.00 s in all

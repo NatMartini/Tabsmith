@@ -15,7 +15,7 @@
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#许可)
 [![Rust 1.95+](https://img.shields.io/badge/rust-1.95%2B-orange.svg)](#安装)
 
-[English](README.md) · [安装](#安装) · [快速上手](#快速上手) · [四种交付方式](#四种交付方式) · [Tabsmith 与 Python 对比](#tabsmith-与-python-对比) · [文档](#文档)
+[English](README.md) · [安装](#安装) · [快速上手](#快速上手) · [四种交付方式](#四种交付方式) · [检查模型](#检查模型做了什么) · [导入](#导入-xgboost-或-lightgbm-的模型) · [Tabsmith 与 Python 对比](#tabsmith-与-python-对比) · [文档](#文档)
 
 </div>
 
@@ -59,19 +59,21 @@ Tabsmith 把一个 CSV 或 Parquet 文件变成一个**经过测试、自包含�
 
 0.4 版支持**表格二分类、多分类和回归**（流失、缺陷、欺诈、故障类型、剩余寿命……）。在 CPU 上训练，也可以把神经网络放到
 GPU（Vulkan、CUDA）上训练；运行时还能编译成 WebAssembly 在网页中运行，模型也可以直接编译进你的 Rust 代码，
-一直用到没有标准库的微控制器上。尚未完成的部分见[状态](#状态)；为什么这样设计，见
+一直用到没有标准库的微控制器上。XGBoost 或 LightGBM 训练的模型也可以[导入](#导入-xgboost-或-lightgbm-的模型)，用同样的方式交付，XGBoost 的 margin 逐位一致。尚未完成的部分见[状态](#状态)；为什么这样设计，见
 [设计决策](docs/design-decisions.md)和[技术报告](docs/technical-report.md)。
 
 ## 为什么用 Tabsmith
 
 - **一条命令，默认安全。** `tabsmith train data.csv --target y` 依次完成切分 → 预处理 → 训练三个模型 → 在验证集上比较 → 测试一次 → 打包。每一步都有记录、可复现。
 - **交付时不需要 Python。** 你的应用只依赖 `tabsmith-runtime`（没有 Burn、没有 Polars、没有 Python）。示例应用是一个 1.9 MB 的二进制文件。
-- **也可以把模型编译进代码。** `tabsmith_macros::model!` 在你的 crate 编译时把模型包变成 Rust 代码：输入是类型，不分配内存，不依赖 `std`，在所有平台上与运行时逐位相同。在嵌入式示例中，Kani 模型检查器证明了它的预测对任何可能的输入都不会 panic（[见下文](#编译进你的代码)）。
+- **也可以把模型编译进代码。** `tabsmith_macros::model!` 在你的 crate 编译时把模型包变成 Rust 代码：输入是类型，不分配内存，不依赖 `std`，在所有平台上与运行时逐位相同。在嵌入式示例中，Kani 模型检查器证明了它的预测对任何可能的输入都不会 panic，而且编译后的树对任何输入都给出与运行时相同的位、不超出输出范围（[见下文](#编译进你的代码)）。
 - **训练速度接近 LightGBM，全是安全 Rust，算术精确。** 树的直方图是整数和，工作线程自旋等待，所以线程数和各种优化都改变不了模型的任何一个字节。在 Covertype 的 581,012 行上：8.0 秒，LightGBM 6.3 秒，XGBoost 12.2 秒，同一台机器，同样的行和设置，准确率分别是 0.8985、0.8903 和 0.8546；在较小的数据上 LightGBM 仍然快 1.5 到 1.8 倍（[实测](reports/training/2026-11-01-wsl-linux-x86_64/)）。
 - **在生产中真正重要的地方够快。** 单条预测在微秒级，从进程启动到第一次预测约 1 毫秒，内存约 12 MB（[见下方数字](#tabsmith-与-python-对比)）。
 - **质量与 scikit-learn 一致。** 预处理与 scikit-learn 相差约 2e-7，线性模型与 scikit-learn 在同一目标函数上的最优值相差约 0.1%，指标相差在 1e-12 以内（[实测](reports/implementation-acceptance.md#reference-check-against-scikit-learn)；CI 用[冻结的参考值](fixtures/reference/)以 1e-5、1% 和 1e-12 为界检查）。
 - **逐位确定。** 同样的数据和设置得到同样的权重：中断的训练续训后与不中断的训练逐位相同，在 CPU 和经过认证的 GPU 上都是如此（[GPU 上为此做了什么](docs/design-decisions.md#d5-determinism-is-a-contract)）。树在任何操作系统、任何线程数下都相同，因为直方图是整数和（[原因](docs/design-decisions.md#d15-the-trees-add-integers-on-workers-that-spin)）：CI 在 Linux、macOS 和 Windows 上比较它们的字节，[报告](reports/training/2026-11-01-wsl-linux-x86_64/#windows)显示 Windows 和 Linux 上 1 到 16 个线程的权重相同。
 - **很难犯错。** 结构上杜绝训练/测试泄漏，每个数据版本的测试集只用一次，按实体和按时间切分，拒绝而不是静默回退，模型包经过完整性校验，错误信息告诉你下一步该做什么。
+- **证明模型做了什么，或者指出它在哪里没做到。** `tabsmith audit` 对一个区域内的每个输入检查一条规则，例如“25 岁以下、没有资本收入的人，不会被以 99% 的把握预测为高收入”：要么给出证明，要么给出一个违反规则的输入，这个输入像其他输入一样被预测过。树模型上是精确的；编译进代码的模型可以带上由编译器检查的规则（[见下文](#检查模型做了什么)）。
+- **用上你已有的模型。** `tabsmith import` 把 XGBoost 或 LightGBM 的模型变成模型包：XGBoost 的 margin 逐位一致，LightGBM 的原始得分在它报告的误差界内。在 Python 里训练的模型就能像 Tabsmith 训练的一样交付、编译进代码和审计（[见下文](#导入-xgboost-或-lightgbm-的模型)）。
 - **知道自己知道多少。** 每个模型包都带有 conformal 校准，因此每条预测都附带指定覆盖率的区间或预测集，还带有各输入的置换重要性。树模型可以在单调约束下训练，模型包加载器和编译器都会验证这一约束。`tabsmith serve` 会对照训练统计量报告输入漂移。
 - **可信的更新。** 新数据 → 新的 Run；旧模型包和新模型在同一批没见过的行上打分；应用只在新包通过自检后才切换，并且可以回退。
 
@@ -197,12 +199,22 @@ const fn tree_0(x: &[f32; N_FEATURES]) -> f32 {
 }
 ```
 
-所以生成的代码在所有平台上都与 `tabsmith-runtime` 逐位相同：测试在 7 个模型包、每个数千条随机记录上检查这一点，还在每个分裂的精确阈值上检查，
+所以生成的代码在所有平台上都与 `tabsmith-runtime` 逐位相同：测试在 9 个模型包、每个数千条随机记录上检查这一点，还在每个分裂的精确阈值上检查，
 CI 在 Linux、macOS 和 Windows 上运行这些测试。单次预测比运行时从 `Record` 预测快 12–57 倍（台式机 CPU 上 0.06–0.33 µs）。
-和遍历树的数组相比，生成代码在真实模型上快 2–2.8 倍，在微控制器上少占三分之一 flash，而且 `outputs` 是 `const fn`，编译器可以运行模型
-（[reports/inference](reports/inference/2026-10-31-windows-x86_64/)）。
+和遍历树的数组相比，生成代码在真实模型上快 2–2.8 倍，在微控制器上少占三分之一 flash（[reports/inference](reports/inference/2026-10-31-windows-x86_64/)）。
+
+编译器也能运行模型。对每种模型，`predict` 都是 `const fn`，它调用的每个内核也是，包括 `exp`：它移植自 libm，对全部 2^32 个 `f32` 输入都与 libm 逐位相同。
+你的 crate 编译时，编译器会预测模型包里的示例，结果必须与运行时逐位相同，否则 crate 不能编译；你自己的常量也可以是预测结果（[reports/const](reports/const/2026-11-06-windows-x86_64/)）：
+
+```rust
+const RISK: f64 = match defects::predict(&READING) {
+    Ok(p) => p.probability,
+    Err(_) => panic!("模型拒绝的读数"),   // 是编译错误，不是运行时崩溃
+};
+```
 [examples/embedded-predict](examples/embedded-predict) 可以为 Cortex-M4F 微控制器构建，上电时重放模型包的示例；
-Kani 模型检查器证明了它的预测对任何可能的输入都不会 panic。
+Kani 模型检查器证明了：它的预测对任何可能的输入都不会 panic；每棵树生成的代码对任何输入都与运行时遍历数组的结果逐位相同；
+输出范围对任何输入区域都成立（[reports/kani](reports/kani/2026-11-05-wsl-linux-x86_64/)）。
 
 ### 在网页中
 
@@ -222,6 +234,45 @@ curl -s localhost:8080/predict --data-binary @bundles/run-002/examples/input.jso
 `GET /stats`（模型包加载以来收到的输入与它自带的训练统计量的对比：每个数值字段标准化后的均值和离散度、每个类别字段未见过的类别比例，以及发生漂移的字段），
 以及带 `--allow-reload` 时的 `POST /reload`（只能加载同一目录下的模型包）。服务没有身份认证和超时，默认只监听 `127.0.0.1`；
 对外开放前请先看 [SECURITY.md](SECURITY.md)。
+
+## 检查模型做了什么
+
+测试只检查它试过的行。`tabsmith audit` 对一个区域内的每个输入判定一条规则：
+
+```sh
+tabsmith audit --rule 'age in 17..=25, capital_gain == 0, capital_loss == 0 => probability <= 0.99'
+tabsmith audit --rule '_ within 3 sd => value <= 600000'
+tabsmith audit --stability 0.05 --input people.csv
+```
+
+规则写成 `条件 => 结论`。条件限定一个字段（`age in 17..=25`、`hours <= 20`、`workclass in ["Private", "State-gov"]`、`temp within 2 sd`，或者用 `_ within 3 sd` 限定其余所有数值字段），结论限定概率、标签或数值。搜索把区域切成特征盒子，每个类别保持独热，直到每个盒子的界都能判定结论，或者找到一个让结论不成立的输入。树模型上是精确的；网络用区间界证明、用预测过的点反驳。反例是一条记录，用 `predict_one` 预测，只有这次预测确实违反规则才报告；证明在报告前会再复核一遍。预算按盒子数计，所以每台机器给出相同的答案。
+
+“每个输入”指模型接受的每个输入。在 California Housing 上，训练目标最高 500,001 美元的梯度提升模型，对一个各项数值都在训练均值 3 个标准差以内、但组合在任何普查里都不存在的街区，预测 695,384 美元。在 Adult 上，抽查的 60 人中有 15 个被预测年收入超过 5 万美元的人，在资本收益和资本损失从 0 美元变成 1 美元时，概率降到 2% 到 20%（其中 7 人没有任何其他改动；数据里没有人同时有这两项）：树在“资本收益 ≤ 0”处切分，所以 1 美元也算有资本收益，而训练中资本收益很小的人收入较低（[reports/rules](reports/rules/2026-11-06-windows-x86_64/)）。
+
+编译进代码的模型可以带上规则，由编译器检查：
+
+```rust
+tabsmith_macros::model!(defects, "bundles/run-003",
+    rule(hours_in_service in 0..=1000, _ within 2 sd => probability <= 0.82),
+);
+```
+
+宏在 crate 编译时审计每条规则。不成立的规则是编译错误，并给出一个违反它的输入；成立的规则带着证明，编译器用模块自己的界、以自己的浮点运算再把证明走一遍（[设计决策 D18](docs/design-decisions.md#d18-rules-are-proved-over-regions-with-categories-kept-one-hot)）。
+
+## 导入 XGBoost 或 LightGBM 的模型
+
+在 Python 里训练的梯度提升模型可以变成模型包，上面的一切都能用在它上面：`predict`、`serve`、`model!`、网页和 `audit`。
+
+```sh
+tabsmith import model.json --out bundles/xgb --target defect --labels ok,defect
+#   imported XGBoost 3.4.1 (binary:logistic; 300 trees, 28240 nodes, 15 features) as bundle b-… at bundles/xgb
+#   outputs: the library's margins, bit for bit, for every input (inputs are rounded to f32 as it rounds them)
+#   missing values: refused in humidity, voltage_drop (their splits send one both ways); accepted in the other 13 fields
+```
+
+模型包执行的是 XGBoost 的算术，而不是近似。XGBoost 把 `x < s` 送往左边，Tabsmith 是 `x <= t`，所以 `t` 取紧挨 `s` 下方的 f32；叶子按 XGBoost 的顺序在 f32 中相加，起点是它的起始 margin。二分类模型的起点是 `-logf(1/p - 1)`，而不同 C 库对 `logf` 的舍入不同（glibc 和 Windows CRT 在 501,924 个 f32 输入上不同），所以导入自带移植到 Rust 的 glibc `logf`，在每个正 f32 上都与 glibc 相同。在 300 棵和 1,200 棵树的模型上，各 10 万行里模型包接受的每一行都得到了 XGBoost 的 margin，直到最后一位；如果用正确舍入的 `logf`，base score 落在这类输入上的模型，12,000 个 margin 里会有 1,498 个差一个 ulp。LightGBM 的叶子是 f64，模型包存最接近的 f32，它的原始得分落在导入报告的误差界内（300 棵树时界为 2.3e-5，实测 7e-7），前提是输入本身是 f32 值（[reports/import](reports/import/2026-11-06-windows-x86_64/)）。
+
+每个切分把缺失值送往一边。如果存在一个值在该字段的每个切分上都走同一边，导入就用它填补，结果仍然精确；如果各切分方向不一致（训练时就有缺失值的字段通常如此），该字段拒收缺失值，而不是给出和库不同的预测。类别切分、其他链接函数、随机森林和 dart 会说明原因并拒绝（[docs/import.md](docs/import.md)）。
 
 ## 新数据到来时
 
@@ -333,21 +384,21 @@ tabsmith-contracts   配置分层、错误、schema、Run/模型包/评价记录
 tabsmith-embedded    数值内核（no_std），运行时和编译进代码的模型共用
 tabsmith-runtime     模型包校验、共享变换、模型执行、Predictor        ← 你的应用依赖它
 tabsmith-macros      model!：在编译时把模型包变成 Rust 代码             ← ……或者依赖它
-tabsmith-workflow    快照、切分、拟合、训练（Burn：CPU、Vulkan、CUDA；自研 GBDT）、评估、打包、报告
-tabsmith-cli         `tabsmith` 命令（train、run、compare、evaluate、bundle、predict、serve、report……）
+tabsmith-workflow    快照、切分、拟合、训练（Burn：CPU、Vulkan、CUDA；自研 GBDT）、评估、打包、导入 XGBoost 和 LightGBM 模型、报告
+tabsmith-cli         `tabsmith` 命令（train、run、compare、evaluate、bundle、predict、serve、audit、import、report……）
 ```
 
 候选模型是线性模型、小型 MLP（用 [Burn](https://burn.dev) 训练）和梯度提升树（Tabsmith 自己实现的确定性直方图 GBDT）。
 GPU 训练需要单独构建（`cargo install tabsmith-cli --features gpu`）；只有在该机器上经过
 [认证](docs/design-decisions.md#d11-gpu-training-is-opt-in-planned-and-certified)且预计更快时，才会自动选择 GPU。
 
-每一步也都有单独的命令（`tabsmith plan`、`run`、`compare`、`evaluate`、`bundle build`、`resume`……）——见
-`tabsmith --help` 和[文档](#文档)。
+每一步也都有单独的命令（`tabsmith plan`、`run`、`compare`、`evaluate`、`bundle build`、`resume`、`audit`、`import`……）——见
+`tabsmith --help`、[命令一览](crates/tabsmith-cli/README.md#命令一览)和[文档](#文档)。
 
 ## 状态
 
-Tabsmith 0.4 还很年轻。已经可靠且有测试覆盖的部分（224 个自动测试和 11 个文档测试，其中包括驱动真实二进制的进程级测试和性质测试）：
-上面三种任务的工作流、精确续训、模型包与运行时、编译进代码的模型（并用 [Kani 证明](reports/kani/)其预测不会 panic），以及与 scikit-learn 的参考对照。实测证据：[验收报告](reports/implementation-acceptance.md)（在 0.4 版上完成）覆盖二分类工作流、精确续训、模型包和参考对照；
+Tabsmith 0.4 还很年轻。已经可靠且有测试覆盖的部分（305 个自动测试和 15 个文档测试，其中包括驱动真实二进制的进程级测试和性质测试）：
+上面三种任务的工作流、精确续训、模型包与运行时、编译进代码的模型（并用 [Kani 证明](reports/kani/)其预测不会 panic、编译后的树就是运行时的树、输出范围成立）、输入区域上的规则（在三个公开数据集上[证明或反驳](reports/rules/2026-11-06-windows-x86_64/)）、从 XGBoost 和 LightGBM 导入的模型（与两个库自己的输出[逐行对照](reports/import/2026-11-06-windows-x86_64/)），以及与 scikit-learn 的参考对照。实测证据：[验收报告](reports/implementation-acceptance.md)（在 0.4 版上完成）覆盖二分类工作流、精确续训、模型包和参考对照；
 [三个公开数据集](reports/datasets/2026-10-31-windows-x86_64/)覆盖三种任务；[推理报告](reports/inference/2026-10-31-windows-x86_64/)覆盖编译进代码的模型。三条 GPU 路径已[认证](reports/gpu/)，模型包加载器经过 530 万次输入的[模糊测试](reports/fuzz/)，没有崩溃。
 树模型在 [100 万行](reports/training/2026-11-01-wsl-linux-x86_64/#a-million-rows)上端到端训练 15 秒，其中提升轮次只占 1.2 秒，并且在 [Windows 和 Linux 上得到同一个模型](reports/reproducibility/)。
 
@@ -356,6 +407,7 @@ Tabsmith 0.4 还很年轻。已经可靠且有测试覆盖的部分（224 个自
 - **GPU**：需要单独构建。GPU 路径只在实际运行过的硬件上认证（Windows 上的 RTX 5090 和 AMD 核显，见 [reports/gpu](reports/gpu/)）；CUDA 用 TF32 训练，必须显式声明（`execution.precision = "tf32"`），因为矩阵乘法库没有 fp32 开关。请求不存在的 GPU 会报错，绝不会静默回退。
 - **平台**：在 Linux x86_64 上认证，上面的验收运行就在该平台上完成。完整测试套件也在 Windows x86_64 上通过，并在 CI 的 macOS（Apple Silicon）上通过；按 0.4 版的设计，这两者都报告为“未认证”。Linux arm64 和 macOS Intel 二进制只构建、未测试。
 - **任务**：单表上的二分类、多分类和回归，支持分层、按实体（`--group`）和按时间（`--time`）切分。不支持排序、生存分析和多表数据。
+- **导入**：XGBoost（逐位一致）和 LightGBM（在报告的误差界内）的数值特征梯度提升树。某字段的切分把缺失值两边都送时，该字段拒收缺失值，因为格式里还没有每个切分自带的缺失方向；类别切分会被拒绝。
 - **macOS**：只由 CI 的 Apple Silicon runner 检查，还没有人在 Mac 上手动运行过 Tabsmith。报告里 Linux 上的结果来自开发机上的 WSL。
 - **用户**：还没有正式的用户研究——非常欢迎反馈和 issue。
 
@@ -369,8 +421,8 @@ Tabsmith 0.4 还很年轻。已经可靠且有测试覆盖的部分（224 个自
 ## 文档
 
 [技术报告](docs/technical-report.md) · [设计决策](docs/design-decisions.md) ·
-[架构](docs/architecture.md) · [配置](docs/configuration.md) · [模型包格式](docs/bundle-format.md) ·
-[错误](docs/errors.md) · [扩展走查（LLM 任务）](docs/extension-walkthrough-llm.md) ·
+[架构](docs/architecture.md) · [配置](docs/configuration.md) · [模型包格式](docs/bundle-format.md) · [导入模型](docs/import.md) ·
+[错误](docs/errors.md) · [命令一览](crates/tabsmith-cli/README.md#命令一览) · [安全](SECURITY.md) · [扩展走查（LLM 任务）](docs/extension-walkthrough-llm.md) ·
 [贡献指南](CONTRIBUTING.md) · [更新日志](CHANGELOG.md) · [报告](reports/)
 
 ## 许可

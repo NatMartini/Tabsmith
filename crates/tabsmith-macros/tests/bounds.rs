@@ -16,6 +16,8 @@ tabsmith_macros::model!(multiclass_gbdt, "../../fixtures/bundles/multiclass-gbdt
 tabsmith_macros::model!(regression_mlp, "../../fixtures/bundles/regression-mlp");
 tabsmith_macros::model!(regression_gbdt, "../../fixtures/bundles/regression-gbdt");
 tabsmith_macros::model!(policies_linear, "../../fixtures/bundles/policies-linear");
+tabsmith_macros::model!(imported_xgboost, "../../fixtures/bundles/imported-xgboost-binary");
+tabsmith_macros::model!(imported_lightgbm, "../../fixtures/bundles/imported-lightgbm-multiclass");
 
 fn inside(bounds: [f32; 2], v: f32) -> bool {
     bounds[0] <= v && v <= bounds[1]
@@ -120,6 +122,8 @@ bounds_hold!(multiclass_gbdt_bounds, multiclass_gbdt);
 bounds_hold!(regression_mlp_bounds, regression_mlp);
 bounds_hold!(regression_gbdt_bounds, regression_gbdt);
 bounds_hold!(policies_linear_bounds, policies_linear);
+bounds_hold!(imported_xgboost_bounds, imported_xgboost);
+bounds_hold!(imported_lightgbm_bounds, imported_lightgbm);
 
 #[test]
 fn the_tree_models_bound_their_probability_and_value() {

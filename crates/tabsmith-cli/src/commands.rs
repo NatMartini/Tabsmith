@@ -772,6 +772,86 @@ pub fn dispatch(cli: Cli) -> Result<u8> {
             )?;
             Ok(0)
         }
+        Command::Audit {
+            bundle,
+            rules,
+            rules_file,
+            boxes,
+            seconds,
+            stability,
+            input,
+        } => {
+            let bundle = resolve_bundle(&cli.project, bundle, json)?;
+            let stability = stability.zip(input);
+            crate::audit::run(&bundle, rules, rules_file.as_deref(), stability, boxes, seconds, json)
+        }
+        Command::Import {
+            model,
+            out,
+            name,
+            target,
+            labels,
+            features,
+            threshold,
+        } => {
+            let r = tabsmith_workflow::import::import_model(
+                &model,
+                &tabsmith_workflow::import::ImportOptions {
+                    out,
+                    name,
+                    target: Some(target),
+                    labels: clean(labels),
+                    features: clean(features),
+                    threshold,
+                },
+            )?;
+            if json {
+                print_json(&r);
+                return Ok(0);
+            }
+            let m = &r.model;
+            let what = format!(
+                "{} ({}; {} trees, {} nodes, {} features)",
+                m.library.source(&m.version),
+                m.objective,
+                m.trees,
+                m.nodes,
+                m.features
+            );
+            if r.already_existed {
+                println!("{what}: already bundle {} at {} (identical content)", r.manifest.bundle_id, r.path);
+            } else {
+                println!("imported {what} as bundle {} at {}", r.manifest.bundle_id, r.path);
+            }
+            if m.exact {
+                println!("  outputs: the library's margins, bit for bit, for every input (inputs are rounded to f32 as it rounds them)");
+            } else {
+                println!(
+                    "  outputs: within {:.2e} of the library's raw scores for inputs that are f32 values (its f64 leaves are rounded to f32)",
+                    m.max_output_difference
+                );
+            }
+            if m.refuses_missing.is_empty() {
+                println!("  missing values: accepted in every field, sent the library's way");
+            } else {
+                println!(
+                    "  missing values: refused in {} (their splits send one both ways); accepted in the other {} fields",
+                    m.refuses_missing.join(", "),
+                    m.features - m.refuses_missing.len()
+                );
+            }
+            println!(
+                "  self-check: {} ({} examples)",
+                if r.check.passed { "passed" } else { "FAILED" },
+                r.check.examples_checked
+            );
+            println!(
+                "\nuse it from Rust:\n  let predictor = Predictor::load(\"{}\", LoadOptions::cpu())?;",
+                r.path
+            );
+            println!("predict a file:\n  tabsmith predict --bundle {} --input rows.csv", r.path);
+            Ok(0)
+        }
         Command::Report => {
             let ws = workspace(&cli.project)?;
             let path = ws.write_report()?;

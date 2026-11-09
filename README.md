@@ -15,7 +15,7 @@
 [![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 [![Rust 1.95+](https://img.shields.io/badge/rust-1.95%2B-orange.svg)](#install)
 
-[中文说明](README.zh-CN.md) · [Install](#install) · [Quick start](#quick-start) · [Ship it](#ship-it-four-ways) · [Tabsmith vs Python](#tabsmith-vs-python) · [Docs](#documentation)
+[中文说明](README.zh-CN.md) · [Install](#install) · [Quick start](#quick-start) · [Ship it](#ship-it-four-ways) · [Check it](#check-what-the-model-does) · [Import](#bring-a-model-from-xgboost-or-lightgbm) · [Tabsmith vs Python](#tabsmith-vs-python) · [Docs](#documentation)
 
 </div>
 
@@ -65,7 +65,9 @@ Release 0.4 does **tabular binary classification, multiclass classification and
 regression** (churn, defect, fraud, failure mode, remaining life, …). It trains on the
 CPU, and optionally the neural networks on a GPU (Vulkan, CUDA). The runtime also
 runs in a web page, compiled to WebAssembly, and a model can be compiled into your Rust
-code, down to a microcontroller without the standard library. See [status](#status) for what is not done
+code, down to a microcontroller without the standard library. A model trained by XGBoost or
+LightGBM can be [imported](#bring-a-model-from-xgboost-or-lightgbm) and shipped the same ways,
+with XGBoost's margins bit for bit. See [status](#status) for what is not done
 yet, and the [design decisions](docs/design-decisions.md) and
 [technical report](docs/technical-report.md) for why it is built this way.
 
@@ -73,12 +75,14 @@ yet, and the [design decisions](docs/design-decisions.md) and
 
 - **One command, safe defaults.** `tabsmith train data.csv --target y` does split → preprocess → train three models → compare on validation → test once → bundle. Every step is recorded and reproducible.
 - **Ship without Python.** Your application depends on `tabsmith-runtime` only (no Burn, no Polars, no Python). The example app is a 1.9 MB binary.
-- **Or compile the model in.** `tabsmith_macros::model!` turns a bundle into Rust code while your crate builds: typed inputs, no allocation, no `std`, and the same bits as the runtime on every platform. In the embedded example, the Kani model checker proves that prediction never panics, for every possible input ([below](#compiled-into-your-code)).
+- **Or compile the model in.** `tabsmith_macros::model!` turns a bundle into Rust code while your crate builds: typed inputs, no allocation, no `std`, and the same bits as the runtime on every platform. In the embedded example, the Kani model checker proves that prediction never panics, for every possible input, and that the compiled trees give the runtime's bits and keep their bounds on every input ([below](#compiled-into-your-code)).
 - **Trains close to LightGBM's speed, in safe Rust, with exact arithmetic.** The trees add integers on workers that spin, so threads and optimisations cannot change a byte of the model. On Covertype's 581,012 rows: 8.0 s, against 6.3 s for LightGBM and 12.2 s for XGBoost, on the same machine, rows and settings, at accuracy 0.8985, 0.8903 and 0.8546; on smaller data LightGBM stays 1.5 to 1.8 times as fast ([measured](reports/training/2026-11-01-wsl-linux-x86_64/)).
 - **Fast where it matters in production.** Single-record prediction in microseconds, about a millisecond from process start to first prediction, about 12 MB of memory ([numbers below](#tabsmith-vs-python)).
 - **Same quality as scikit-learn.** Preprocessing matches scikit-learn's to about 2e-7, the linear model lands within about 0.1 % of scikit-learn's optimum of the same objective, and metrics match to 1e-12 ([measured](reports/implementation-acceptance.md#reference-check-against-scikit-learn); CI guards 1e-5, 1 % and 1e-12 with [frozen goldens](fixtures/reference/)).
 - **Deterministic, to the bit.** Same data and settings, same weights: an interrupted run resumes to exactly the weights of an uninterrupted one, on the CPU and on certified GPUs ([why that took work on GPUs](docs/design-decisions.md#d5-determinism-is-a-contract)). The trees are the same on every operating system and any number of threads, because their histograms are sums of integers ([why](docs/design-decisions.md#d15-the-trees-add-integers-on-workers-that-spin)): CI compares their bytes on Linux, macOS and Windows, and [the report](reports/training/2026-11-01-wsl-linux-x86_64/#windows) shows the same weights on Windows and Linux at 1 to 16 threads.
 - **Mistakes are hard to make.** No train/test leakage by construction, one use of the test set per data version, entity-aware and chronological splits, refusal instead of silent fallback, integrity-checked bundles, and errors that say what to do next.
+- **Proves what it does, or shows where it does not.** `tabsmith audit` checks a rule such as "nobody under 25 without capital income is predicted rich with 99 % confidence" for every input of its region: a proof, or an input that breaks it, predicted like any other. Exact for trees; a compiled model can carry rules the compiler checks ([below](#check-what-the-model-does)).
+- **Takes the models you already have.** `tabsmith import` turns an XGBoost or LightGBM model into a bundle: XGBoost's margins bit for bit, LightGBM's raw scores within a bound it reports. A model trained in Python then ships, compiles and is audited like one Tabsmith trained ([below](#bring-a-model-from-xgboost-or-lightgbm)).
 - **Says what it knows.** Every bundle carries a conformal calibration, so each prediction comes with an interval or a prediction set at a stated coverage, and the permutation importance of its inputs. Trees can be trained under monotone constraints, which the bundle loader and the compiler both verify. `tabsmith serve` reports input drift against the training statistics.
 - **Updates you can trust.** New data → new runs; the old bundle is scored on the same unseen rows; applications swap bundles only after the new one passes its self-check, and can roll back.
 
@@ -212,15 +216,29 @@ const fn tree_0(x: &[f32; N_FEATURES]) -> f32 {
 ```
 
 So the generated code predicts the same bits as `tabsmith-runtime` on every platform. Tests
-check this on seven bundles with thousands of random records each, and on every split at
+check this on nine bundles with thousands of random records each, and on every split at
 its exact threshold, and CI runs them on Linux, macOS and Windows. A prediction is 12–57×
 faster than the runtime's from a `Record` (0.06–0.33 µs on a desktop CPU). Compared with
 walking the trees' arrays, code is 2–2.8× faster on real models and takes a third less
-flash on a microcontroller, and `outputs` is a `const fn`, so the compiler can run the
-model ([reports/inference](reports/inference/2026-10-31-windows-x86_64/)).
+flash on a microcontroller ([reports/inference](reports/inference/2026-10-31-windows-x86_64/)).
+
+The compiler can run the model too. `predict` is a `const fn` for every kind of model, and
+so is every kernel it calls, `exp` included: a port of libm's, with libm's bits for all
+2^32 `f32` inputs. While your crate compiles, the compiler predicts the bundle's examples
+and must get the runtime's bits, or the crate does not compile; your own constants can be
+predictions too ([reports/const](reports/const/2026-11-06-windows-x86_64/)):
+
+```rust
+const RISK: f64 = match defects::predict(&READING) {
+    Ok(p) => p.probability,
+    Err(_) => panic!("a reading the model refuses"),   // a compile error, not a crash
+};
+```
 [examples/embedded-predict](examples/embedded-predict) builds for a Cortex-M4F
 microcontroller and replays the bundle's examples at power-on. The Kani model checker
-proves that its prediction never panics, for every possible input.
+proves that its prediction never panics, for every possible input, that each tree's code
+gives the same bits as the runtime's walk for every input, and that the output bounds
+hold for every box ([reports/kani](reports/kani/2026-11-05-wsl-linux-x86_64/)).
 
 ### In a web page
 
@@ -246,6 +264,78 @@ field, unseen categories per categorical field, and the fields that drifted), an
 `POST /reload` with `--allow-reload` (bundles in the served bundle's folder only). The
 server has no authentication or timeouts and listens on `127.0.0.1` by default; see
 [SECURITY.md](SECURITY.md) before exposing it.
+
+## Check what the model does
+
+A test tries the rows it has. `tabsmith audit` decides a rule for every input of a region:
+
+```sh
+tabsmith audit --rule 'age in 17..=25, capital_gain == 0, capital_loss == 0 => probability <= 0.99'
+#   holds: a proof of 338266 boxes, checked again (676531 boxes visited, 7.91 s)
+tabsmith audit --rule '_ within 3 sd => value <= 600000'
+#   fails: value 695384.6 for the input {"households": 499, "housing_median_age": 28, "latitude": 32.84, ...}
+tabsmith audit --stability 0.05 --input people.csv
+#   record 10: ">50K" can change to label "<=50K", probability 0.074357: capital_gain 0 → 1, capital_loss 0 → 1
+```
+
+A rule is `conditions => claim`. A condition limits a field (`age in 17..=25`, `hours <= 20`,
+`workclass in ["Private", "State-gov"]`, `temp within 2 sd`, or `_ within 3 sd` for every other
+number); the claim limits the probability, the label or the value. The search cuts the region
+into boxes of feature values, keeping each category one-hot, until every box's bounds settle the
+claim or it finds an input where the claim fails. For trees it is exact; for networks, interval
+bounds prove and predicted points refute. A counterexample is a record that `predict_one`
+predicts, reported only if that prediction breaks the rule; a proof is checked again before it
+is reported. The budget counts boxes, so every machine gives the same answer.
+
+"Every input" means every input the model accepts. On California Housing, a gradient-boosted
+model whose training targets stop at $500,001 predicts $695,384 for a district whose numbers are
+each within 3 standard deviations of the training means, in a combination no census has. On
+Adult, 15 of 60 people predicted over $50K drop to 2 to 20 % when their capital gain and capital
+loss go from $0 to $1 (for 7 of them nothing else changes; nobody in the data has both): the trees split at "capital gain ≤ 0", so $1 counts as a capital gain,
+and the people with small ones in training earned less ([reports/rules](reports/rules/2026-11-06-windows-x86_64/)).
+
+A compiled model can carry rules, and the compiler checks them:
+
+```rust
+tabsmith_macros::model!(defects, "bundles/run-003",
+    rule(hours_in_service in 0..=1000, _ within 2 sd => probability <= 0.82),
+);
+```
+
+The macro audits each rule while the crate compiles. A rule that fails is a compile error with
+an input that breaks it; a rule that holds comes with its proof, which the compiler walks again
+with the module's own bounds, in its own floating point
+([design decision D18](docs/design-decisions.md#d18-rules-are-proved-over-regions-with-categories-kept-one-hot)).
+
+## Bring a model from XGBoost or LightGBM
+
+A gradient-boosted model trained in Python becomes a bundle, and everything above works on it:
+`predict`, `serve`, `model!`, the web page and `audit`.
+
+```sh
+tabsmith import model.json --out bundles/xgb --target defect --labels ok,defect
+#   imported XGBoost 3.4.1 (binary:logistic; 300 trees, 28240 nodes, 15 features) as bundle b-… at bundles/xgb
+#   outputs: the library's margins, bit for bit, for every input (inputs are rounded to f32 as it rounds them)
+#   missing values: refused in humidity, voltage_drop (their splits send one both ways); accepted in the other 13 fields
+```
+
+The bundle does XGBoost's arithmetic, not an approximation of it. XGBoost sends `x < s` left and
+Tabsmith `x <= t`, so `t` is the f32 just below `s`; the leaves are added in f32, in XGBoost's
+order, from its starting margin. A binary model starts from `-logf(1/p - 1)`, and C libraries
+round `logf` differently (glibc and the Windows CRT disagree on 501,924 f32 inputs), so the
+import carries glibc's `logf`, ported to Rust and equal to glibc on every positive f32. On
+100,000 rows each of models with 300 and 1,200 trees, every row the bundles accepted got
+XGBoost's margin to the last bit; with a correctly rounded `logf`, 1,498 of 12,000 margins of
+models whose base score lands on such an input would have been one ulp off. LightGBM keeps its
+leaves in f64; the bundle holds the nearest f32, and its raw scores come within a bound the
+import reports (2.3e-5 on 300 trees, 7e-7 measured) for inputs that are f32 values
+([reports/import](reports/import/2026-11-06-windows-x86_64/)).
+
+Each split sends a missing value one way. When one value goes that way at every split on its
+field, the import imputes it and stays exact; when the splits disagree, which is usual for fields
+that had missing values in training, the field refuses missing values rather than predict
+differently from the library. Categorical splits, other links, random forests and dart are
+refused with the reason ([docs/import.md](docs/import.md)).
 
 ## When new data arrives
 
@@ -376,8 +466,8 @@ tabsmith-contracts   config layering, errors, schemas, run/bundle/evaluation rec
 tabsmith-embedded    the numeric kernels (no_std), shared by the runtime and by compiled models
 tabsmith-runtime     bundle verification, the shared transform, model execution, Predictor   ← your app depends on this
 tabsmith-macros      model!: a bundle compiled into Rust code at build time                    ← …or on this
-tabsmith-workflow    snapshots, splits, fitting, training (Burn: CPU, Vulkan, CUDA; own GBDT), evaluation, bundles, reports
-tabsmith-cli         the `tabsmith` binary (train, run, compare, evaluate, bundle, predict, serve, report, …)
+tabsmith-workflow    snapshots, splits, fitting, training (Burn: CPU, Vulkan, CUDA; own GBDT), evaluation, bundles, imports from XGBoost and LightGBM, reports
+tabsmith-cli         the `tabsmith` binary (train, run, compare, evaluate, bundle, predict, serve, audit, import, report, …)
 ```
 
 The candidates are a linear model and a small MLP (trained with
@@ -388,16 +478,19 @@ a GPU is chosen automatically only when it is
 on that machine and expected to be faster.
 
 Every step has a step-by-step command too (`tabsmith plan`, `run`, `compare`,
-`evaluate`, `bundle build`, `resume`, …) — see `tabsmith --help` and
-[the docs](#documentation).
+`evaluate`, `bundle build`, `resume`, `audit`, `import`, …) — see `tabsmith --help`, the
+[command reference](crates/tabsmith-cli/README.md#commands) and [the docs](#documentation).
 
 ## Status
 
-Tabsmith 0.4 is young. What is solid and tested (224 automated tests and 11 doctests,
+Tabsmith 0.4 is young. What is solid and tested (305 automated tests and 15 doctests,
 including process-level ones that drive the real binary, and property tests): the
 workflow above for all three tasks, exact resume, bundles and the runtime, models
-compiled into code (with [Kani proofs](reports/kani/) that their prediction never panics), and
-reference checks against scikit-learn. The measured evidence: the
+compiled into code (with [Kani proofs](reports/kani/) that their prediction never panics, and
+that compiled trees are the runtime's trees and keep their bounds), rules over regions of
+inputs ([proved or refuted](reports/rules/2026-11-06-windows-x86_64/) on three public datasets),
+models imported from XGBoost and LightGBM ([checked](reports/import/2026-11-06-windows-x86_64/)
+against the libraries' own outputs), and reference checks against scikit-learn. The measured evidence: the
 [acceptance report](reports/implementation-acceptance.md), made on version 0.4, for the
 binary workflow, exact resume, bundles and the reference checks;
 [three public datasets](reports/datasets/2026-10-31-windows-x86_64/) for all three tasks; the
@@ -412,6 +505,7 @@ Not done yet, by design or for lack of hardware:
 - **GPU**: an opt-in build. GPU paths are certified only where they were run (an RTX 5090 and an AMD integrated GPU on Windows, [reports/gpu](reports/gpu/)); CUDA trains in TF32, which must be requested explicitly (`execution.precision = "tf32"`), because the matmul library has no fp32 switch. Asking for a GPU that is not there is an error, never a silent fallback.
 - **Platforms**: certified on Linux x86_64, where the acceptance run above was made. The full test suite also passes on Windows x86_64 and, in CI, on macOS (Apple Silicon); both are reported as "not certified" by design in 0.4. The Linux arm64 and macOS Intel binaries are built but not tested.
 - **Tasks**: binary, multiclass and regression on one table, with stratified, grouped (`--group`) or chronological (`--time`) splits. Ranking, survival and multi-table data are not supported.
+- **Imports**: gradient-boosted trees over numeric features from XGBoost (bit for bit) and LightGBM (within a reported bound). A field whose splits send a missing value both ways refuses missing values, because the format has no per-split direction yet; categorical splits are refused.
 - **macOS**: checked only by CI's Apple Silicon runners; nobody has run Tabsmith on a Mac by hand. The Linux results in the reports come from WSL on the development machine.
 - **Users**: no formal user study yet — feedback and issues are very welcome.
 
@@ -429,7 +523,8 @@ that run every check CI runs. Questions and ideas are welcome as
 
 [Technical report](docs/technical-report.md) · [Design decisions](docs/design-decisions.md) ·
 [Architecture](docs/architecture.md) · [Configuration](docs/configuration.md) ·
-[Bundle format](docs/bundle-format.md) · [Errors](docs/errors.md) ·
+[Bundle format](docs/bundle-format.md) · [Importing models](docs/import.md) · [Errors](docs/errors.md) ·
+[Command reference](crates/tabsmith-cli/README.md#commands) · [Security](SECURITY.md) ·
 [Extension walkthrough (LLM task)](docs/extension-walkthrough-llm.md) ·
 [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md) · [Reports](reports/)
 

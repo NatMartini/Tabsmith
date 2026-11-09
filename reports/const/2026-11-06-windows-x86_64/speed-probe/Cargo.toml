@@ -1,0 +1,14 @@
+[package]
+name = "trees-probe"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+tabsmith-embedded = { path = "../../../../crates/tabsmith-embedded" }
+tabsmith-macros = { path = "../../../../crates/tabsmith-macros" }
+
+[profile.release]
+codegen-units = 1

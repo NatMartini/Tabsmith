@@ -156,13 +156,15 @@ pub struct BundleManifest {
 /// Content of `evaluation.json`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BundleEvaluation {
-    /// `evaluated` or `unevaluated-candidate`.
+    /// `evaluated`, `unevaluated-candidate`, or `imported` (a model trained by another
+    /// library, which Tabsmith did not evaluate).
     pub status: String,
     /// Held-out test evaluation of the source run (absent for unevaluated candidates).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub test: Option<crate::evaluation::EvaluationRecord>,
-    /// Validation metrics recorded by the source run.
-    pub valid: crate::evaluation::Metrics,
+    /// Validation metrics recorded by the source run; absent for an imported model.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub valid: Option<crate::evaluation::Metrics>,
     #[serde(default)]
     pub notes: Vec<String>,
 }

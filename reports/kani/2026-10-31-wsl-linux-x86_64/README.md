@@ -2,6 +2,10 @@
 
 [中文](#中文)
 
+**A newer report.** [The report of 2026-11-05](../2026-11-05-wsl-linux-x86_64/) adds two
+proofs per tree, which link the compiled code to the runtime's walk and the output bounds to
+every row, and reruns the nine proofs here alongside them.
+
 **Claim.** For the two models that `examples/embedded-predict` compiles with `model!`
 (`defects`, gradient-boosted trees, and `defects_mlp`, a 35-32-16-1 network), prediction
 never panics, for every possible input: any number (NaN and infinities included), any
@@ -79,6 +83,8 @@ cargo kani                              # all nine; or --harness proofs::<name>
 ---
 
 ## 中文
+
+**更新的报告。** [2026-11-05 的报告](../2026-11-05-wsl-linux-x86_64/)为每棵树增加了两个证明：编译后的代码就是运行时遍历的结果，输出范围对每一行都成立；这里的九个证明也在那次运行里重跑了。
 
 **结论。** `examples/embedded-predict` 用 `model!` 编译了两个模型（梯度提升树 `defects` 和 35-32-16-1 的神经网络 `defects_mlp`）。
 对任何可能的输入（任何数值，包括 NaN 和无穷大；任何类别；任何缺失值），它们的预测都不会 panic。树生成为代码后，Kani 能在一个证明里证明全部 14 棵树，

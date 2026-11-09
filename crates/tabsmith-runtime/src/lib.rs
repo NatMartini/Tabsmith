@@ -23,6 +23,7 @@
 //! ```
 #![warn(missing_docs)]
 
+pub mod audit;
 pub mod bundle;
 pub mod model;
 mod parallel;

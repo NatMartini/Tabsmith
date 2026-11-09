@@ -157,6 +157,7 @@ impl Forest {
                 n_outputs: k,
                 base_scores: if k == 1 { Vec::new() } else { base.to_vec() },
                 monotone: self.monotone.clone(),
+                sum: Default::default(),
             }),
         );
         TreeEnsemble::new(

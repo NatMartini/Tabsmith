@@ -33,7 +33,9 @@
 //! - **`Input::from_values`**, which builds an input from raw [`FieldValue`]s with the
 //!   rules the runtime applies to JSON records.
 //! - **`EXAMPLES` and `self_check()`**: the bundle's example records, and a check that
-//!   they predict, bit for bit, what the runtime predicted for them at compile time.
+//!   they predict, bit for bit, what the runtime predicted for them at compile time. The
+//!   compiler already ran the same check while the crate compiled; `self_check` repeats
+//!   it on the device.
 //! - **What the compiler knows about the model.** `WORST_CASE` bounds the arithmetic
 //!   of one prediction (no loop depends on the data). `OUTPUT_BOUNDS` bounds the raw
 //!   outputs over every possible input, and `output_bounds(&lo, &hi)` over a box of
@@ -63,32 +65,89 @@
 //! crate that invokes `model!` must depend on `tabsmith-embedded`.
 //!
 //! On real models, code is 2 to 2.8 times faster than walking the trees' arrays, and it
-//! takes a third less flash on a Cortex-M4F. It also makes `outputs` a `const fn`, so the
-//! compiler can run the model:
+//! takes a third less flash on a Cortex-M4F. Code takes longer to compile, so an ensemble
+//! of more than 32,768 nodes stays arrays unless the invocation says `tree_code`:
+//! `model!(name, "path", tree_code)`. The numbers are in `reports/inference/` of the
+//! repository. `tree_arrays` keeps the arrays at any size, and a tree more than 64 levels
+//! deep always does. A network ignores both options, so an invocation keeps compiling when
+//! retraining picks another model kind.
+//!
+//! **The compiler can run the model.** `features`, `outputs`, `decode` and `predict` are
+//! `const fn`s for every kind of model and either form of trees, and so are the kernels
+//! they call, `exp` included. The compiler runs the bundle's examples through `predict`
+//! while the crate compiles and compares the bits with what `tabsmith-runtime` predicted
+//! for them: a model the compiler computes differently does not compile. An application
+//! can predict in its own constants:
 //!
 //! ```
-//! tabsmith_macros::model!(defects, "../../fixtures/bundles/binary-gbdt");
+//! tabsmith_macros::model!(defects, "../../fixtures/bundles/binary-mlp");
 //!
-//! // Computed while this compiles.
-//! const ALL_ZEROS: [f32; defects::N_OUTPUTS] = defects::outputs(&[0.0; defects::N_FEATURES]);
-//! # assert!(ALL_ZEROS[0].is_finite());
+//! // Computed while this compiles: the network, its features and the logistic function.
+//! const READING: defects::Input = defects::Input { temp_mean: Some(71.4), ..defects::EXAMPLES[0] };
+//! const RISK: f64 = match defects::predict(&READING) {
+//!     Ok(p) => p.probability,
+//!     Err(_) => panic!("a reading the model refuses"),
+//! };
+//! const _: () = assert!(0.0 < RISK && RISK < 1.0);
+//! # assert_eq!(RISK.to_bits(), defects::predict(&READING).unwrap().probability.to_bits());
 //! ```
 //!
-//! Code takes longer to compile, so an ensemble of more than 32,768 nodes stays arrays
-//! unless the invocation says `tree_code`: `model!(name, "path", tree_code)`. A crate that
-//! uses `outputs` in a `const` should say it anyway, so that a larger model after retraining
-//! cannot take the `const` away. The numbers are in `reports/inference/` of the repository.
-//! `tree_arrays` keeps the arrays at any size, and a tree more than 64 levels deep always
-//! does. A network ignores both options, so an invocation keeps compiling when retraining
-//! picks another model kind.
+//! **Rules the model must keep.** `rule(conditions => claim)` states what every input of a
+//! region must get, and the module does not compile unless that is so:
+//!
+//! ```
+//! tabsmith_macros::model!(
+//!     defects,
+//!     "../../fixtures/bundles/binary-gbdt",
+//!     // Every reading with under 1,000 hours in service, the other numbers within two
+//!     // standard deviations of their training means and any categories, stays at or below 0.82.
+//!     rule(hours_in_service in 0..=1000, _ within 2 sd => probability <= 0.82),
+//! );
+//! assert_eq!(defects::RULES, ["hours_in_service in 0..=1000, _ within 2 sd => probability <= 0.82"]);
+//! ```
+//!
+//! A condition limits one input field: `field in a..=b`, `field <= b`, `field >= a`,
+//! `field == value`, `field in [value, …]` or `field within k sd`, and `_ within k sd` limits
+//! every numeric field no other condition names. The claim is `probability <= p` or
+//! `probability >= p` (binary), `label == "…"` or `label != "…"` (classification), `value <= v`
+//! or `value >= v` (regression). The macro audits each rule as `tabsmith audit` does
+//! (`tabsmith_runtime::audit`): a search over boxes of feature values, exact for trees, with
+//! interval bounds for networks, in which a category's slots stay one-hot. A rule that fails is
+//! a compile error that shows an input breaking it, as `tabsmith-runtime` predicts it; a rule
+//! the search cannot settle within its budget of a million boxes is one too. A rule that holds
+//! comes with a proof, a tree of splits whose every box the model's bounds close, and the
+//! module makes the compiler check the proof again: it walks the splits with the module's own
+//! `output_bounds` and the claim, in its own floating point. The compiler takes about 3 µs
+//! per tree node (or network weight) per box, so a proof above a million of those, about 3 s,
+//! is checked when the macro expands instead, and the module's documentation says which.
+//! `RULES` lists the rules.
+//!
+//! "Every input" means every input `predict` accepts, realistic or not: any number for a
+//! numeric field without a condition. A tree ensemble answers for those exactly; a network
+//! extrapolates, so its rules need ranges such as `_ within 3 sd` to hold.
 //!
 //! `model!(name, "path", kani)` also makes the module carry its own proofs for the
 //! [Kani](https://github.com/model-checking/kani) model checker: under `cfg(kani)`, the
 //! input types derive `kani::Arbitrary` and a module `name::proofs` holds one harness
 //! per stage of `predict` (features, outputs, decode), each proving that the stage never
 //! panics for any value of its argument, with loop bounds taken from the model's shape.
-//! `cargo kani` runs them; nothing is written by hand. They cover `predict`, not
-//! `outputs_batch`.
+//! Trees get two more harnesses per tree, which together make a chain from the
+//! runtime to the bounds:
+//! - `name_tree_<t>_is_its_walk` (generated code only): the code of tree `t` gives the
+//!   same bits as the walk through its arrays, for every row of features, NaN and
+//!   infinities included. The runtime walks the same arrays with the same kernel, and
+//!   `outputs` adds the trees in the kernel's order, so the compiled model predicts what
+//!   the runtime predicts for every input, not only for `EXAMPLES`.
+//! - `name_tree_<t>_stays_in_its_range`: every row of every box of feature values reaches
+//!   a leaf of tree `t` inside the range that `output_bounds` adds up for that box.
+//!   Rounding never puts two sums in the wrong order (tabsmith-embedded proves that with
+//!   Kani too), so `output_bounds` and `OUTPUT_BOUNDS` hold for every row.
+//!
+//! Trees kept as arrays get their code inside the proofs only, as the link between the
+//! walk and its range. `cargo kani` runs every harness; nothing is written by hand. They
+//! cover `predict`, not `outputs_batch`. A range proof takes seconds at any size, while a
+//! walk proof grows with the whole ensemble (about 7 s per tree at 854 nodes, 32 s at
+//! 3,610), so a large model is better proved a subset at a time (`cargo kani --harness`).
 //!
 //! These do not compile:
 //!
@@ -125,10 +184,23 @@
 //! tabsmith_macros::model!(defects, "../../fixtures/bundles/binary-gbdt", tree_code, tree_arrays);
 //! ```
 //!
-//! ```compile_fail,E0015
-//! // arrays are walked at run time, so `outputs` cannot be `const`
-//! tabsmith_macros::model!(defects, "../../fixtures/bundles/binary-gbdt", tree_arrays);
-//! const ALL_ZEROS: [f32; defects::N_OUTPUTS] = defects::outputs(&[0.0; defects::N_FEATURES]);
+//! ```compile_fail
+//! // a rule the model breaks: the error shows an input of its region and its prediction
+//! tabsmith_macros::model!(defects, "../../fixtures/bundles/binary-gbdt", rule(_ within 2 sd => probability <= 0.8));
+//! ```
+//!
+//! ```compile_fail
+//! // a rule about a field the model does not have
+//! tabsmith_macros::model!(defects, "../../fixtures/bundles/binary-gbdt", rule(pressure_max <= 3 => probability <= 0.9));
+//! ```
+//!
+//! ```compile_fail,E0080
+//! tabsmith_macros::model!(defects, "../../fixtures/bundles/binary-mlp");
+//! // a reading the model refuses, refused while the crate compiles
+//! const RISK: f64 = match defects::predict(&defects::Input { temp_mean: Some(f64::INFINITY), ..defects::EXAMPLES[0] }) {
+//!     Ok(p) => p.probability,
+//!     Err(_) => panic!("a reading the model refuses"),
+//! };
 //! ```
 //!
 //! [`FieldValue`]: https://docs.rs/tabsmith-embedded/latest/tabsmith_embedded/enum.FieldValue.html

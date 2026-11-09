@@ -1,0 +1,8 @@
+cargo check of cost/ (Rust 1.97, Windows, CARGO_INCREMENTAL=0), three runs after touching main.rs.
+The rule's proof: 3,244 boxes over the 3,610 nodes of the regression fixture (11.7 million).
+
+RULE_CHECK_MAX_WORK = usize::MAX, the compiler walks the proof:   33.32 s, 33.27 s, 38.52 s
+RULE_CHECK_MAX_WORK = 1,000,000, the macro checks it natively:      0.66 s,  0.58 s,  0.60 s
+
+About 32.7 s for 11.7 million node-boxes: 2.8 µs each. With incremental compilation on, an
+unchanged crate reuses the evaluated constant: 0.45 s.

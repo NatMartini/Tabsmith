@@ -1,0 +1,26 @@
+test tests::a_nan_lower_bound_does_not_admit_nan ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+Checking harness proofs::the_documented_box_is_sound...
+ ** 1 of 554 failed (3 unreachable)
+Failed Checks: assertion failed: lo_out[0] <= out[0] && out[0] <= hi_out[0]
+VERIFICATION:- FAILED
+Verification Time: 1.8888185s
+/// Test generated for harness `proofs::the_documented_box_is_sound` 
+/// Check for `assertion`: "assertion failed: lo_out[0] <= out[0] && out[0] <= hi_out[0]"
+fn kani_concrete_playback_the_documented_box_is_sound_6243308303362654572() {
+    let concrete_vals: Vec<Vec<u8>> = vec![
+        // -NaN
+        vec![1, 0, 128, 255],
+        // 8
+        vec![0, 0, 0, 65],
+        // +NaN
+        vec![1, 0, 128, 127],
+    kani::concrete_playback_run(concrete_vals, the_documented_box_is_sound);
+INFO: To automatically add the concrete playback unit test(s) to the src code, run Kani with `--concrete-playback=inplace`.
+Checking harness proofs::a_nan_upper_bound_is_sound...
+ ** 0 of 554 failed (3 unreachable)
+VERIFICATION:- SUCCESSFUL
+Verification Time: 1.8146293s
+WARNING: Kani could not produce a concrete playback for `proofs::a_nan_upper_bound_is_sound` because there were no failing panic checks or satisfiable cover statements.
+INFO: The concrete playback feature never generated unit tests because there were no failing harnesses.

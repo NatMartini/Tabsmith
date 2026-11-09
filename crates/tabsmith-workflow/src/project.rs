@@ -188,6 +188,10 @@ impl Project {
 }
 
 /// Writes `bytes` to `path` atomically (temp file in the same dir + fsync + rename).
+///
+/// The temp file is created with `create_new`, which never follows a symbolic link: a
+/// link planted at the predictable temp name cannot make the bytes land elsewhere. One
+/// left by an interrupted run is removed first (a link goes, whatever it points at stays).
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
     let dir = path.parent().unwrap_or(Path::new("."));
     fs::create_dir_all(dir).map_err(|e| TabsmithError::io(Phase::Internal, dir, e))?;
@@ -196,12 +200,37 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
         path.file_name().and_then(|n| n.to_str()).unwrap_or("file"),
         std::process::id()
     ));
-    {
-        let mut f = fs::File::create(&tmp).map_err(|e| TabsmithError::io(Phase::Internal, &tmp, e))?;
-        f.write_all(bytes).map_err(|e| TabsmithError::io(Phase::Internal, &tmp, e))?;
-        f.sync_all().map_err(|e| TabsmithError::io(Phase::Internal, &tmp, e))?;
-    }
+    let io = |e| TabsmithError::io(Phase::Internal, &tmp, e);
+    let create = || fs::OpenOptions::new().write(true).create_new(true).open(&tmp);
+    let mut f = match create() {
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            fs::remove_file(&tmp).map_err(io)?;
+            create().map_err(io)?
+        }
+        r => r.map_err(io)?,
+    };
+    f.write_all(bytes).map_err(io)?;
+    f.sync_all().map_err(io)?;
+    drop(f);
     fs::rename(&tmp, path).map_err(|e| TabsmithError::io(Phase::Internal, path, e))
+}
+
+/// Creates `dir` afresh for the files of a bundle, with the subdirectories `subs`.
+/// Whatever an interrupted run left at `dir` is removed first (a link goes, whatever it
+/// points at stays). The directories are made with `create_dir`, not `create_dir_all`:
+/// it fails on a link planted at the path meanwhile instead of writing through it.
+pub fn fresh_dir(dir: &Path, subs: &[&str], phase: Phase) -> Result<()> {
+    let io = |e| TabsmithError::io(phase, dir, e);
+    match fs::symlink_metadata(dir) {
+        Ok(m) if m.is_dir() => fs::remove_dir_all(dir).map_err(io)?,
+        Ok(_) => fs::remove_file(dir).or_else(|_| fs::remove_dir(dir)).map_err(io)?,
+        Err(_) => {}
+    }
+    fs::create_dir(dir).map_err(io)?;
+    for sub in subs {
+        fs::create_dir(dir.join(sub)).map_err(io)?;
+    }
+    Ok(())
 }
 
 pub fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
@@ -274,6 +303,33 @@ mod tests {
     fn suggestions() {
         assert_eq!(did_you_mean("defekt", ["defect", "line"]), Some("defect".into()));
         assert_eq!(did_you_mean("zzz", ["defect", "line"]), None);
+    }
+
+    /// A link planted at the predictable temp name of a file or a directory is removed,
+    /// never written through: what it points at keeps its content.
+    #[cfg(unix)]
+    #[test]
+    fn a_planted_link_at_the_temp_name_is_not_written_through() {
+        let dir = tempfile::tempdir().unwrap();
+        let victim = dir.path().join("victim");
+        fs::write(&victim, "keep").unwrap();
+        let target = dir.path().join("out.json");
+        let tmp = dir.path().join(format!(".out.json.{}.tmp", std::process::id()));
+        std::os::unix::fs::symlink(&victim, &tmp).unwrap();
+        write_atomic(&target, b"new").unwrap();
+        assert_eq!(fs::read(&victim).unwrap(), b"keep");
+        assert_eq!(fs::read(&target).unwrap(), b"new");
+        assert!(!tmp.exists());
+
+        let keep = dir.path().join("keep");
+        fs::create_dir(&keep).unwrap();
+        fs::write(keep.join("f"), "x").unwrap();
+        let fresh = dir.path().join("fresh");
+        std::os::unix::fs::symlink(&keep, &fresh).unwrap();
+        fresh_dir(&fresh, &["examples"], Phase::Bundle).unwrap();
+        assert!(keep.join("f").is_file(), "the link's target keeps its files");
+        assert!(fresh.join("examples").is_dir() && !fs::symlink_metadata(&fresh).unwrap().file_type().is_symlink());
+        assert!(!keep.join("examples").exists());
     }
 
     #[test]

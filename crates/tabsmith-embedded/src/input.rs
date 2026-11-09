@@ -90,6 +90,13 @@ pub enum InputError {
         /// The input field.
         field: &'static str,
     },
+    /// A missing value for a field that refuses them, as a model imported from XGBoost
+    /// or LightGBM does where its trees send missing values different ways
+    /// (`E_INVALID_VALUE`).
+    Missing {
+        /// The input field.
+        field: &'static str,
+    },
 }
 
 impl InputError {
@@ -100,7 +107,8 @@ impl InputError {
             | InputError::NotANumber { field }
             | InputError::Infinite { field }
             | InputError::OutOfRange { field }
-            | InputError::UnknownCategory { field } => field,
+            | InputError::UnknownCategory { field }
+            | InputError::Missing { field } => field,
         }
     }
 }
@@ -113,6 +121,7 @@ impl fmt::Display for InputError {
             InputError::Infinite { field } => write!(f, "field `{field}`: infinite values are not accepted"),
             InputError::OutOfRange { field } => write!(f, "field `{field}`: the value is out of the f32 range once standardised"),
             InputError::UnknownCategory { field } => write!(f, "field `{field}`: a category the model was not trained with"),
+            InputError::Missing { field } => write!(f, "field `{field}`: the model refuses missing values for this field"),
         }
     }
 }

@@ -49,6 +49,31 @@ threads, up to 16 unless `LoadOptions::with_threads` says otherwise, on plain sc
 threads with no dependency added. The predictions are the same at any thread count, in the
 same order, and so is the error when a record is wrong. WebAssembly stays on one thread.
 
+`Predictor::audit` decides a rule over a region of inputs (`tabsmith_runtime::audit`):
+
+```rust
+use tabsmith_runtime::audit::{Budget, Rule, Verdict};
+
+let rule = Rule::parse("hours_in_service in 0..=1000, _ within 2 sd => probability <= 0.82")?;
+match predictor.audit(&rule, &Budget::default())?.verdict {
+    Verdict::Holds(proof) => println!("holds: a proof of {} boxes", proof.boxes()),
+    Verdict::Fails { witness, prediction } => println!("{} for {:?}", prediction.label, witness),
+    Verdict::Undecided(why) => println!("undecided: {why}"),
+}
+```
+
+The search cuts the region into boxes of feature values, keeping each category one-hot, and is
+exact for tree ensembles; networks are bounded with interval arithmetic. A counterexample is a
+record that `predict_one` predicts, kept only when that prediction breaks the rule; a proof is
+a certificate, checked again before it is returned. `stability_rule` and `audit_near` ask
+whether a record's label survives small moves of its numbers.
+
+A bundle that `tabsmith import` made from an XGBoost or LightGBM model loads like any other.
+One from XGBoost adds its leaves in f32 as XGBoost does (`"sum": "f32"` in its model config)
+and gives XGBoost's margins bit for bit; `Predictor::outputs` returns those raw outputs. A
+field whose splits send a missing value both ways refuses one (`E_INVALID_VALUE`) instead of
+guessing.
+
 Loading is all-or-nothing: the manifest, every file's SHA-256 and size, the
 bundle id, format versions and the consistency of schemas, transform and weights
 are checked before a `Predictor` exists. `PredictorHandle::try_update` swaps in a
@@ -72,6 +97,7 @@ FP32 的全连接网络与梯度提升树，并可原样编译为 WebAssembly。
 预测还附带 `interval`（回归）或 `prediction_set`（分类）：在与校准行同分布的行上，真值落在其中的概率约为 `1 − alpha`。
 `Predictor` 实现了 `tabsmith_embedded::Model` trait，用 `tabsmith-macros` 编译进代码的模型也实现了它，应用代码可以只写一份。
 4,096 行以上的批量最多用 16 个线程（`LoadOptions::with_threads` 可以改），预测和顺序都与线程数无关。
+`Predictor::audit` 对一个输入区域判定一条规则（`tabsmith_runtime::audit`）：树模型上精确，网络用区间算术；反例是用 `predict_one` 预测过的记录，证明是返回前复核过的证书。`tabsmith import` 从 XGBoost 或 LightGBM 导入的模型包同样可以加载：XGBoost 的模型包按 XGBoost 的方式在 f32 中相加叶子，margin 逐位一致，`Predictor::outputs` 给出这些原始输出。
 中文文档见仓库中的 `README.zh-CN.md`。
 
 ## License

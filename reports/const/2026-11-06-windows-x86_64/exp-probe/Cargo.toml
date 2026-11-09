@@ -1,0 +1,14 @@
+[package]
+name = "const-pred-probe"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+tabsmith-embedded = { path = "../../../../crates/tabsmith-embedded" }
+libm = "0.2.16"
+
+[profile.release]
+codegen-units = 1

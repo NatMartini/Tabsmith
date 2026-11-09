@@ -92,6 +92,7 @@ pub fn fit_transform(
                             mean: m,
                             std: s,
                             offset,
+                            missing: Default::default(),
                         });
                         names.push(name.to_string());
                         offset += 1;

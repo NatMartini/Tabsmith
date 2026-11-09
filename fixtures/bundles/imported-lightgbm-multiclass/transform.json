@@ -1,0 +1,155 @@
+{
+  "version": "tabsmith.std-tabular.v2",
+  "features": [
+    {
+      "kind": "numeric",
+      "name": "hours_in_service",
+      "impute": 0.0,
+      "mean": 0.0,
+      "std": 1.0,
+      "offset": 0
+    },
+    {
+      "kind": "numeric",
+      "name": "cycles",
+      "impute": 0.0,
+      "mean": 0.0,
+      "std": 1.0,
+      "offset": 1
+    },
+    {
+      "kind": "numeric",
+      "name": "temp_mean",
+      "impute": 0.0,
+      "mean": 0.0,
+      "std": 1.0,
+      "offset": 2
+    },
+    {
+      "kind": "numeric",
+      "name": "temp_std",
+      "impute": 0.0,
+      "mean": 0.0,
+      "std": 1.0,
+      "offset": 3
+    },
+    {
+      "kind": "numeric",
+      "name": "temp_max",
+      "impute": 0.0,
+      "mean": 0.0,
+      "std": 1.0,
+      "offset": 4
+    },
+    {
+      "kind": "numeric",
+      "name": "vibration_rms",
+      "impute": 0.0,
+      "mean": 0.0,
+      "std": 1.0,
+      "offset": 5
+    },
+    {
+      "kind": "numeric",
+      "name": "vibration_peak",
+      "impute": 0.0,
+      "mean": 0.0,
+      "std": 1.0,
+      "offset": 6
+    },
+    {
+      "kind": "numeric",
+      "name": "pressure_mean",
+      "impute": 0.0,
+      "mean": 0.0,
+      "std": 1.0,
+      "offset": 7
+    },
+    {
+      "kind": "numeric",
+      "name": "pressure_std",
+      "impute": 0.0,
+      "mean": 0.0,
+      "std": 1.0,
+      "offset": 8
+    },
+    {
+      "kind": "numeric",
+      "name": "current_mean",
+      "impute": 0.0,
+      "mean": 0.0,
+      "std": 1.0,
+      "offset": 9
+    },
+    {
+      "kind": "numeric",
+      "name": "current_std",
+      "impute": 0.0,
+      "mean": 0.0,
+      "std": 1.0,
+      "offset": 10
+    },
+    {
+      "kind": "numeric",
+      "name": "humidity",
+      "impute": 0.0,
+      "mean": 0.0,
+      "std": 1.0,
+      "offset": 11,
+      "missing": "refuse"
+    },
+    {
+      "kind": "numeric",
+      "name": "voltage_drop",
+      "impute": 0.0,
+      "mean": 0.0,
+      "std": 1.0,
+      "offset": 12,
+      "missing": "refuse"
+    },
+    {
+      "kind": "numeric",
+      "name": "ambient_noise_db",
+      "impute": 0.0,
+      "mean": 0.0,
+      "std": 1.0,
+      "offset": 13
+    },
+    {
+      "kind": "numeric",
+      "name": "calibration_offset",
+      "impute": 0.0,
+      "mean": 0.0,
+      "std": 1.0,
+      "offset": 14
+    }
+  ],
+  "dropped": [],
+  "output_dim": 15,
+  "output_names": [
+    "hours_in_service",
+    "cycles",
+    "temp_mean",
+    "temp_std",
+    "temp_max",
+    "vibration_rms",
+    "vibration_peak",
+    "pressure_mean",
+    "pressure_std",
+    "current_mean",
+    "current_std",
+    "humidity",
+    "voltage_drop",
+    "ambient_noise_db",
+    "calibration_offset"
+  ],
+  "nan": "missing",
+  "unknown_category": "ignore",
+  "missing_tokens": [
+    "",
+    "NA",
+    "null"
+  ],
+  "fitted_on_split": "",
+  "fitted_rows": 0
+}

@@ -2,7 +2,8 @@
 
 [中文](#中文)
 
-A bundle is an immutable directory created by `tabsmith bundle build`. It contains
+A bundle is an immutable directory created by `tabsmith bundle build` (or by `tabsmith import`
+from an XGBoost or LightGBM model, [docs/import.md](import.md)). It contains
 everything needed to predict and nothing else: no training data, no optimizer
 state, no credentials, no code.
 
@@ -17,6 +18,7 @@ bundles/run-002/
                          or a tree ensemble (tabsmith.trees.v1)
   model.safetensors      the model's tensors (below)
   evaluation.json        held-out test evaluation of the source run + validation metrics
+                         (an imported model: status `imported`, no metrics)
   examples/input.json    synthetic records built from transform statistics (no training rows)
   examples/expected.json outputs produced at build time, tolerance 1e-6
   conformal.json         optional: split conformal calibration (alpha, quantile, method)
@@ -39,7 +41,7 @@ the validation rows (three shuffles, mean and spread), largest first.
 | `model.config.json` `format` | `model.safetensors` |
 |---|---|
 | `tabsmith.dense.v1` (`linear`, `small-mlp`) | F32 `layers.{i}.weight` `[out, in]` and `layers.{i}.bias` `[out]`; ReLU between layers |
-| `tabsmith.trees.v1` (`gbdt`) | All trees' nodes concatenated: `trees.roots` (I32, one root per tree), `trees.feature` (I32, −1 marks a leaf), `trees.threshold` (F32; `x[feature] <= threshold` goes left), `trees.left` / `trees.right` (I32 child indices, always greater than the parent's and inside the same tree), `trees.value` (F32 leaf values, already scaled by the learning rate) |
+| `tabsmith.trees.v1` (`gbdt`, and imported models) | All trees' nodes concatenated: `trees.roots` (I32, one root per tree), `trees.feature` (I32, −1 marks a leaf), `trees.threshold` (F32; `x[feature] <= threshold` goes left), `trees.left` / `trees.right` (I32 child indices, always greater than the parent's and inside the same tree), `trees.value` (F32 leaf values, already scaled by the learning rate) |
 
 A tree model's config may carry `monotone`, one sign per feature (`1` increasing, `-1`
 decreasing, `0` none; absent when there are none): the constraints the trees were
@@ -48,6 +50,17 @@ constrained feature, every leaf on the lesser side is at most every leaf on the 
 side) and refuses the bundle otherwise, so the claim cannot be edited in. Such a bundle
 records `min_runtime_version` 0.2.0, because the 0.1.0 runtime rejects the unknown
 field; every other bundle keeps 0.1.0.
+
+Two fields describe models imported from other libraries, and are left out otherwise, so
+every other bundle keeps its bytes and its id. A tree model's `sum` is `f32` when its
+leaves are added as XGBoost adds them: each output starts from its base score rounded to f32
+and adds one leaf per tree in f32, in tree order (Tabsmith's own trees add in f64 and round
+once, `f64`, the default). A numeric feature's `missing` in `transform.json` is `refuse` when
+no single value takes the way the model's splits send a missing value: a record without the
+field is refused (`E_INVALID_VALUE`) instead of imputed, and the field is not `nullable`. A
+runtime that does not know these fields refuses the bundle (unknown field) rather than add or
+impute differently, and an imported bundle records the version that wrote it as
+`min_runtime_version`.
 
 A tree model's output starts from `base_score` (or `base_scores[k]`) and adds one leaf
 per tree; with K outputs, tree `t` adds to output `t % K`. The model config's `output`
@@ -91,7 +104,8 @@ Loading (`Predictor::load`) is all-or-nothing:
 Status in `evaluation.json` / manifest `evaluation_status`:
 `evaluated` (built after `tabsmith evaluate --run <id> --split test`, or from a
 run whose weights are identical to an evaluated run's on the same data version)
-or `unevaluated-candidate` (built with `--allow-unevaluated`). `tabsmith predict`
+or `unevaluated-candidate` (built with `--allow-unevaluated`) or `imported` (made by
+`tabsmith import`; `evaluation.json` then has no `valid` metrics). `tabsmith predict`
 and `tabsmith serve` without `--bundle` use the newest `evaluated` bundle of the
 project, and a candidate only when no bundle was evaluated.
 
@@ -116,7 +130,7 @@ ignored.
 
 ## 中文
 
-模型包是 `tabsmith bundle build` 生成的不可变目录。它包含预测所需的一切，且仅此而已：不含训练数据、优化器状态、凭据或代码。各文件含义见上方目录树。
+模型包是 `tabsmith bundle build`（或从 XGBoost、LightGBM 模型用 `tabsmith import` 导入，见 [docs/import.md](import.md)）生成的不可变目录。它包含预测所需的一切，且仅此而已：不含训练数据、优化器状态、凭据或代码。各文件含义见上方目录树。
 
 模型有两种格式：全连接网络 `tabsmith.dense.v1`（`linear`、`small-mlp`）和树集成 `tabsmith.trees.v1`（`gbdt`，所有树的节点拼接为扁平数组，子节点下标总大于父节点）。输出按任务解释：二分类为一个 logit（sigmoid 后得到正类概率与 `is_positive`）；多分类为 K 个 logit（softmax 后得到 `probabilities`，`label` 为最可能的类别）；回归为一个标准化值（乘以 `target_scale.std` 再加 `target_scale.mean` 得到 `value`）。
 
@@ -135,7 +149,9 @@ ignored.
 （分类：概率不低于 `1 − quantile` 的标签）；在与校准行同分布的行上，真值落在其中的概率约为 `1 − alpha`（默认 0.1）。校准行同时也选择了模型，所以这个保证是近似的；
 测试集不会被动用。树模型的 `model.config.json` 可以带 `monotone`（每个特征一个符号）：训练时遵守的单调约束，加载器会检查每棵树是否真的遵守，否则拒绝加载。
 
-`evaluation.json` 和 manifest 中的 `evaluation_status`：`evaluated`（在 `tabsmith evaluate --run <id> --split test` 之后构建，或者来自一个与同一数据版本上已评估 Run 权重完全相同的 Run）或 `unevaluated-candidate`（使用 `--allow-unevaluated` 构建）。不带 `--bundle` 时，`tabsmith predict` 和 `tabsmith serve` 使用项目中最新的 `evaluated` 模型包；只有在没有任何已评估模型包时才使用候选包。
+两个字段只出现在从其他库导入的模型中，其他模型包都不写，所以字节和 id 都不变。树模型的 `sum` 为 `f32` 时，叶子按 XGBoost 的方式相加：每个输出从舍入到 f32 的起始值开始，按树的顺序在 f32 中逐棵相加（Tabsmith 自己的树在 f64 中相加、最后舍入一次，即默认的 `f64`）。`transform.json` 中数值特征的 `missing` 为 `refuse` 时，表示没有单个值能沿模型切分送缺失值的方向走：缺这个字段的记录被拒绝（`E_INVALID_VALUE`），而不是被填补，该字段也不是 `nullable`。不认识这两个字段的运行时会拒绝加载（未知字段），而不是用不同的方式相加或填补；导入的模型包把写出它的版本记为 `min_runtime_version`。
+
+`evaluation.json` 和 manifest 中的 `evaluation_status`：`evaluated`（在 `tabsmith evaluate --run <id> --split test` 之后构建，或者来自一个与同一数据版本上已评估 Run 权重完全相同的 Run）或 `unevaluated-candidate`（使用 `--allow-unevaluated` 构建），或 `imported`（由 `tabsmith import` 生成，此时 `evaluation.json` 没有 `valid` 指标）。不带 `--bundle` 时，`tabsmith predict` 和 `tabsmith serve` 使用项目中最新的 `evaluated` 模型包；只有在没有任何已评估模型包时才使用候选包。
 
 更新：`PredictorHandle::try_update(dir, opts)` 先在独立实例中加载并自检新包，通过后才切换。更新是串行的，因此每次都与它要替换的预测器比较。破坏性的契约变化默认被拒绝，除非设置 `LoadOptions::allow_contract_change(true)`：新增必需输入字段、字段种类或类型改变、更严格的缺失值/未知类别策略，或目标列、标签映射、阈值改变。任何失败都会让旧预测器继续生效，错误信息会说明这一点。返回的 `UpdateReport` 列出 `schema_changes` 和 `output_changes`，即使被允许的变化也清晰可见。回退使用 `rollback_to(old_dir, opts)`——旧包在磁盘上保持不变。
 

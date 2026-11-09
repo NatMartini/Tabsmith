@@ -1,0 +1,21 @@
+
+<adult bundle>: stability of 200 rows (every 10th of the first 2000)
+  within 0.05 sd: 150 keep their label (largest proof 2 boxes), 50 can change it, 0 undecided; 1 boxes visited, 0.065 ms per row
+  within 0.1 sd: 138 keep their label (largest proof 4 boxes), 62 can change it, 0 undecided; 1 boxes visited, 0.066 ms per row
+  within 0.25 sd: 129 keep their label (largest proof 8 boxes), 71 can change it, 0 undecided; 1 boxes visited, 0.070 ms per row
+  within 0.5 sd: 48 keep their label (largest proof 26 boxes), 152 can change it, 0 undecided; 4 boxes visited, 0.107 ms per row
+  within 1 sd: 2 keep their label (largest proof 6 boxes), 198 can change it, 0 undecided; 2 boxes visited, 0.100 ms per row
+
+<covertype bundle>: stability of 100 rows (every 20th of the first 2000)
+  within 0.05 sd: 83 keep their label (largest proof 6 boxes), 17 can change it, 0 undecided; 1 boxes visited, 0.092 ms per row
+  within 0.25 sd: 30 keep their label (largest proof 21 boxes), 70 can change it, 0 undecided; 7 boxes visited, 0.169 ms per row
+  within 1 sd: 0 keep their label (largest proof 0 boxes), 100 can change it, 0 undecided; 11 boxes visited, 0.229 ms per row
+
+fixtures/bundles/binary-gbdt: stability of 200 rows (every 10th of the first 2000)
+  within 0.05 sd: 184 keep their label (largest proof 2 boxes), 16 can change it, 0 undecided; 1 boxes visited, 0.018 ms per row
+  within 0.25 sd: 117 keep their label (largest proof 8 boxes), 83 can change it, 0 undecided; 1 boxes visited, 0.022 ms per row
+  within 1 sd: 9 keep their label (largest proof 8 boxes), 191 can change it, 0 undecided; 2 boxes visited, 0.031 ms per row
+
+fixtures/bundles/binary-mlp: stability of 100 rows (every 20th of the first 2000)
+  within 0.05 sd: 94 keep their label (largest proof 77604 boxes), 5 can change it, 1 undecided; 12709 boxes visited, 104.736 ms per row
+  within 0.25 sd: 52 keep their label (largest proof 396355 boxes), 28 can change it, 20 undecided; 220097 boxes visited, 2098.746 ms per row

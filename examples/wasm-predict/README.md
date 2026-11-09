@@ -36,7 +36,7 @@ python -m http.server -d www 8000
 Open <http://localhost:8000>. `build.py` builds the module and its JavaScript bindings into
 `www/pkg/`. It also trains one sample bundle per task with the CLI: defects (binary),
 failure mode (multiclass) and remaining hours (regression). These are packed into
-`www/bundles/`. Pass `--bundle NAME=DIR` to pack your own bundles as well. The page can
+`www/bundles/`. Pass `--bundle NAME=DIR` to pack your own bundles as well, imported ones included. The page can
 also open any bundle folder from disk with **Open a bundle folder…**. The files are read
 by the page and are never uploaded.
 

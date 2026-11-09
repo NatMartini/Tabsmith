@@ -1,0 +1,144 @@
+== head
+regression  outputs   1550.0 ns per row  (hash 36edaf3b362e94ec)
+multiclass  outputs    831.5 ns per row  (hash 213ef37615833868)
+covertype   outputs   3899.4 ns per row  (hash 9d8ad9840ce59976)
+network     outputs    331.8 ns per row  (hash c77fb3b96cf82107)
+network     predict    432.6 ns per input
+binary      predict     67.0 ns per input
+multiclass  predict    119.0 ns per input
+regression  predict    112.4 ns per input
+== const
+regression  outputs   1596.6 ns per row  (hash 36edaf3b362e94ec)
+multiclass  outputs    852.6 ns per row  (hash 213ef37615833868)
+covertype   outputs   3824.5 ns per row  (hash 9d8ad9840ce59976)
+network     outputs    284.1 ns per row  (hash c77fb3b96cf82107)
+network     predict    327.8 ns per input
+binary      predict     39.1 ns per input
+multiclass  predict     99.4 ns per input
+regression  predict    111.6 ns per input
+== head
+regression  outputs   1528.8 ns per row  (hash 36edaf3b362e94ec)
+multiclass  outputs    773.2 ns per row  (hash 213ef37615833868)
+covertype   outputs   3646.1 ns per row  (hash 9d8ad9840ce59976)
+network     outputs    291.8 ns per row  (hash c77fb3b96cf82107)
+network     predict    364.5 ns per input
+binary      predict     73.1 ns per input
+multiclass  predict    115.2 ns per input
+regression  predict    112.8 ns per input
+== const
+regression  outputs   1611.6 ns per row  (hash 36edaf3b362e94ec)
+multiclass  outputs    822.7 ns per row  (hash 213ef37615833868)
+covertype   outputs   3802.8 ns per row  (hash 9d8ad9840ce59976)
+network     outputs    278.7 ns per row  (hash c77fb3b96cf82107)
+network     predict    328.2 ns per input
+binary      predict     39.4 ns per input
+multiclass  predict    100.9 ns per input
+regression  predict     92.0 ns per input
+== head
+regression  outputs   1515.4 ns per row  (hash 36edaf3b362e94ec)
+multiclass  outputs    769.5 ns per row  (hash 213ef37615833868)
+covertype   outputs   3702.6 ns per row  (hash 9d8ad9840ce59976)
+network     outputs    290.4 ns per row  (hash c77fb3b96cf82107)
+network     predict    393.8 ns per input
+binary      predict     64.8 ns per input
+multiclass  predict    128.6 ns per input
+regression  predict    125.4 ns per input
+== const
+regression  outputs   1646.9 ns per row  (hash 36edaf3b362e94ec)
+multiclass  outputs    839.5 ns per row  (hash 213ef37615833868)
+covertype   outputs   3787.3 ns per row  (hash 9d8ad9840ce59976)
+network     outputs    296.5 ns per row  (hash c77fb3b96cf82107)
+network     predict    330.1 ns per input
+binary      predict     39.7 ns per input
+multiclass  predict    102.5 ns per input
+regression  predict     93.7 ns per input
+== head
+regression  outputs   1553.2 ns per row  (hash 36edaf3b362e94ec)
+multiclass  outputs    778.4 ns per row  (hash 213ef37615833868)
+covertype   outputs   3682.9 ns per row  (hash 9d8ad9840ce59976)
+network     outputs    292.2 ns per row  (hash c77fb3b96cf82107)
+network     predict    356.5 ns per input
+binary      predict     60.7 ns per input
+multiclass  predict    145.2 ns per input
+regression  predict    113.8 ns per input
+== const
+regression  outputs   1595.6 ns per row  (hash 36edaf3b362e94ec)
+multiclass  outputs    827.5 ns per row  (hash 213ef37615833868)
+covertype   outputs   3747.5 ns per row  (hash 9d8ad9840ce59976)
+network     outputs    285.5 ns per row  (hash c77fb3b96cf82107)
+network     predict    330.7 ns per input
+binary      predict     43.0 ns per input
+multiclass  predict    101.1 ns per input
+regression  predict     91.7 ns per input
+== head
+regression  outputs   1834.3 ns per row  (hash 36edaf3b362e94ec)
+multiclass  outputs    746.3 ns per row  (hash 213ef37615833868)
+covertype   outputs   3734.2 ns per row  (hash 9d8ad9840ce59976)
+network     outputs    294.0 ns per row  (hash c77fb3b96cf82107)
+network     predict    358.1 ns per input
+binary      predict     67.0 ns per input
+multiclass  predict    122.8 ns per input
+regression  predict    132.8 ns per input
+== const
+regression  outputs   1692.7 ns per row  (hash 36edaf3b362e94ec)
+multiclass  outputs    883.1 ns per row  (hash 213ef37615833868)
+covertype   outputs   4112.8 ns per row  (hash 9d8ad9840ce59976)
+network     outputs    294.6 ns per row  (hash c77fb3b96cf82107)
+network     predict    345.6 ns per input
+binary      predict     41.9 ns per input
+multiclass  predict    102.7 ns per input
+regression  predict     90.1 ns per input
+== head
+regression  outputs   1540.2 ns per row  (hash 36edaf3b362e94ec)
+multiclass  outputs    799.4 ns per row  (hash 213ef37615833868)
+covertype   outputs   3751.2 ns per row  (hash 9d8ad9840ce59976)
+network     outputs    328.1 ns per row  (hash c77fb3b96cf82107)
+network     predict    353.8 ns per input
+binary      predict     64.0 ns per input
+multiclass  predict    113.4 ns per input
+regression  predict    109.5 ns per input
+== const
+regression  outputs   1585.9 ns per row  (hash 36edaf3b362e94ec)
+multiclass  outputs    825.7 ns per row  (hash 213ef37615833868)
+covertype   outputs   3700.1 ns per row  (hash 9d8ad9840ce59976)
+network     outputs    284.1 ns per row  (hash c77fb3b96cf82107)
+network     predict    332.3 ns per input
+binary      predict     44.7 ns per input
+multiclass  predict    101.3 ns per input
+regression  predict     89.5 ns per input
+== head
+regression  outputs   1513.2 ns per row  (hash 36edaf3b362e94ec)
+multiclass  outputs   1002.3 ns per row  (hash 213ef37615833868)
+covertype   outputs   3702.8 ns per row  (hash 9d8ad9840ce59976)
+network     outputs    293.3 ns per row  (hash c77fb3b96cf82107)
+network     predict    353.8 ns per input
+binary      predict     59.7 ns per input
+multiclass  predict    114.0 ns per input
+regression  predict    115.0 ns per input
+== const
+regression  outputs   1615.5 ns per row  (hash 36edaf3b362e94ec)
+multiclass  outputs    834.8 ns per row  (hash 213ef37615833868)
+covertype   outputs   4015.9 ns per row  (hash 9d8ad9840ce59976)
+network     outputs    295.4 ns per row  (hash c77fb3b96cf82107)
+network     predict    376.6 ns per input
+binary      predict     40.4 ns per input
+multiclass  predict    102.7 ns per input
+regression  predict     91.0 ns per input
+== head
+regression  outputs   1528.0 ns per row  (hash 36edaf3b362e94ec)
+multiclass  outputs    789.0 ns per row  (hash 213ef37615833868)
+covertype   outputs   3787.1 ns per row  (hash 9d8ad9840ce59976)
+network     outputs    291.1 ns per row  (hash c77fb3b96cf82107)
+network     predict    380.2 ns per input
+binary      predict     61.0 ns per input
+multiclass  predict    108.1 ns per input
+regression  predict    112.5 ns per input
+== const
+regression  outputs   1625.1 ns per row  (hash 36edaf3b362e94ec)
+multiclass  outputs    828.8 ns per row  (hash 213ef37615833868)
+covertype   outputs   3863.1 ns per row  (hash 9d8ad9840ce59976)
+network     outputs    283.3 ns per row  (hash c77fb3b96cf82107)
+network     predict    359.0 ns per input
+binary      predict     40.5 ns per input
+multiclass  predict     99.0 ns per input
+regression  predict     87.4 ns per input

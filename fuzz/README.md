@@ -32,3 +32,9 @@ The same property also runs on every `cargo test`, with structured damage (bit
 flips, truncation, missing and extra files, unsafe paths, edited manifest fields):
 `damaged_bundles_are_refused_without_panicking` in
 [`crates/tabsmith-workflow/tests/properties.rs`](../crates/tabsmith-workflow/tests/properties.rs).
+
+`tabsmith import` reads model files as untrusted input too. `damaged_models` in
+[`crates/tabsmith-workflow/tests/import.rs`](../crates/tabsmith-workflow/tests/import.rs)
+mutates the XGBoost and LightGBM fixtures at random on every `cargo test` (cut bytes,
+replaced numbers, dropped and doubled lines, truncation); `import::describe` must answer
+each one with a model or an error, never a panic.

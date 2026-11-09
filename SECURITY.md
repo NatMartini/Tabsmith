@@ -8,7 +8,7 @@ Tabsmith is pre-1.0. Security fixes are made on the latest release only.
 
 | Version | Supported |
 |---|---|
-| 0.1.x (latest) | yes |
+| 0.4.x (latest) | yes |
 | older | no |
 
 ## Reporting a vulnerability
@@ -57,6 +57,24 @@ them where only trusted users can write.
 Crashes, hangs or unbounded memory use on crafted input files are worth
 reporting, even when the root cause is in a dependency.
 
+**Imported models.** `tabsmith import` reads XGBoost JSON and LightGBM text model files
+as data; nothing in them is executed. A count a file declares is checked against what
+the file holds before anything is sized by it: a model may declare at most 1,048,576
+features and no more classes than it has trees. Every `cargo test` feeds the parsers
+randomly damaged copies of the test models, which must get an answer and never a panic.
+A model file that crashes, hangs or exhausts memory is worth reporting.
+
+**Files Tabsmith writes.** A bundle is written into a temporary directory next to its
+destination and renamed into place; records are written through a temporary file and
+renamed. Both are created with calls that fail on a symbolic link planted at the
+predictable temporary name (`create_dir`, `create_new`), so a link placed there by
+someone else who can write to the folder is never written through.
+
+**Continuous integration.** The workflows pin every GitHub Action to a commit (the
+version follows as a comment, and Dependabot updates the pins), run with a read-only
+token except the step that uploads a release, and pass values read from the repository
+to shell steps through environment variables, not as script text.
+
 **Dependencies.** CI runs `cargo audit` on every `Cargo.lock` of the repository. The
 lockfiles of applications that load bundles (`examples/predict-app`,
 `examples/wasm-predict`, `examples/embedded-predict`) have no open RustSec advisory.
@@ -92,7 +110,7 @@ release; you can always build from source with `cargo install tabsmith-cli --loc
 
 ### 支持的版本
 
-Tabsmith 尚未到 1.0，只在最新版本上修复安全问题（目前为 0.1.x）。
+Tabsmith 尚未到 1.0，只在最新版本上修复安全问题（目前为 0.4.x）。
 
 ### 报告漏洞
 
@@ -121,6 +139,12 @@ Tabsmith 尚未到 1.0，只在最新版本上修复安全问题（目前为 0.1
 
 **输入数据。** CSV、Parquet 和 JSON 文件由 Polars 和 serde_json 解析。精心构造的输入文件导致的崩溃、卡死或无限制的内存占用值得报告，
 即使根本原因在依赖库中。
+
+**导入的模型。** `tabsmith import` 把 XGBoost 的 JSON 和 LightGBM 的文本模型文件当作数据读取，不执行其中的任何内容。文件声明的数量会先和文件实际包含的内容核对，然后才会据此分配内存：一个模型最多声明 1,048,576 个特征，类别数不能超过树的数量。每次 `cargo test` 都会把随机损坏的测试模型交给解析器，它们必须给出回答，绝不能 panic。能让导入崩溃、卡死或耗尽内存的模型文件值得报告。
+
+**Tabsmith 写出的文件。** 模型包先写进目标旁边的临时目录再改名到位；记录先写进临时文件再改名。两者都用在符号链接上会失败的调用创建（`create_dir`、`create_new`），所以其他能写这个文件夹的人在可预测的临时名字上放一个链接，Tabsmith 也不会顺着链接写出去。
+
+**持续集成。** 工作流把每个 GitHub Action 固定到具体的提交（版本号写在注释里，由 Dependabot 更新），除上传发布版本的那一步外只用只读令牌，从仓库读出的值通过环境变量传给 shell 步骤，而不是拼进脚本文本。
 
 **依赖。** CI 会对仓库里每个 `Cargo.lock` 运行 `cargo audit`。加载模型包的应用所用的锁文件（`examples/predict-app`、
 `examples/wasm-predict`、`examples/embedded-predict`）没有未解决的 RustSec 公告。`tabsmith` 工具依赖 Polars 0.55（目前的最新版），

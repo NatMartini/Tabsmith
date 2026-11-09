@@ -1,0 +1,21 @@
+positive finite f32 inputs: 2139095039
+platform != port                     501924
+platform != port with FMA            501924
+platform != correctly rounded        210637
+port != port with FMA                0
+port != correctly rounded            416909
+port with FMA != correctly rounded   416909
+x = 1.3014e-41 (0x00002447): platform 0xc2bc48fe port 0xc2bc48fd fma 0xc2bc48fd cr 0xc2bc48fe
+x = 1.86961e-40 (0x0002092c): platform 0xc2b6f492 port 0xc2b6f491 fma 0xc2b6f491 cr 0xc2b6f492
+x = 2.00096e-40 (0x00022dc9): platform 0xc2b6d1ce port 0xc2b6d1cf fma 0xc2b6d1cf cr 0xc2b6d1cf
+x = 2.15396e-40 (0x00025870): platform 0xc2b6ac14 port 0xc2b6ac15 fma 0xc2b6ac15 cr 0xc2b6ac15
+x = 3.7526918e-34 (0x07f968be): platform 0xc299ee4c port 0xc299ee4b fma 0xc299ee4b cr 0xc299ee4c
+x = 3.771233e-34 (0x07faa434): platform 0xc299ebc6 port 0xc299ebc5 fma 0xc299ebc5 cr 0xc299ebc6
+x = 3.7804224e-34 (0x07fb408e): platform 0xc299ea86 port 0xc299ea87 fma 0xc299ea87 cr 0xc299ea86
+x = 3.781057e-34 (0x07fb4b5a): platform 0xc299ea70 port 0xc299ea71 fma 0xc299ea71 cr 0xc299ea71
+p = 0.127: -logf(1/p - 1): platform 0xbff6c076 port 0xbff6c076 fma 0xbff6c076 cr 0xbff6c076
+p = 0.5: -logf(1/p - 1): platform 0x80000000 port 0x80000000 fma 0x80000000 cr 0x80000000
+p = 0.3: -logf(1/p - 1): platform 0xbf58e883 port 0xbf58e883 fma 0xbf58e883 cr 0xbf58e883
+p = 0.01: -logf(1/p - 1): platform 0xc0930b39 port 0xc0930b39 fma 0xc0930b39 cr 0xc0930b39
+p = 0.9: -logf(1/p - 1): platform 0x400c9f52 port 0x400c9f52 fma 0x400c9f52 cr 0x400c9f52
+p = 0.333: -logf(1/p - 1): platform 0xbf31d46b port 0xbf31d46b fma 0xbf31d46b cr 0xbf31d46b

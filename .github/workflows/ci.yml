@@ -9,6 +9,9 @@ on:
 permissions:
   contents: read
 
+# Every action is pinned to a commit, with the version it is as a comment: a tag can be
+# moved, a commit cannot. Dependabot updates the pins (.github/dependabot.yml).
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -28,7 +31,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: Install Rust (stable)
         shell: bash
@@ -37,7 +40,7 @@ jobs:
           rustup default stable
           rustc --version --verbose
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: |
             . -> target
@@ -65,7 +68,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: Read rust-version from the manifests
         id: msrv
@@ -73,22 +76,34 @@ jobs:
         run: |
           workspace=$(sed -n 's/^rust-version = "\(.*\)"/\1/p' Cargo.toml)
           runtime=$(sed -n 's/^rust-version = "\(.*\)"/\1/p' crates/tabsmith-runtime/Cargo.toml)
-          test -n "$workspace" && test -n "$runtime"
+          # A version is digits and dots: the text of a pull request's Cargo.toml must not
+          # reach a shell as anything else.
+          for v in "$workspace" "$runtime"; do
+            echo "$v" | grep -Eq '^[0-9]+[.][0-9]+([.][0-9]+)?$' || { echo "::error::rust-version '$v' is not a version"; exit 1; }
+          done
           echo "workspace=$workspace" >> "$GITHUB_OUTPUT"
           echo "runtime=$runtime" >> "$GITHUB_OUTPUT"
 
+      # The versions reach the scripts as environment variables, never as script text.
       - name: Install Rust ${{ steps.msrv.outputs.workspace }} and ${{ steps.msrv.outputs.runtime }}
-        run: rustup toolchain install ${{ steps.msrv.outputs.workspace }} ${{ steps.msrv.outputs.runtime }} --profile minimal --no-self-update
+        env:
+          WORKSPACE: ${{ steps.msrv.outputs.workspace }}
+          RUNTIME: ${{ steps.msrv.outputs.runtime }}
+        run: rustup toolchain install "$WORKSPACE" "$RUNTIME" --profile minimal --no-self-update
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
       - name: Check the workspace with Rust ${{ steps.msrv.outputs.workspace }}
-        run: cargo +${{ steps.msrv.outputs.workspace }} check --workspace --all-targets --locked
+        env:
+          WORKSPACE: ${{ steps.msrv.outputs.workspace }}
+        run: cargo "+$WORKSPACE" check --workspace --all-targets --locked
 
       - name: Check tabsmith-contracts, tabsmith-runtime and predict-app with Rust ${{ steps.msrv.outputs.runtime }}
+        env:
+          RUNTIME: ${{ steps.msrv.outputs.runtime }}
         run: |
-          cargo +${{ steps.msrv.outputs.runtime }} check -p tabsmith-contracts -p tabsmith-embedded -p tabsmith-macros -p tabsmith-runtime --all-targets --locked
-          cargo +${{ steps.msrv.outputs.runtime }} check --manifest-path examples/predict-app/Cargo.toml --all-targets --locked
+          cargo "+$RUNTIME" check -p tabsmith-contracts -p tabsmith-embedded -p tabsmith-macros -p tabsmith-runtime --all-targets --locked
+          cargo "+$RUNTIME" check --manifest-path examples/predict-app/Cargo.toml --all-targets --locked
 
   # Models compiled into Rust code (tabsmith-macros) build without the standard library:
   # examples/embedded-predict is a no_std library for a Cortex-M4F and for WebAssembly.
@@ -97,14 +112,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: Install Rust (stable) with the thumbv7em-none-eabihf and wasm32 targets
         run: |
           rustup toolchain install stable --profile minimal --target thumbv7em-none-eabihf,wasm32-unknown-unknown --component rustfmt,clippy --no-self-update
           rustup default stable
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: examples/embedded-predict -> target
 
@@ -120,23 +135,33 @@ jobs:
           cargo clippy --locked --manifest-path examples/embedded-predict/Cargo.toml --all-targets -- -D warnings
           cargo clippy --locked --manifest-path examples/embedded-predict/Cargo.toml --target thumbv7em-none-eabihf -- -D warnings
 
-  # Kani, a bit-precise model checker, runs the proofs at the end of
+  # Kani, a bit-precise model checker, runs the proofs that model! generates in
   # examples/embedded-predict/src/lib.rs: prediction never panics, for every possible
-  # input, stage by stage. The check settings are in that crate's Cargo.toml. With Kani
-  # 0.68 on Linux, the nine generated proofs take about 80 s together, and none needs 2 GB of
-  # memory (a GitHub-hosted runner has 16 GB).
+  # input, stage by stage; each tree's code gives the bits of the runtime's walk, for every
+  # input; every row of every box stays inside the tree's range; and the four proofs of
+  # mutants.rs fail as they must. The check settings are in that crate's Cargo.toml. With
+  # Kani 0.68 on Linux, the 69 proofs take about 8 minutes together, and none needs 2 GB of
+  # memory (a GitHub-hosted runner has 16 GB). The rounding lemmas of tabsmith-embedded do
+  # not depend on the code and take about 10 minutes; tools/verify.sh --all runs them.
   kani:
     name: kani
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
-      - name: Prove that the compiled models never panic
-        uses: model-checking/kani-github-action@v1
+      - name: Prove the compiled models (no panics, the runtime's bits, sound bounds)
+        uses: model-checking/kani-github-action@69d357bade1eb7b32bc3fc3d5c3d173c5bfa5237 # branch v1 on 2026-11-07 (v1.1 cannot read Kani 0.68's --version)
         with:
           kani-version: "0.68.0"
           working-directory: examples/embedded-predict
+
+      # The two proofs that the splits of a rule's proof cover its region (about 10 s).
+      - name: Prove that a rule proof's splits cover its region
+        uses: model-checking/kani-github-action@69d357bade1eb7b32bc3fc3d5c3d173c5bfa5237 # branch v1 on 2026-11-07 (v1.1 cannot read Kani 0.68's --version)
+        with:
+          kani-version: "0.68.0"
+          args: -p tabsmith-embedded --harness rules::proofs
 
   # RustSec advisories for every lockfile. The exceptions, each with its reason, are in
   # .cargo/audit.toml; any other advisory fails the job.
@@ -145,7 +170,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: Install cargo-audit
         run: cargo install --locked cargo-audit
@@ -165,14 +190,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: Install Rust (stable) with the wasm32-unknown-unknown target
         run: |
           rustup toolchain install stable --profile minimal --target wasm32-unknown-unknown --component rustfmt,clippy --no-self-update
           rustup default stable
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: |
             . -> target
@@ -195,14 +220,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: Install Rust (stable) with rustfmt and clippy
         run: |
           rustup toolchain install stable --profile minimal --component rustfmt,clippy --no-self-update
           rustup default stable
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: |
             . -> target

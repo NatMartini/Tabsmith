@@ -119,6 +119,10 @@ why next to any `#[allow]` you add.
 - **Reference values** (`fixtures/reference/`) are checked by
   `crates/tabsmith-workflow/tests/reference_goldens.rs`. Tolerances are part of the
   claim: do not loosen one without explaining why in the pull request.
+- **Import fixtures** (`fixtures/import/`: XGBoost 3.4.1 and LightGBM 4.7.0 models with the
+  libraries' own outputs; `fixtures/bundles/imported-*`: two of them as bundles) are made by
+  `reports/import/2026-11-06-windows-x86_64/reference.py`. `tests/import.rs` compares bit for
+  bit, so regenerate them only for a new library version, and say which.
 - Tests must be deterministic (fixed seeds), must not use the network, and
   should keep data small so the suite stays fast. A bug fix comes with a test
   that fails without it.
@@ -254,6 +258,8 @@ workspace 有意放宽了两条 Clippy lint（见根目录 `Cargo.toml` 的 `[wo
   （`env!("CARGO_BIN_EXE_tabsmith")`），检查退出码和 `--json` 输出。
 - **参考值**（`fixtures/reference/`）由 `crates/tabsmith-workflow/tests/reference_goldens.rs` 校验。
   容差本身就是结论的一部分：放宽容差必须在 Pull Request 中说明理由。
+- **导入测试数据**（`fixtures/import/`：XGBoost 3.4.1 和 LightGBM 4.7.0 的模型及两个库自己的输出；`fixtures/bundles/imported-*`：其中两个做成的模型包）
+  由 `reports/import/2026-11-06-windows-x86_64/reference.py` 生成。`tests/import.rs` 逐位比较，所以只在换了库的版本时重新生成，并说明版本。
 - 测试必须是确定性的（固定随机种子），不能访问网络，并尽量使用小数据以保持测试套件快速。修复缺陷时要附带一个没有该修复就会失败的测试。
 - 优先测试可观察的行为（写出的文件、返回的错误、退出码），而不是内部细节。
 

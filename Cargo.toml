@@ -33,7 +33,7 @@ tabsmith-runtime = { path = "crates/tabsmith-runtime", version = "0.4.0" }
 tabsmith-workflow = { path = "crates/tabsmith-workflow", version = "0.4.0" }
 
 serde = { version = "1.0.228", features = ["derive"] }
-serde_json = { version = "1.0.145", features = ["float_roundtrip"] }
+serde_json = { version = "1.0.145", features = ["float_roundtrip", "raw_value"] }
 toml = "0.9.8"
 toml_edit = "0.23.9"
 thiserror = "2.0.17"
@@ -65,6 +65,8 @@ needless_range_loop = "allow"
 # Tabsmith has no unsafe code, and the compiler keeps it that way: every crate
 # inherits this table (`[lints] workspace = true`).
 unsafe_code = "forbid"
+# Proof harnesses compile only under the Kani model checker (`cargo kani`).
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(kani)"] }
 
 [profile.release]
 # Distribution profile for the prebuilt `tabsmith` binaries (see .github/workflows/release.yml).

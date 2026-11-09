@@ -20,8 +20,9 @@ unexpected_cfgs = { level = "warn", check-cfg = ["cfg(kani)"] }
 # `cargo kani` settings. The proofs state that prediction never panics. Rust's own checks
 # stay on: arithmetic overflow, division by zero, shifts and indexing panic, and Kani
 # checks memory safety and loop unwinding. Kani's additional floating-point checks are
-# off. CBMC treats any division by an infinity as a possible NaN, so it flags
-# `exp(-inf)` in libm, although IEEE 754 defines that quotient as 0.
+# off: they are not about panics, and with them the network's layers had not finished
+# after 32 minutes. (They also flagged `exp(-inf)` in libm, where CBMC took a division by an
+# infinity for a possible NaN; tabsmith-embedded's own `exp` does not divide there.)
 [package.metadata.kani.flags]
 no-overflow-checks = true
 

@@ -1,0 +1,9 @@
+{
+  "status": "imported",
+  "notes": [
+    "imported from LightGBM, model format v4 (multiclass num_class:4), model file sha256 08ee46a28bf62f1a240b7c65abb3e957ecb65fb92f6d784fb2457d7b482fbca9; Tabsmith did not evaluate it",
+    "LightGBM's leaves are f64; the bundle holds the nearest f32, so its outputs differ from LightGBM's raw scores by at most 1.24e-6 for inputs that are f32 values",
+    "thresholds are rounded down to f32: every input that is an f32 value takes LightGBM's branch",
+    "refuses missing values in humidity, voltage_drop: the model's splits on each send one left at some and right at others"
+  ]
+}

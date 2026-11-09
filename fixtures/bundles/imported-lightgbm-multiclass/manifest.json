@@ -1,0 +1,71 @@
+{
+  "bundle_format": 1,
+  "bundle_id": "b-6c6040726c4c4863",
+  "name": "lightgbm-multiclass",
+  "created_at": "2026-11-07T01:53:21Z",
+  "recipe": "tabular-binary@0.1",
+  "tabsmith_version": "0.4.0",
+  "provenance": {
+    "run_id": "import",
+    "candidate": "lightgbm",
+    "snapshot_id": "",
+    "split_id": "",
+    "transform_id": "",
+    "config_hash": "08ee46a28bf62f1a240b7c65abb3e957ecb65fb92f6d784fb2457d7b482fbca9"
+  },
+  "runtime": {
+    "min_runtime_version": "0.4.0",
+    "transform_version": "tabsmith.std-tabular.v2",
+    "model_format": "tabsmith.trees.v1",
+    "devices": [
+      "cpu"
+    ],
+    "precision": "fp32"
+  },
+  "files": [
+    {
+      "path": "input.schema.json",
+      "sha256": "a2e551b7d68b69e38d55030b39ab629addb1a65446bead04e1d00e11359bd1c1",
+      "bytes": 2537
+    },
+    {
+      "path": "output.schema.json",
+      "sha256": "84aa0603f46182575eef546ff414b96f445d9543be9509aaf1474d08e48eb817",
+      "bytes": 298
+    },
+    {
+      "path": "transform.json",
+      "sha256": "3243f6c8e36e37e0cb6cfaea345f8cc32717724321966ebdb7f12214968fce39",
+      "bytes": 2788
+    },
+    {
+      "path": "model.config.json",
+      "sha256": "8bd2566ec90b49bce7d15e3e649353a32ee0a6358c66b11cdf3b53486a0b0b71",
+      "bytes": 311
+    },
+    {
+      "path": "model.safetensors",
+      "sha256": "1783b95c71f8c3a6abd4ebc9c0c1733355b1981212e6f95db3adcbcdf1071d8a",
+      "bytes": 24816
+    },
+    {
+      "path": "evaluation.json",
+      "sha256": "e300220bece39e9ebb7a7cffe1a7cb578173a273457d449e8c4abb08789c166d",
+      "bytes": 623
+    },
+    {
+      "path": "examples/input.json",
+      "sha256": "b5d004c7949a45c9e935ae2a9557f912bd43b72d11ee526a05414fb936bda5d1",
+      "bytes": 2400
+    },
+    {
+      "path": "examples/expected.json",
+      "sha256": "a68ccc374c6f2b97a22686b2ed08e262bc91e4f4b36a754f789bceec56bffe43",
+      "bytes": 1180
+    }
+  ],
+  "self_contained": true,
+  "contains_training_data": false,
+  "contains_optimizer_state": false,
+  "evaluation_status": "imported"
+}

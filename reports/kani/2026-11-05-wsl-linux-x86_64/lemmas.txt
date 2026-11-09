@@ -1,0 +1,27 @@
+rounding_to_f32_keeps_the_order: exit 0 after 2 s, peak cbmc 72 MB
+a_larger_sum_stays_larger: exit 0 after 67 s, peak cbmc 4882 MB
+a_larger_leaf_gives_a_larger_sum: exit 0 after 553 s, peak cbmc 5134 MB
+Checking harness kernels::proofs::rounding_to_f32_keeps_the_order...
+Solving with CaDiCaL 3.0.0
+3092 variables, 12303 clauses
+Solving with CaDiCaL 3.0.0
+3093 variables, 12304 clauses
+ ** 0 of 1 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 0.558698s
+Checking harness kernels::proofs::a_larger_sum_stays_larger...
+Solving with CaDiCaL 3.0.0
+6547 variables, 26499 clauses
+Solving with CaDiCaL 3.0.0
+6548 variables, 26500 clauses
+ ** 0 of 3 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 66.31636s
+Checking harness kernels::proofs::a_larger_leaf_gives_a_larger_sum...
+Solving with CaDiCaL 3.0.0
+6827 variables, 26876 clauses
+Solving with CaDiCaL 3.0.0
+6828 variables, 26877 clauses
+ ** 0 of 3 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 552.01416s

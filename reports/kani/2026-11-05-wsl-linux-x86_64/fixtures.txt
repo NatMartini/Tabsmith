@@ -1,0 +1,1153 @@
+cargo kani: exit 0 after 3757 s (cap 14336 MB of address space per process)
+peak cbmc memory  classes_tree_16_stays_in_its_range  126 MB
+peak cbmc memory  values_tree_30_stays_in_its_range  127 MB
+peak cbmc memory  values_tree_4_stays_in_its_range  122 MB
+peak cbmc memory  values_tree_20_stays_in_its_range  1007 MB
+peak cbmc memory  values_tree_14_is_its_walk  3894 MB
+peak cbmc memory  values_tree_13_is_its_walk  4315 MB
+peak cbmc memory  values_tree_11_is_its_walk  4019 MB
+peak cbmc memory  classes_tree_38_stays_in_its_range  125 MB
+peak cbmc memory  values_tree_8_stays_in_its_range  127 MB
+peak cbmc memory  values_features_are_total  500 MB
+peak cbmc memory  values_tree_42_is_its_walk  4985 MB
+peak cbmc memory  values_tree_8_is_its_walk  4387 MB
+peak cbmc memory  values_tree_38_stays_in_its_range  125 MB
+peak cbmc memory  classes_tree_9_stays_in_its_range  123 MB
+peak cbmc memory  classes_tree_31_stays_in_its_range  125 MB
+peak cbmc memory  values_tree_53_stays_in_its_range  1120 MB
+peak cbmc memory  values_tree_1_is_its_walk  3821 MB
+peak cbmc memory  values_tree_24_stays_in_its_range  126 MB
+peak cbmc memory  values_tree_25_is_its_walk  5065 MB
+peak cbmc memory  values_tree_4_is_its_walk  4573 MB
+peak cbmc memory  values_tree_26_is_its_walk  4970 MB
+peak cbmc memory  classes_tree_21_stays_in_its_range  126 MB
+peak cbmc memory  classes_decode_is_total  1209 MB
+peak cbmc memory  values_tree_41_is_its_walk  4882 MB
+peak cbmc memory  values_tree_3_stays_in_its_range  1128 MB
+peak cbmc memory  values_tree_7_is_its_walk  4144 MB
+peak cbmc memory  classes_tree_3_stays_in_its_range  123 MB
+peak cbmc memory  values_tree_6_stays_in_its_range  124 MB
+peak cbmc memory  classes_tree_8_is_its_walk  2426 MB
+peak cbmc memory  classes_outputs_are_total  379 MB
+peak cbmc memory  values_tree_39_stays_in_its_range  127 MB
+peak cbmc memory  values_tree_0_stays_in_its_range  122 MB
+peak cbmc memory  classes_tree_36_is_its_walk  3511 MB
+peak cbmc memory  values_tree_54_is_its_walk  3308 MB
+peak cbmc memory  values_tree_58_stays_in_its_range  125 MB
+peak cbmc memory  values_tree_10_is_its_walk  4611 MB
+peak cbmc memory  classes_tree_37_is_its_walk  3487 MB
+peak cbmc memory  values_tree_55_is_its_walk  4660 MB
+peak cbmc memory  classes_tree_33_is_its_walk  3117 MB
+peak cbmc memory  values_tree_51_is_its_walk  5061 MB
+peak cbmc memory  classes_tree_23_is_its_walk  3157 MB
+peak cbmc memory  classes_tree_29_stays_in_its_range  125 MB
+peak cbmc memory  values_tree_47_stays_in_its_range  122 MB
+peak cbmc memory  values_tree_10_stays_in_its_range  126 MB
+peak cbmc memory  values_tree_42_stays_in_its_range  124 MB
+peak cbmc memory  classes_tree_0_is_its_walk  3247 MB
+peak cbmc memory  classes_tree_5_stays_in_its_range  123 MB
+peak cbmc memory  classes_tree_25_is_its_walk  3151 MB
+peak cbmc memory  values_tree_28_is_its_walk  4965 MB
+peak cbmc memory  classes_tree_34_is_its_walk  3463 MB
+peak cbmc memory  values_tree_56_is_its_walk  5448 MB
+peak cbmc memory  classes_tree_6_stays_in_its_range  126 MB
+peak cbmc memory  classes_tree_24_stays_in_its_range  125 MB
+peak cbmc memory  classes_tree_6_is_its_walk  3094 MB
+peak cbmc memory  values_tree_25_stays_in_its_range  123 MB
+peak cbmc memory  classes_tree_13_is_its_walk  2878 MB
+peak cbmc memory  values_tree_35_is_its_walk  5240 MB
+peak cbmc memory  values_tree_7_stays_in_its_range  124 MB
+peak cbmc memory  classes_tree_39_is_its_walk  3153 MB
+peak cbmc memory  values_tree_27_stays_in_its_range  124 MB
+peak cbmc memory  classes_tree_29_is_its_walk  3143 MB
+peak cbmc memory  values_tree_47_is_its_walk  4968 MB
+peak cbmc memory  classes_tree_38_is_its_walk  3485 MB
+peak cbmc memory  classes_tree_28_stays_in_its_range  124 MB
+peak cbmc memory  values_tree_46_stays_in_its_range  125 MB
+peak cbmc memory  values_tree_41_stays_in_its_range  1543 MB
+peak cbmc memory  values_tree_16_stays_in_its_range  1118 MB
+peak cbmc memory  values_tree_40_is_its_walk  4691 MB
+peak cbmc memory  classes_tree_34_stays_in_its_range  129 MB
+peak cbmc memory  values_tree_56_stays_in_its_range  1121 MB
+peak cbmc memory  classes_tree_36_stays_in_its_range  123 MB
+peak cbmc memory  values_tree_54_stays_in_its_range  93 MB
+peak cbmc memory  classes_tree_32_is_its_walk  3479 MB
+peak cbmc memory  values_tree_50_is_its_walk  5032 MB
+peak cbmc memory  values_tree_28_stays_in_its_range  125 MB
+peak cbmc memory  classes_tree_23_stays_in_its_range  124 MB
+peak cbmc memory  classes_tree_26_stays_in_its_range  124 MB
+peak cbmc memory  values_tree_48_stays_in_its_range  112 MB
+peak cbmc memory  values_tree_15_is_its_walk  3875 MB
+peak cbmc memory  classes_tree_20_stays_in_its_range  127 MB
+peak cbmc memory  values_tree_44_is_its_walk  5062 MB
+peak cbmc memory  values_tree_19_stays_in_its_range  1128 MB
+peak cbmc memory  classes_tree_12_stays_in_its_range  125 MB
+peak cbmc memory  values_tree_34_stays_in_its_range  122 MB
+peak cbmc memory  values_tree_43_is_its_walk  5260 MB
+peak cbmc memory  values_tree_21_is_its_walk  5048 MB
+peak cbmc memory  values_tree_45_stays_in_its_range  106 MB
+peak cbmc memory  values_tree_17_is_its_walk  4386 MB
+peak cbmc memory  classes_tree_37_stays_in_its_range  125 MB
+peak cbmc memory  values_tree_55_stays_in_its_range  105 MB
+peak cbmc memory  classes_tree_20_is_its_walk  3497 MB
+peak cbmc memory  classes_tree_18_stays_in_its_range  125 MB
+peak cbmc memory  values_tree_3_is_its_walk  4094 MB
+peak cbmc memory  values_tree_59_is_its_walk  5004 MB
+peak cbmc memory  classes_tree_10_stays_in_its_range  121 MB
+peak cbmc memory  values_tree_36_stays_in_its_range  123 MB
+peak cbmc memory  classes_tree_0_stays_in_its_range  124 MB
+peak cbmc memory  values_tree_5_is_its_walk  3908 MB
+peak cbmc memory  classes_tree_31_is_its_walk  3478 MB
+peak cbmc memory  values_tree_53_is_its_walk  5044 MB
+peak cbmc memory  classes_tree_14_stays_in_its_range  123 MB
+peak cbmc memory  values_tree_32_stays_in_its_range  125 MB
+peak cbmc memory  classes_tree_22_is_its_walk  3628 MB
+peak cbmc memory  classes_tree_27_stays_in_its_range  123 MB
+peak cbmc memory  values_tree_49_stays_in_its_range  477 MB
+peak cbmc memory  values_tree_26_stays_in_its_range  123 MB
+peak cbmc memory  values_tree_9_is_its_walk  4442 MB
+peak cbmc memory  values_tree_5_stays_in_its_range  123 MB
+peak cbmc memory  values_tree_23_stays_in_its_range  126 MB
+peak cbmc memory  values_tree_43_stays_in_its_range  1156 MB
+peak cbmc memory  values_tree_60_is_its_walk  5074 MB
+peak cbmc memory  classes_tree_17_is_its_walk  3011 MB
+peak cbmc memory  values_tree_40_stays_in_its_range  126 MB
+peak cbmc memory  values_tree_31_is_its_walk  5090 MB
+peak cbmc memory  classes_tree_7_is_its_walk  3085 MB
+peak cbmc memory  values_tree_61_stays_in_its_range  112 MB
+peak cbmc memory  values_tree_12_is_its_walk  4625 MB
+peak cbmc memory  values_tree_22_is_its_walk  5085 MB
+peak cbmc memory  values_tree_24_is_its_walk  5207 MB
+peak cbmc memory  classes_tree_26_is_its_walk  3160 MB
+peak cbmc memory  values_tree_48_is_its_walk  4949 MB
+peak cbmc memory  values_tree_13_stays_in_its_range  125 MB
+peak cbmc memory  classes_tree_30_stays_in_its_range  119 MB
+peak cbmc memory  values_tree_52_stays_in_its_range  128 MB
+peak cbmc memory  values_tree_15_stays_in_its_range  121 MB
+peak cbmc memory  classes_tree_19_is_its_walk  3551 MB
+peak cbmc memory  classes_tree_2_is_its_walk  3393 MB
+peak cbmc memory  values_tree_38_is_its_walk  5297 MB
+peak cbmc memory  values_tree_17_stays_in_its_range  117 MB
+peak cbmc memory  classes_tree_5_is_its_walk  3322 MB
+peak cbmc memory  classes_tree_3_is_its_walk  3545 MB
+peak cbmc memory  values_tree_44_stays_in_its_range  432 MB
+peak cbmc memory  classes_tree_15_stays_in_its_range  123 MB
+peak cbmc memory  values_tree_33_stays_in_its_range  126 MB
+peak cbmc memory  classes_tree_1_stays_in_its_range  123 MB
+peak cbmc memory  classes_features_are_total  511 MB
+peak cbmc memory  classes_tree_4_stays_in_its_range  118 MB
+peak cbmc memory  values_tree_2_stays_in_its_range  477 MB
+peak cbmc memory  classes_tree_14_is_its_walk  3128 MB
+peak cbmc memory  values_tree_32_is_its_walk  5130 MB
+peak cbmc memory  values_outputs_are_total  626 MB
+peak cbmc memory  classes_tree_18_is_its_walk  3625 MB
+peak cbmc memory  classes_tree_30_is_its_walk  3134 MB
+peak cbmc memory  values_tree_52_is_its_walk  3297 MB
+peak cbmc memory  values_tree_20_is_its_walk  4436 MB
+peak cbmc memory  values_tree_23_is_its_walk  4953 MB
+peak cbmc memory  values_tree_12_stays_in_its_range  123 MB
+peak cbmc memory  values_tree_0_is_its_walk  3512 MB
+peak cbmc memory  classes_tree_35_stays_in_its_range  124 MB
+peak cbmc memory  values_tree_57_stays_in_its_range  126 MB
+peak cbmc memory  classes_tree_1_is_its_walk  3349 MB
+peak cbmc memory  classes_tree_17_stays_in_its_range  125 MB
+peak cbmc memory  values_tree_31_stays_in_its_range  123 MB
+peak cbmc memory  classes_tree_13_stays_in_its_range  128 MB
+peak cbmc memory  values_tree_35_stays_in_its_range  127 MB
+peak cbmc memory  classes_tree_4_is_its_walk  2770 MB
+peak cbmc memory  classes_tree_7_stays_in_its_range  123 MB
+peak cbmc memory  classes_tree_10_is_its_walk  3474 MB
+peak cbmc memory  values_tree_36_is_its_walk  5253 MB
+peak cbmc memory  classes_tree_9_is_its_walk  3356 MB
+peak cbmc memory  values_tree_2_is_its_walk  3842 MB
+peak cbmc memory  values_tree_58_is_its_walk  4769 MB
+peak cbmc memory  classes_tree_11_stays_in_its_range  124 MB
+peak cbmc memory  values_tree_37_stays_in_its_range  125 MB
+peak cbmc memory  values_tree_27_is_its_walk  5073 MB
+peak cbmc memory  values_tree_39_is_its_walk  5699 MB
+peak cbmc memory  values_tree_60_stays_in_its_range  122 MB
+peak cbmc memory  classes_tree_25_stays_in_its_range  123 MB
+peak cbmc memory  classes_tree_28_is_its_walk  3067 MB
+peak cbmc memory  values_tree_46_is_its_walk  4978 MB
+peak cbmc memory  classes_tree_19_stays_in_its_range  125 MB
+peak cbmc memory  values_tree_14_stays_in_its_range  127 MB
+peak cbmc memory  classes_tree_2_stays_in_its_range  121 MB
+peak cbmc memory  values_tree_59_stays_in_its_range  126 MB
+peak cbmc memory  classes_tree_35_is_its_walk  3059 MB
+peak cbmc memory  values_tree_57_is_its_walk  4623 MB
+peak cbmc memory  classes_tree_21_is_its_walk  2981 MB
+peak cbmc memory  values_tree_6_is_its_walk  3673 MB
+peak cbmc memory  classes_tree_24_is_its_walk  3082 MB
+peak cbmc memory  values_tree_29_stays_in_its_range  125 MB
+peak cbmc memory  classes_tree_8_stays_in_its_range  124 MB
+peak cbmc memory  values_tree_18_is_its_walk  4973 MB
+peak cbmc memory  values_tree_1_stays_in_its_range  127 MB
+peak cbmc memory  classes_tree_11_is_its_walk  3322 MB
+peak cbmc memory  values_tree_37_is_its_walk  5208 MB
+peak cbmc memory  classes_tree_15_is_its_walk  3622 MB
+peak cbmc memory  values_tree_33_is_its_walk  5016 MB
+peak cbmc memory  classes_tree_39_stays_in_its_range  124 MB
+peak cbmc memory  classes_tree_27_is_its_walk  3526 MB
+peak cbmc memory  values_tree_49_is_its_walk  5070 MB
+peak cbmc memory  values_tree_16_is_its_walk  4959 MB
+peak cbmc memory  classes_tree_22_stays_in_its_range  128 MB
+peak cbmc memory  values_tree_45_is_its_walk  4416 MB
+peak cbmc memory  values_tree_21_stays_in_its_range  1026 MB
+peak cbmc memory  values_tree_11_stays_in_its_range  123 MB
+peak cbmc memory  classes_tree_16_is_its_walk  3404 MB
+peak cbmc memory  classes_tree_32_stays_in_its_range  126 MB
+peak cbmc memory  values_tree_50_stays_in_its_range  106 MB
+peak cbmc memory  values_tree_30_is_its_walk  4675 MB
+peak cbmc memory  classes_tree_12_is_its_walk  3430 MB
+peak cbmc memory  values_tree_34_is_its_walk  4953 MB
+peak cbmc memory  values_tree_22_stays_in_its_range  123 MB
+peak cbmc memory  values_tree_61_is_its_walk  3790 MB
+peak cbmc memory  values_tree_9_stays_in_its_range  130 MB
+peak cbmc memory  values_tree_29_is_its_walk  4984 MB
+peak cbmc memory  values_tree_19_is_its_walk  4955 MB
+peak cbmc memory  classes_tree_33_stays_in_its_range  127 MB
+peak cbmc memory  values_tree_51_stays_in_its_range  127 MB
+peak cbmc memory  values_tree_18_stays_in_its_range  119 MB
+Checking harness values::proofs::values_tree_41_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 32.098248s
+Checking harness values::proofs::values_tree_51_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 33.27984s
+Checking harness values::proofs::values_tree_12_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 34.219036s
+Checking harness values::proofs::values_tree_10_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 5.708845s
+Checking harness values::proofs::values_tree_30_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 31.533472s
+Checking harness values::proofs::values_tree_45_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 306 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 26.160896s
+Checking harness values::proofs::values_tree_33_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 5.272058s
+Checking harness values::proofs::values_tree_42_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 5.3039236s
+Checking harness values::proofs::values_tree_31_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 31.214624s
+Checking harness values::proofs::values_tree_45_stays_in_its_range...
+ ** 0 of 445 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.2090755s
+Checking harness values::proofs::values_tree_17_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 5.3084536s
+Checking harness values::proofs::values_tree_25_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 34.975708s
+Checking harness values::proofs::values_tree_25_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 5.430422s
+Checking harness values::proofs::values_tree_47_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 5.518843s
+Checking harness values::proofs::values_tree_27_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 5.260254s
+Checking harness values::proofs::values_tree_37_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 37.63345s
+Checking harness values::proofs::values_tree_1_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 5.1628575s
+Checking harness values::proofs::values_tree_5_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 25.275906s
+Checking harness values::proofs::values_tree_4_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 5.637228s
+Checking harness values::proofs::values_tree_13_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 6.5525045s
+Checking harness values::proofs::values_tree_17_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 28.144186s
+Checking harness values::proofs::values_tree_18_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 30.478964s
+Checking harness values::proofs::values_tree_33_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 35.17577s
+Checking harness values::proofs::values_tree_36_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 5.5881076s
+Checking harness values::proofs::values_tree_37_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 5.606722s
+Checking harness values::proofs::values_tree_59_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 27.402996s
+Checking harness values::proofs::values_tree_23_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 5.4811296s
+Checking harness values::proofs::values_tree_3_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 27.16116s
+Checking harness values::proofs::values_tree_6_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 5.3207083s
+Checking harness values::proofs::values_tree_7_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 28.918623s
+Checking harness values::proofs::values_tree_21_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 29.72426s
+Checking harness values::proofs::values_tree_55_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 306 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 27.950594s
+Checking harness values::proofs::values_tree_61_stays_in_its_range...
+ ** 0 of 381 failed (2 unreachable)
+VERIFICATION:- SUCCESSFUL
+Verification Time: 3.0944202s
+Checking harness values::proofs::values_tree_48_stays_in_its_range...
+ ** 0 of 389 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 3.1180563s
+Checking harness values::proofs::values_tree_8_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 5.1281953s
+Checking harness values::proofs::values_tree_11_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 5.280046s
+Checking harness values::proofs::values_tree_12_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 5.091305s
+Checking harness values::proofs::values_tree_11_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 30.25939s
+Checking harness values::proofs::values_tree_61_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 242 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 28.578377s
+Checking harness values::proofs::values_tree_14_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 7.967313s
+Checking harness values::proofs::values_tree_16_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 44.17141s
+Checking harness values::proofs::values_decode_is_total...
+ ** 0 of 8 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 0.013379548s
+Checking harness values::proofs::values_tree_40_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 6.791097s
+Checking harness values::proofs::values_tree_49_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 38.61144s
+Checking harness values::proofs::values_tree_32_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 41.987907s
+Checking harness values::proofs::values_tree_39_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 6.9395304s
+Checking harness values::proofs::values_tree_50_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 306 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 41.97205s
+Checking harness values::proofs::values_tree_29_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 33.72522s
+Checking harness values::proofs::values_tree_53_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 35.127865s
+Checking harness values::proofs::values_tree_10_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 29.585308s
+Checking harness values::proofs::values_tree_14_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 31.465097s
+Checking harness values::proofs::values_tree_2_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 5.188634s
+Checking harness values::proofs::values_tree_38_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 43.53306s
+Checking harness values::proofs::values_tree_41_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 5.4790797s
+Checking harness values::proofs::values_tree_43_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 6.157192s
+Checking harness values::proofs::values_tree_9_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 29.426607s
+Checking harness values::proofs::values_tree_52_stays_in_its_range...
+ ** 0 of 421 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 3.9489672s
+Checking harness values::proofs::values_tree_21_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 5.8423266s
+Checking harness values::proofs::values_tree_53_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 5.5678754s
+Checking harness values::proofs::values_tree_60_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 362 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 33.22538s
+Checking harness values::proofs::values_tree_46_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 29.87425s
+Checking harness values::proofs::values_tree_9_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 5.1071954s
+Checking harness values::proofs::values_tree_26_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 35.075165s
+Checking harness values::proofs::values_tree_48_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 250 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 19.27172s
+Checking harness values::proofs::values_tree_49_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 5.4561987s
+Checking harness values::proofs::values_tree_20_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 28.844664s
+Checking harness values::proofs::values_tree_56_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 49.83964s
+Checking harness values::proofs::values_tree_56_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 5.865816s
+Checking harness values::proofs::values_tree_16_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 5.7832193s
+Checking harness values::proofs::values_tree_19_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 5.7385426s
+Checking harness values::proofs::values_tree_3_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 5.1428313s
+Checking harness values::proofs::values_tree_4_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 31.022133s
+Checking harness values::proofs::values_tree_20_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 5.9399076s
+Checking harness values::proofs::values_tree_29_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 5.297338s
+Checking harness values::proofs::values_tree_35_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 5.1081967s
+Checking harness values::proofs::values_tree_51_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 5.2859073s
+Checking harness values::proofs::values_tree_58_stays_in_its_range...
+ ** 0 of 469 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.416156s
+Checking harness values::proofs::values_tree_44_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 5.0067115s
+Checking harness values::proofs::values_tree_0_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 21.355246s
+Checking harness values::proofs::values_tree_24_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 42.400906s
+Checking harness values::proofs::values_tree_24_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 5.062588s
+Checking harness values::proofs::values_tree_26_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 5.0579934s
+Checking harness values::proofs::values_tree_30_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 5.169204s
+Checking harness values::proofs::values_tree_36_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 30.785269s
+Checking harness values::proofs::values_tree_18_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 5.233857s
+Checking harness values::proofs::values_tree_27_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 34.854244s
+Checking harness values::proofs::values_tree_54_stays_in_its_range...
+ ** 0 of 397 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 3.1556387s
+Checking harness values::proofs::values_tree_6_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 25.8088s
+Checking harness values::proofs::values_tree_7_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.800764s
+Checking harness values::proofs::values_tree_60_stays_in_its_range...
+ ** 0 of 501 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.9700336s
+Checking harness values::proofs::values_tree_28_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 5.205927s
+Checking harness values::proofs::values_tree_46_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 5.099429s
+Checking harness values::proofs::values_tree_44_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 34.897556s
+Checking harness values::proofs::values_tree_54_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 258 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 19.454515s
+Checking harness values::proofs::values_tree_15_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 5.0501456s
+Checking harness values::proofs::values_tree_57_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 5.10533s
+Checking harness values::proofs::values_tree_22_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.97399s
+Checking harness values::proofs::values_tree_13_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 29.42256s
+Checking harness values::proofs::values_tree_1_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 25.567667s
+Checking harness values::proofs::values_tree_34_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 34.134754s
+Checking harness values::proofs::values_tree_50_stays_in_its_range...
+ ** 0 of 445 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 3.9319053s
+Checking harness values::proofs::values_tree_2_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 26.163761s
+Checking harness values::proofs::values_tree_31_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 5.172624s
+Checking harness values::proofs::values_tree_43_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 31.918018s
+Checking harness values::proofs::values_tree_57_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 33.158382s
+Checking harness values::proofs::values_tree_23_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 30.833977s
+Checking harness values::proofs::values_tree_15_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 32.14088s
+Checking harness values::proofs::values_tree_22_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 32.680866s
+Checking harness values::proofs::values_tree_0_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.701998s
+Checking harness values::proofs::values_tree_40_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 34.92291s
+Checking harness values::proofs::values_outputs_are_total...
+ ** 0 of 14318 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 57.29432s
+Checking harness values::proofs::values_tree_42_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 42.835316s
+Checking harness values::proofs::values_tree_47_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 31.980267s
+Checking harness values::proofs::values_tree_5_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.8324456s
+Checking harness values::proofs::values_features_are_total...
+ ** 0 of 415 failed (8 unreachable)
+VERIFICATION:- SUCCESSFUL
+Verification Time: 8.048692s
+Checking harness values::proofs::values_tree_59_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.853133s
+Checking harness values::proofs::values_tree_39_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 41.164063s
+Checking harness values::proofs::values_tree_55_stays_in_its_range...
+ ** 0 of 445 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 3.7619739s
+Checking harness values::proofs::values_tree_58_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 330 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 29.922909s
+Checking harness values::proofs::values_tree_19_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 31.873035s
+Checking harness values::proofs::values_tree_32_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 5.0266566s
+Checking harness values::proofs::values_tree_34_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.9388485s
+Checking harness values::proofs::values_tree_52_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 282 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 19.811146s
+Checking harness values::proofs::values_tree_28_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 26.302925s
+Checking harness values::proofs::values_tree_35_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 32.591854s
+Checking harness values::proofs::values_tree_38_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.828709s
+Checking harness values::proofs::values_tree_8_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 29.680023s
+Checking harness classes::proofs::classes_tree_22_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 19.55543s
+Checking harness classes::proofs::classes_tree_39_stays_in_its_range...
+ ** 0 of 509 failed (2 unreachable)
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.7557063s
+Checking harness classes::proofs::classes_tree_6_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.7755246s
+Checking harness classes::proofs::classes_tree_7_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 19.503916s
+Checking harness classes::proofs::classes_tree_36_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.779103s
+Checking harness classes::proofs::classes_tree_30_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.744786s
+Checking harness classes::proofs::classes_tree_5_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 18.559246s
+Checking harness classes::proofs::classes_tree_20_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 21.23488s
+Checking harness classes::proofs::classes_tree_37_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.7976813s
+Checking harness classes::proofs::classes_tree_21_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.758265s
+Checking harness classes::proofs::classes_tree_15_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.759716s
+Checking harness classes::proofs::classes_tree_25_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.7834153s
+Checking harness classes::proofs::classes_tree_27_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 20.461176s
+Checking harness classes::proofs::classes_tree_32_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 21.853668s
+Checking harness classes::proofs::classes_tree_3_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.7942414s
+Checking harness classes::proofs::classes_tree_8_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 15.851028s
+Checking harness classes::proofs::classes_tree_28_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.74268s
+Checking harness classes::proofs::classes_tree_30_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 19.877586s
+Checking harness classes::proofs::classes_tree_37_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 17.639961s
+Checking harness classes::proofs::classes_tree_34_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.7984533s
+Checking harness classes::proofs::classes_tree_3_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 22.989594s
+Checking harness classes::proofs::classes_tree_11_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 20.474438s
+Checking harness classes::proofs::classes_tree_26_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 19.846878s
+Checking harness classes::proofs::classes_tree_18_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.7843084s
+Checking harness classes::proofs::classes_tree_18_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 20.761986s
+Checking harness classes::proofs::classes_tree_38_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.639282s
+Checking harness classes::proofs::classes_tree_21_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 20.50531s
+Checking harness classes::proofs::classes_tree_36_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 18.883743s
+Checking harness classes::proofs::classes_tree_38_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 20.132006s
+Checking harness classes::proofs::classes_tree_8_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.559208s
+Checking harness classes::proofs::classes_tree_19_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.7480884s
+Checking harness classes::proofs::classes_tree_13_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 19.071453s
+Checking harness classes::proofs::classes_tree_16_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.8514004s
+Checking harness classes::proofs::classes_tree_34_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 17.96252s
+Checking harness classes::proofs::classes_tree_23_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.6499853s
+Checking harness classes::proofs::classes_tree_2_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 19.345089s
+Checking harness classes::proofs::classes_tree_9_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.7965775s
+Checking harness classes::proofs::classes_tree_32_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.7909746s
+Checking harness classes::proofs::classes_tree_26_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.5862627s
+Checking harness classes::proofs::classes_tree_14_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 21.147932s
+Checking harness classes::proofs::classes_outputs_are_total...
+ ** 0 of 9688 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 27.699608s
+Checking harness classes::proofs::classes_tree_29_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.655674s
+Checking harness classes::proofs::classes_tree_17_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 19.478918s
+Checking harness classes::proofs::classes_tree_16_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 17.931034s
+Checking harness classes::proofs::classes_tree_4_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.77371s
+Checking harness classes::proofs::classes_tree_4_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 17.437563s
+Checking harness classes::proofs::classes_features_are_total...
+ ** 0 of 415 failed (8 unreachable)
+VERIFICATION:- SUCCESSFUL
+Verification Time: 8.024927s
+Checking harness classes::proofs::classes_tree_11_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.61344s
+Checking harness classes::proofs::classes_tree_22_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.659254s
+Checking harness classes::proofs::classes_tree_0_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.7683816s
+Checking harness classes::proofs::classes_tree_24_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.7466216s
+Checking harness classes::proofs::classes_tree_39_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 19.448648s
+Checking harness classes::proofs::classes_tree_14_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.7139816s
+Checking harness classes::proofs::classes_tree_19_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 21.613358s
+Checking harness classes::proofs::classes_tree_33_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.807431s
+Checking harness classes::proofs::classes_tree_20_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.626357s
+Checking harness classes::proofs::classes_tree_0_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 14.542792s
+Checking harness classes::proofs::classes_tree_35_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.7791s
+Checking harness classes::proofs::classes_tree_31_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.782995s
+Checking harness classes::proofs::classes_tree_28_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 19.48079s
+Checking harness classes::proofs::classes_tree_10_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 16.992445s
+Checking harness classes::proofs::classes_tree_17_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.7274513s
+Checking harness classes::proofs::classes_tree_33_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 22.476295s
+Checking harness classes::proofs::classes_tree_24_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 17.040071s
+Checking harness classes::proofs::classes_tree_1_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 18.30307s
+Checking harness classes::proofs::classes_tree_12_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 18.910519s
+Checking harness classes::proofs::classes_tree_27_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.6870317s
+Checking harness classes::proofs::classes_tree_10_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.7812033s
+Checking harness classes::proofs::classes_tree_31_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 18.764313s
+Checking harness classes::proofs::classes_tree_23_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 19.157026s
+Checking harness classes::proofs::classes_tree_35_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 18.214521s
+Checking harness classes::proofs::classes_tree_9_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 17.334538s
+Checking harness classes::proofs::classes_decode_is_total...
+ ** 0 of 382 failed (17 unreachable)
+VERIFICATION:- SUCCESSFUL
+Verification Time: 351.00284s
+Checking harness classes::proofs::classes_tree_15_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 25.140867s
+Checking harness classes::proofs::classes_tree_12_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.7574925s
+Checking harness classes::proofs::classes_tree_29_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 20.153412s
+Checking harness classes::proofs::classes_tree_7_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.8182826s
+Checking harness classes::proofs::classes_tree_13_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.8569036s
+Checking harness classes::proofs::classes_tree_2_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.805088s
+Checking harness classes::proofs::classes_tree_1_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.75456s
+Checking harness classes::proofs::classes_tree_6_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 19.768894s
+Checking harness classes::proofs::classes_tree_25_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 17.113861s
+Checking harness classes::proofs::classes_tree_5_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.74733s
+Complete - 210 successfully verified harnesses, 0 failures, 210 total.

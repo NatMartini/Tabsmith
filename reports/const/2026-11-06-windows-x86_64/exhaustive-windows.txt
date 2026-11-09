@@ -1,0 +1,3 @@
+rustc's constant evaluator gives libm's bits on 12 inputs
+every f32 x (and -x): 4294967296 values, exp differs from libm at 0, the logistic function differs from 0.4.0's (on libm) at 0, sigmoid falls between consecutive f32 at 0 (4.6 s, 32 threads)
+random f64: 3200000000 values, exp differs from libm at 0 (2.6 s)

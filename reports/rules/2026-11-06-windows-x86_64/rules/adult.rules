@@ -1,0 +1,8 @@
+=> probability <= 0.999
+age in 17..=25, capital_gain == 0, capital_loss == 0 => probability <= 0.999
+age in 17..=25, capital_gain == 0, capital_loss == 0 => probability <= 0.99
+age in 17..=25, capital_gain == 0, capital_loss == 0 => probability <= 0.9
+education_num in 1..=9, capital_gain == 0, capital_loss == 0 => probability <= 0.999
+education_num in 1..=9, capital_gain == 0, capital_loss == 0 => probability <= 0.99
+hours_per_week in 1..=20, education_num in 1..=9, age in 17..=25, capital_gain == 0, capital_loss == 0 => probability <= 0.9
+hours_per_week in 1..=20, education_num in 1..=9, age in 17..=25, capital_gain == 0, capital_loss == 0 => label == "<=50K"

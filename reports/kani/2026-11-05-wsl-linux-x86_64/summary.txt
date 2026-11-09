@@ -1,0 +1,380 @@
+cargo kani: exit 0 after 459 s (cap 14336 MB of address space per process)
+peak cbmc memory  defects_tree_1_stays_in_its_range  125 MB
+peak cbmc memory  defects_tree_4_stays_in_its_range  121 MB
+peak cbmc memory  defects_arrays_tree_11_is_its_walk  1231 MB
+peak cbmc memory  defects_tree_2_stays_in_its_range  124 MB
+peak cbmc memory  mutant_one_bit_off  1523 MB
+peak cbmc memory  defects_tree_9_stays_in_its_range  126 MB
+peak cbmc memory  defects_arrays_tree_6_stays_in_its_range  123 MB
+peak cbmc memory  defects_tree_1_is_its_walk  1224 MB
+peak cbmc memory  defects_tree_7_is_its_walk  986 MB
+peak cbmc memory  defects_tree_12_stays_in_its_range  125 MB
+peak cbmc memory  defects_tree_5_stays_in_its_range  124 MB
+peak cbmc memory  defects_tree_8_stays_in_its_range  122 MB
+peak cbmc memory  defects_outputs_are_total  103 MB
+peak cbmc memory  defects_arrays_tree_walk_is_total  1686 MB
+peak cbmc memory  defects_tree_13_stays_in_its_range  126 MB
+peak cbmc memory  defects_tree_8_is_its_walk  1123 MB
+peak cbmc memory  defects_tree_2_is_its_walk  1129 MB
+peak cbmc memory  defects_mlp_decode_is_total  58 MB
+peak cbmc memory  defects_tree_11_stays_in_its_range  127 MB
+peak cbmc memory  defects_arrays_tree_9_stays_in_its_range  122 MB
+peak cbmc memory  defects_tree_0_is_its_walk  1098 MB
+peak cbmc memory  defects_tree_7_stays_in_its_range  125 MB
+peak cbmc memory  defects_arrays_tree_7_stays_in_its_range  125 MB
+peak cbmc memory  defects_tree_11_is_its_walk  1155 MB
+peak cbmc memory  defects_arrays_tree_9_is_its_walk  1128 MB
+peak cbmc memory  defects_tree_4_is_its_walk  1132 MB
+peak cbmc memory  defects_features_are_total  567 MB
+peak cbmc memory  defects_arrays_tree_7_is_its_walk  991 MB
+peak cbmc memory  defects_arrays_tree_0_is_its_walk  1116 MB
+peak cbmc memory  defects_mlp_features_are_total  568 MB
+peak cbmc memory  mutant_another_tree  1775 MB
+peak cbmc memory  defects_arrays_tree_12_is_its_walk  1059 MB
+peak cbmc memory  defects_arrays_tree_13_is_its_walk  1122 MB
+peak cbmc memory  defects_tree_0_stays_in_its_range  124 MB
+peak cbmc memory  defects_tree_12_is_its_walk  1063 MB
+peak cbmc memory  defects_arrays_tree_10_stays_in_its_range  124 MB
+peak cbmc memory  defects_arrays_tree_5_stays_in_its_range  121 MB
+peak cbmc memory  defects_arrays_tree_6_is_its_walk  1087 MB
+peak cbmc memory  defects_arrays_tree_3_stays_in_its_range  126 MB
+peak cbmc memory  defects_tree_10_stays_in_its_range  126 MB
+peak cbmc memory  defects_arrays_tree_8_stays_in_its_range  122 MB
+peak cbmc memory  defects_arrays_tree_12_stays_in_its_range  125 MB
+peak cbmc memory  defects_arrays_tree_2_is_its_walk  1127 MB
+peak cbmc memory  defects_arrays_tree_1_is_its_walk  1112 MB
+peak cbmc memory  defects_arrays_tree_0_stays_in_its_range  123 MB
+peak cbmc memory  mutant_strict_comparison  198 MB
+peak cbmc memory  defects_tree_3_is_its_walk  1006 MB
+peak cbmc memory  defects_tree_6_is_its_walk  1086 MB
+peak cbmc memory  defects_arrays_tree_10_is_its_walk  1103 MB
+peak cbmc memory  defects_tree_3_stays_in_its_range  128 MB
+peak cbmc memory  defects_tree_13_is_its_walk  1120 MB
+peak cbmc memory  defects_tree_5_is_its_walk  1134 MB
+peak cbmc memory  defects_arrays_tree_13_stays_in_its_range  123 MB
+peak cbmc memory  defects_arrays_tree_1_stays_in_its_range  125 MB
+peak cbmc memory  mutant_nan_rule_of_0_4_0  190 MB
+peak cbmc memory  defects_arrays_tree_2_stays_in_its_range  125 MB
+peak cbmc memory  defects_tree_9_is_its_walk  1127 MB
+peak cbmc memory  defects_tree_10_is_its_walk  1264 MB
+peak cbmc memory  defects_arrays_tree_8_is_its_walk  1143 MB
+peak cbmc memory  defects_arrays_tree_4_stays_in_its_range  122 MB
+peak cbmc memory  defects_arrays_tree_5_is_its_walk  1154 MB
+peak cbmc memory  defects_arrays_tree_3_is_its_walk  1006 MB
+peak cbmc memory  defects_arrays_features_are_total  547 MB
+peak cbmc memory  defects_tree_6_stays_in_its_range  123 MB
+peak cbmc memory  defects_arrays_tree_4_is_its_walk  1230 MB
+peak cbmc memory  defects_mlp_layers_are_total  1470 MB
+peak cbmc memory  defects_arrays_tree_11_stays_in_its_range  198 MB
+Checking harness defects_arrays::proofs::defects_arrays_tree_8_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 8.025254s
+Checking harness defects_arrays::proofs::defects_arrays_tree_8_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 5.315481s
+Checking harness defects_arrays::proofs::defects_arrays_tree_5_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 6.9014587s
+Checking harness defects_arrays::proofs::defects_arrays_tree_4_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.9011593s
+Checking harness defects_arrays::proofs::defects_arrays_tree_9_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.8783703s
+Checking harness defects_arrays::proofs::defects_arrays_tree_4_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 6.8252473s
+Checking harness defects_arrays::proofs::defects_arrays_tree_12_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 6.7475004s
+Checking harness defects_arrays::proofs::defects_arrays_tree_2_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 6.1404643s
+Checking harness defects_arrays::proofs::defects_arrays_tree_11_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 8.899275s
+Checking harness defects_arrays::proofs::defects_arrays_tree_9_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 6.3981423s
+Checking harness defects_arrays::proofs::defects_arrays_tree_3_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.950265s
+Checking harness defects_arrays::proofs::defects_arrays_tree_2_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.568067s
+Checking harness defects_arrays::proofs::defects_arrays_tree_6_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 6.7141137s
+Checking harness defects_arrays::proofs::defects_arrays_tree_10_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 7.0670037s
+Checking harness defects_arrays::proofs::defects_arrays_tree_0_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.7788515s
+Checking harness defects_arrays::proofs::defects_arrays_tree_walk_is_total...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 130 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 11.340136s
+Checking harness defects_arrays::proofs::defects_arrays_tree_5_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.833935s
+Checking harness defects_arrays::proofs::defects_arrays_tree_6_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.645883s
+Checking harness defects_arrays::proofs::defects_arrays_tree_10_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 5.018609s
+Checking harness defects_arrays::proofs::defects_arrays_features_are_total...
+ ** 0 of 415 failed (8 unreachable)
+VERIFICATION:- SUCCESSFUL
+Verification Time: 10.646905s
+Checking harness defects_arrays::proofs::defects_arrays_tree_13_stays_in_its_range...
+ ** 0 of 509 failed (2 unreachable)
+VERIFICATION:- SUCCESSFUL
+Verification Time: 5.0018797s
+Checking harness defects_arrays::proofs::defects_arrays_tree_1_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 7.4510937s
+Checking harness defects_arrays::proofs::defects_arrays_tree_3_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 6.761796s
+Checking harness defects_arrays::proofs::defects_arrays_tree_11_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.8377204s
+Checking harness defects_arrays::proofs::defects_arrays_tree_7_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 6.1858215s
+Checking harness defects_arrays::proofs::defects_arrays_tree_1_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.936877s
+Checking harness defects_arrays::proofs::defects_arrays_tree_0_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 6.8652124s
+Checking harness defects_arrays::proofs::defects_arrays_tree_13_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 7.669669s
+Checking harness defects_arrays::proofs::defects_arrays_decode_is_total...
+ ** 0 of 93 failed (17 unreachable)
+VERIFICATION:- SUCCESSFUL
+Verification Time: 0.35441104s
+Checking harness defects_arrays::proofs::defects_arrays_tree_12_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.863766s
+Checking harness defects_arrays::proofs::defects_arrays_tree_7_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.7936335s
+Checking harness defects_mlp::proofs::defects_mlp_features_are_total...
+ ** 0 of 415 failed (8 unreachable)
+VERIFICATION:- SUCCESSFUL
+Verification Time: 10.585749s
+Checking harness defects_mlp::proofs::defects_mlp_decode_is_total...
+ ** 0 of 93 failed (17 unreachable)
+VERIFICATION:- SUCCESSFUL
+Verification Time: 0.3737965s
+Checking harness defects_mlp::proofs::defects_mlp_layers_are_total...
+ ** 0 of 187 failed (1 unreachable)
+VERIFICATION:- SUCCESSFUL
+Verification Time: 26.67577s
+Checking harness defects::proofs::defects_tree_3_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.8117685s
+Checking harness defects::proofs::defects_tree_2_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.9233303s
+Checking harness defects::proofs::defects_tree_8_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.661679s
+Checking harness defects::proofs::defects_tree_8_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 8.132313s
+Checking harness defects::proofs::defects_tree_11_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 8.175985s
+Checking harness defects::proofs::defects_features_are_total...
+ ** 0 of 415 failed (8 unreachable)
+VERIFICATION:- SUCCESSFUL
+Verification Time: 11.482874s
+Checking harness defects::proofs::defects_tree_10_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 7.25683s
+Checking harness defects::proofs::defects_tree_5_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 6.4798965s
+Checking harness defects::proofs::defects_tree_0_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 6.8134737s
+Checking harness defects::proofs::defects_tree_2_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 6.553297s
+Checking harness defects::proofs::defects_tree_0_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.911279s
+Checking harness defects::proofs::defects_tree_12_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.975841s
+Checking harness defects::proofs::defects_tree_13_stays_in_its_range...
+ ** 0 of 509 failed (2 unreachable)
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.859316s
+Checking harness defects::proofs::defects_tree_7_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 6.420821s
+Checking harness defects::proofs::defects_tree_6_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 6.7664375s
+Checking harness defects::proofs::defects_tree_7_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 5.0514708s
+Checking harness defects::proofs::defects_tree_11_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.975341s
+Checking harness defects::proofs::defects_tree_10_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.8800406s
+Checking harness defects::proofs::defects_tree_3_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 6.5288215s
+Checking harness defects::proofs::defects_tree_13_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 7.7439423s
+Checking harness defects::proofs::defects_tree_1_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.65762s
+Checking harness defects::proofs::defects_tree_12_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 6.782268s
+Checking harness defects::proofs::defects_decode_is_total...
+ ** 0 of 93 failed (17 unreachable)
+VERIFICATION:- SUCCESSFUL
+Verification Time: 0.354117s
+Checking harness defects::proofs::defects_tree_1_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 6.9855404s
+Checking harness defects::proofs::defects_tree_4_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 6.4233637s
+Checking harness defects::proofs::defects_tree_6_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.8622823s
+Checking harness defects::proofs::defects_tree_9_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.7746086s
+Checking harness defects::proofs::defects_tree_9_is_its_walk...
+	 - Description: "unwinding assertion loop 0"
+ ** 0 of 370 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 6.632212s
+Checking harness defects::proofs::defects_outputs_are_total...
+ ** 0 of 3390 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.7874136s
+Checking harness defects::proofs::defects_tree_5_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.886879s
+Checking harness defects::proofs::defects_tree_4_stays_in_its_range...
+ ** 0 of 509 failed
+VERIFICATION:- SUCCESSFUL
+Verification Time: 4.7373877s
+Checking harness mutants::mutant_nan_rule_of_0_4_0...
+ ** 1 of 3695 failed (394 unreachable)
+Failed Checks: assertion failed: min <= leaf && leaf <= max
+VERIFICATION:- SUCCESSFUL (encountered one or more panics as expected)
+Verification Time: 7.051664s
+Checking harness mutants::mutant_strict_comparison...
+ ** 1 of 3695 failed (393 unreachable)
+Failed Checks: assertion failed: min <= leaf && leaf <= max
+VERIFICATION:- SUCCESSFUL (encountered one or more panics as expected)
+Verification Time: 7.476873s
+Checking harness mutants::mutant_one_bit_off...
+	 - Description: "unwinding assertion loop 0"
+ ** 1 of 3499 failed (390 unreachable)
+Failed Checks: assertion failed: TREE_FUNCTIONS[0](&x).to_bits() ==
+VERIFICATION:- SUCCESSFUL (encountered one or more panics as expected)
+Verification Time: 7.223825s
+Checking harness mutants::mutant_another_tree...
+	 - Description: "unwinding assertion loop 0"
+ ** 1 of 3499 failed (390 unreachable)
+Failed Checks: assertion failed: TREE_FUNCTIONS[0](&x).to_bits() == TREES.value[TREES.leaf(1, &x)].to_bits()
+VERIFICATION:- SUCCESSFUL (encountered one or more panics as expected)
+Verification Time: 11.565922s
+Complete - 69 successfully verified harnesses, 0 failures, 69 total.

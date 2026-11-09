@@ -1,0 +1,12 @@
+Kani Rust Verifier 0.68.0 (standalone)
+CBMC 6.11.0
+a_split_keeps_every_input_in_its_part: exit 0 after 7 s, peak cbmc 163 MB
+a_box_with_an_input_is_not_empty: exit 0 after 3 s, peak cbmc 61 MB
+Checking harness rules::proofs::a_split_keeps_every_input_in_its_part...
+ ** 0 of 669 failed (6 unreachable)
+VERIFICATION:- SUCCESSFUL
+Verification Time: 5.8028474s
+Checking harness rules::proofs::a_box_with_an_input_is_not_empty...
+ ** 0 of 508 failed (6 unreachable)
+VERIFICATION:- SUCCESSFUL
+Verification Time: 1.5774899s

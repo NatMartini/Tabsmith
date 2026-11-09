@@ -1,0 +1,3 @@
+=> label != "4"
+elevation >= 3500 => label != "4"
+elevation <= 2200 => label != "7"

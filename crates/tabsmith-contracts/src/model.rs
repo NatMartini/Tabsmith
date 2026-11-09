@@ -11,7 +11,8 @@ use crate::config::Task;
 /// `layers.{i}.bias` with shape `[out_dim]`.
 pub const MODEL_FORMAT: &str = "tabsmith.dense.v1";
 
-/// Tree-ensemble format understood by `tabsmith-runtime` (the `gbdt` candidate).
+/// Tree-ensemble format understood by `tabsmith-runtime` (the `gbdt` candidate, and
+/// models imported from XGBoost and LightGBM).
 ///
 /// All trees' nodes are concatenated in `model.safetensors`: `trees.roots` (I32,
 /// one root index per tree), `trees.feature` (I32; -1 marks a leaf),
@@ -20,8 +21,28 @@ pub const MODEL_FORMAT: &str = "tabsmith.dense.v1";
 /// parent's and inside the same tree) and `trees.value` (F32 leaf values, already
 /// scaled by the learning rate). With one output, output = base_score + the sum
 /// of one leaf per tree; with K outputs (multiclass), tree `t` adds to output
-/// `t % K`, starting from `base_scores[k]`.
+/// `t % K`, starting from `base_scores[k]`. [`TreesSpec::sum`] says how the leaves
+/// are added.
 pub const TREES_FORMAT: &str = "tabsmith.trees.v1";
+
+/// How a tree ensemble adds its leaves to an output.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LeafSum {
+    /// In f64, in tree order, rounded to f32 once at the end: Tabsmith's trees.
+    #[default]
+    F64,
+    /// In f32, in tree order, one rounding per tree, starting from the base score
+    /// rounded to f32: XGBoost's arithmetic, for models imported from it.
+    F32,
+}
+
+impl LeafSum {
+    /// Whether this is the default, which a model's description leaves out.
+    pub fn is_f64(&self) -> bool {
+        *self == LeafSum::F64
+    }
+}
 
 /// The output kind of each task: one logit (sigmoid), K logits (softmax), one value.
 pub fn output_kind(task: Task) -> &'static str {
@@ -73,6 +94,10 @@ pub struct TreesSpec {
     /// Empty when there are none. A loader checks that every tree keeps them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub monotone: Vec<i8>,
+    /// How the leaves are added: `f64` (left out) or `f32`. A runtime that does not
+    /// know this field refuses the model rather than add differently.
+    #[serde(default, skip_serializing_if = "LeafSum::is_f64")]
+    pub sum: LeafSum,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

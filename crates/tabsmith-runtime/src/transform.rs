@@ -8,7 +8,7 @@ use std::ops::Range;
 
 use tabsmith_contracts::config::{NanPolicy, UnknownCategoryPolicy};
 use tabsmith_contracts::schema::{FieldKind, InputSchema, RawDtype};
-use tabsmith_contracts::transform::{FeatureTransform, FittedTransform};
+use tabsmith_contracts::transform::{FeatureTransform, FittedTransform, MissingRule};
 use tabsmith_contracts::{ErrorCode, Phase, Result, TabsmithError};
 
 use crate::value::{Table, ValueRef};
@@ -239,14 +239,39 @@ pub(crate) fn transform_rows(
         })?;
         match feature {
             FeatureTransform::Numeric {
-                impute, mean, std, offset, ..
+                impute,
+                mean,
+                std,
+                offset,
+                missing,
+                ..
             } => {
                 for row in range.clone() {
                     let v = column.get(row);
                     let v = tokens.numeric(v);
                     let x = coerce_numeric(v, t.nan)
-                        .map_err(|e| with_missing_tokens(e.into_error(name, source_row(row), v, phase), &t.missing_tokens))?
-                        .unwrap_or(*impute);
+                        .map_err(|e| with_missing_tokens(e.into_error(name, source_row(row), v, phase), &t.missing_tokens))?;
+                    let x = match x {
+                        Some(x) => x,
+                        None if *missing == MissingRule::Refuse => {
+                            return Err(TabsmithError::new(
+                                ErrorCode::InvalidValue,
+                                phase,
+                                format!(
+                                    "field `{name}`, record {}: this model refuses missing values here",
+                                    source_row(row) + 1
+                                ),
+                            )
+                            .field(name)
+                            .expected("a number")
+                            .actual(v.preview())
+                            .next(
+                                "send the value; the model was imported from a library whose trees send a missing value left at \
+                                 some splits and right at others, which no imputed value reproduces",
+                            ));
+                        }
+                        None => *impute,
+                    };
                     let z = tabsmith_embedded::kernels::standardize(x, *mean, *std);
                     if !z.is_finite() {
                         return Err(TabsmithError::new(
@@ -487,6 +512,7 @@ mod tests {
                     mean: 2.0,
                     std: 0.5,
                     offset: 0,
+                    missing: Default::default(),
                 },
                 FeatureTransform::Categorical {
                     name: "c".into(),

@@ -13,7 +13,7 @@ use std::ops::Range;
 
 use safetensors::tensor::TensorView;
 use safetensors::{Dtype, SafeTensors};
-use tabsmith_contracts::model::{Activation, ModelConfig, TREES_FORMAT};
+use tabsmith_contracts::model::{Activation, LeafSum, ModelConfig, TREES_FORMAT};
 use tabsmith_contracts::{ErrorCode, Phase, Result, TabsmithError};
 use tabsmith_embedded::kernels;
 pub use tabsmith_embedded::kernels::sigmoid;
@@ -262,10 +262,20 @@ impl TreeEnsemble {
 
     /// The outputs of one feature row into `out` (one per output): the base score
     /// plus one leaf per tree of that output, summed in f64 in tree order (as the
-    /// trainer does) and rounded to f32 at the end.
+    /// trainer does) and rounded to f32 at the end, or summed in f32 for a model
+    /// imported from XGBoost ([`LeafSum::F32`]).
     pub fn outputs_row(&self, row: &[f32], out: &mut [f32]) {
         let base = self.base();
-        self.kernel(base).outputs(row, out);
+        if self.sums_in_f32() {
+            self.kernel(base).outputs_in_f32(row, out);
+        } else {
+            self.kernel(base).outputs(row, out);
+        }
+    }
+
+    /// Whether the leaves are added in f32 ([`LeafSum::F32`]).
+    pub fn sums_in_f32(&self) -> bool {
+        self.config.trees.as_ref().is_some_and(|t| t.sum == LeafSum::F32)
     }
 
     /// The outputs of rows `rows` of `x`, one row after another, bit for bit what
@@ -287,6 +297,9 @@ impl TreeEnsemble {
     /// Tree by tree over blocks of rows. Each output still adds its trees in order, in f64,
     /// and is rounded to f32 at the end, so the order of the rows changes no bit.
     fn outputs_by_tree(&self, x: &Matrix, rows: Range<usize>, out: &mut [f32]) {
+        if self.sums_in_f32() {
+            return self.outputs_by_tree_in_f32(x, rows, out);
+        }
         let base = self.base();
         let (trees, k) = (self.kernel(base), base.len());
         let mut sums = vec![0f64; rows.len().min(BLOCK) * k];
@@ -306,7 +319,27 @@ impl TreeEnsemble {
         }
     }
 
-    fn base(&self) -> &[f64] {
+    /// [`Self::outputs_by_tree`] for [`LeafSum::F32`]: each output adds its trees in order,
+    /// in f32, as [`kernels::Trees::outputs_in_f32`] does.
+    fn outputs_by_tree_in_f32(&self, x: &Matrix, rows: Range<usize>, out: &mut [f32]) {
+        let base = self.base();
+        let (trees, k) = (self.kernel(base), base.len());
+        for (first, results) in rows.step_by(BLOCK).zip(out.chunks_mut(BLOCK * k)) {
+            for s in results.chunks_exact_mut(k) {
+                for (o, v) in s.iter_mut().enumerate() {
+                    *v = base[o] as f32;
+                }
+            }
+            for t in 0..self.roots.len() {
+                for (i, s) in results.chunks_exact_mut(k).enumerate() {
+                    s[t % k] += self.value[trees.leaf(t, x.row(first + i))];
+                }
+            }
+        }
+    }
+
+    /// The starting score of each output.
+    pub(crate) fn base(&self) -> &[f64] {
         let spec = self.config.trees.as_ref().expect("checked when loaded");
         if spec.n_outputs == 1 {
             std::slice::from_ref(&spec.base_score)
@@ -315,7 +348,7 @@ impl TreeEnsemble {
         }
     }
 
-    fn kernel<'a>(&'a self, base: &'a [f64]) -> kernels::Trees<'a> {
+    pub(crate) fn kernel<'a>(&'a self, base: &'a [f64]) -> kernels::Trees<'a> {
         kernels::Trees {
             roots: &self.roots,
             feature: &self.feature,
@@ -563,6 +596,7 @@ mod tests {
                 (0..n_outputs).map(|o| o as f64 / 3.0).collect()
             },
             monotone: Vec::new(),
+            sum: Default::default(),
         };
         let task = if n_outputs == 1 { Task::Binary } else { Task::Multiclass };
         TreeEnsemble::new(

@@ -17,8 +17,15 @@ the compiler can say more about it than a file of weights allows: `rustc`'s cons
 evaluator bounds its outputs over every input or over a box of plausible inputs,
 checks the monotone constraints its trees were trained under, counts the arithmetic of
 one prediction, and the Kani model checker proves, from harnesses the macro generates,
-that prediction never panics for any input. Around the compiled model, Tabsmith keeps
-the discipline that makes the model worth compiling: leakage-free splits, one
+that prediction never panics for any input, that each compiled tree gives the same bits
+as the runtime's walk on every input, and that the output bounds hold. A rule over a
+region of inputs ("nobody under 25 without capital income is predicted rich with 99 %
+confidence") is proved or refuted with an input, exactly for trees, and a compiled model
+carries the proofs of its rules for the compiler to check again. A model trained by
+XGBoost compiles the same way and computes XGBoost's margins bit for bit, down to the C
+library's `logf` in its starting margin. Around the
+compiled model, Tabsmith keeps the discipline that makes the model worth compiling:
+leakage-free splits, one
 preprocessing implementation, a test set used once, exact resume, conformal intervals,
 and bundles that carry their own evidence. On a 10,000-row problem the trained models
 match scikit-learn's quality; a new process predicts after 1 ms instead of about 750 ms, in
@@ -55,15 +62,23 @@ its constants can be evaluated at compile time, and it can be model-checked.
 2. Compile-time properties of the compiled model, computed by the Rust constant
    evaluator: sound output bounds over any box of inputs (exact for trees, interval
    arithmetic widened for rounding for networks), a structural check of monotone
-   constraints, and the worst-case arithmetic of a prediction (Section 4.2).
+   constraints, the worst-case arithmetic of a prediction, and the prediction itself:
+   the compiler predicts the bundle's examples and must get the runtime's bits
+   (Sections 4.1 and 4.2).
 3. Generated Kani harnesses, one per stage of prediction, with loop bounds taken from
    the model's shape, so that every compiled model carries a machine-checked proof
-   that prediction never panics (Section 4.3).
-4. The workflow that produces models worth compiling: leakage-free and chronological
+   that prediction never panics; and for trees two per tree, which prove that the
+   compiled code is the runtime's model on every input and that the output bounds
+   hold (Section 4.3).
+4. Rules over regions of inputs, decided by a search over boxes that keeps categories
+   one-hot: exact for tree ensembles, with every counterexample an input predicted by the
+   runtime and every proof a certificate that the compiler walks again in its own
+   floating point (Section 4.4).
+5. The workflow that produces models worth compiling: leakage-free and chronological
    splits, one preprocessing implementation, a test-set ledger, exact resume,
    deterministic trees that are the same on every operating system, conformal
    intervals and permutation importance carried in the bundle (Section 3).
-5. Measurements against the standard Python stack on the same data, and the honest
+6. Measurements against the standard Python stack on the same data, and the honest
    list of what is not done (Sections 5 and 7).
 
 Tabsmith is open source (MIT or Apache-2.0) at <https://github.com/NatMartini/Tabsmith>.
@@ -100,7 +115,7 @@ does one job, `tabsmith train data.csv --target y`, and the job has fixed stages
 an entity column (`--group device_id`, so that no device is in both training and test),
 or chronological (`--time`); preprocessing statistics fitted on the training rows only;
 three candidates trained on the same features (a linear model, a small multilayer
-perceptron, both with Burn [5], and Tabsmith's own histogram gradient-boosted trees);
+perceptron, both with Burn [6], and Tabsmith's own histogram gradient-boosted trees);
 a comparison on the validation split; one evaluation of the chosen model on the test
 split; and a bundle.
 
@@ -166,12 +181,13 @@ loop. Each tree also becomes a `const fn` of nested `if`s, generated from those 
 
 A network calls the kernels of a small `no_std` crate (`tabsmith-embedded`, about 200
 lines of arithmetic) that the runtime calls too, and a generated tree repeats the
-arithmetic of the trees' kernel. Each kernel fixes its order of operations, and `exp`
-comes from `libm`. That is why a compiled model and the runtime produce identical bits,
+arithmetic of the trees' kernel. Each kernel fixes its order of operations, and `exp` is
+libm's algorithm, written in the kernel crate. That is why a compiled model and the runtime
+produce identical bits,
 and why Linux, macOS, Windows, WebAssembly and a Cortex-M4F do:
 the platform C libraries' `exp` differ in the last bit for 0.07 % of `f32` inputs between
 glibc and the Microsoft C runtime (`crates/tabsmith-embedded/README.md`). The equivalence
-is tested on seven bundles of every task and model kind with 3,000 random records each,
+is tested on nine bundles of every task and model kind with 3,000 random records each,
 including missing values, unseen categories, NaN, infinities and wrong types, and a
 portability test compares the hash of 20,000 predictions per bundle with the value
 recorded on Windows; CI runs it on Linux and macOS. Because generated trees are a second
@@ -183,10 +199,18 @@ record.
 Code rather than arrays is what a model as a program makes possible, and it pays three times.
 On real models it is 2.0 to 2.8 times faster than walking the same trees in arrays, since a
 branch knows its constant and its next instruction. It takes a third less flash on a
-Cortex-M4F (11.3 KB against 17.4 KB for 14 trees). And `outputs` becomes a `const fn`, so the
-compiler can run the model. The cost is build time, 3.4 s instead of 1.2 s for a release build
-at 18,823 nodes, so ensembles above 32,768 nodes keep the arrays unless asked otherwise
-(`reports/inference/`).
+Cortex-M4F (11.3 KB against 17.4 KB for 14 trees). The cost is build time, 3.4 s instead of
+1.2 s for a release build at 18,823 nodes, so ensembles above 32,768 nodes keep the arrays
+unless asked otherwise (`reports/inference/`).
+
+The compiler can also run the model, whatever its form. Every kernel is a `const fn`, `exp`
+included: libm's algorithm (FreeBSD's e_exp.c) ported operation for operation, with libm's
+bits for all 2^32 `f32` inputs. So `predict` is a `const fn` too, and the generated module
+asserts that the compiler, predicting the bundle's examples itself with its software IEEE 754
+arithmetic, gets the bits the runtime predicted: a model the compiler computes differently
+does not compile. On 169,248 nodes this adds 0.2 s to a check. Making it hold took one fix:
+IEEE 754 leaves the sign of a NaN from `inf - inf` to the processor (x86 gives `-NaN`, the
+compiler and ARM `+NaN`), so every kernel now returns one NaN (`reports/const/`).
 
 ### 4.2 What the compiler can say about the model
 
@@ -243,7 +267,7 @@ gets the same proofs.
 
 For the two models of the embedded example (14 trees with 854 nodes; a 35-32-16-1
 network), the six harnesses, and three more for the same trees as arrays, pass with Kani
-0.68 (CBMC 6.11) in 81 s together, each under 2 GB of memory (`reports/kani/`). Two findings
+0.68 (CBMC 6.11), each under 2 GB of memory (`reports/kani/`). Two findings
 are recorded there. As arrays, a single proof of all 14 tree walks needs more than 14 GB of
 memory, because every array index depends on the comparisons before it and nothing can be
 sliced away, so those trees are proved one walk at a time, in 10 s and 1.7 GB. As generated
@@ -251,14 +275,99 @@ code, every index is a constant, and `outputs` over all 14 trees takes one proof
 104 MB. And CBMC's floating-point NaN check reports a
 false positive in `libm`'s `exp(−∞)`, which divides a finite number by an infinity
 (IEEE 754 defines the quotient as 0), so the proofs run with that check off and the
-Rust panic checks on.
+Rust panic checks on. (The kernels' own `exp` leaves that division out, since it only
+raised a flag.)
 
-What the proofs say, exactly: for every value of every input type, including NaN,
+What these proofs say, exactly: for every value of every input type, including NaN,
 infinities, every category and every missing value, prediction either returns a
 prediction or returns an `InputError`; it never panics, never indexes out of bounds and
-never overflows. They say nothing about accuracy. The bounds of Section 4.2 say
-something about values; the conformal calibration of Section 3 says something about
-error. The three are different claims, and the bundle keeps them apart.
+never overflows. They say nothing about values.
+
+For trees, two more harnesses per tree do. One proves that the tree's generated code gives
+the same bits as the walk through its arrays, for every row of features; the runtime walks
+the same arrays with the same function, and the generated `outputs` adds the trees in the
+kernel's order, so the compiled model is the runtime's model on every input, not only on the
+bundle's examples. The other proves that every row of every box of feature values reaches a
+leaf inside the range the bounds analysis computes for that tree and box. Three lemmas,
+proved with Kani in the kernel crate, finish the argument: adding a smaller leaf to a
+smaller sum never gives a larger sum (two lemmas, one operand at a time), and rounding to
+`f32` keeps the order. The output bounds of Section 4.2 are then sound for every row, by
+proof rather than by argument. Each harness takes one tree with a constant index: with a
+symbolic index, the range proof of 14 trees exhausted 14 GB, and on the arrays' walk
+instead of the code it took 82 s and over 7 GB for one tree. Four harnesses that must fail,
+each with one deliberate mistake, keep the proofs from passing vacuously. With them, the
+example's 69 harnesses run in one `cargo kani` in 459 s. Stating the assumption precisely
+also found a bug: the documentation said that a NaN bound lets a feature be NaN, and for a
+NaN lower bound the analysis did not, so a NaN row of such a box could reach a leaf outside
+the bounds. The conformal calibration of Section 3 says something about error. Panics,
+values and error are different claims, and the bundle keeps them apart.
+
+### 4.4 Rules the compiler checks
+
+Bounds over a box add up each tree's extremes, which different inputs reach, so they are loose,
+and the box is rarely the question. An application asks whether every input of a region gets a
+prediction that meets a claim. Tabsmith takes such a rule as one line, `conditions => claim`,
+for example `age in 17..=25, capital_gain == 0 => probability <= 0.99`; `_ within 3 sd` keeps
+every other number within three training standard deviations of its mean.
+
+The search cuts the region into boxes of feature values until the bounds of every box settle the
+claim. A category is a run of one-hot slots, and the boxes keep it one: a slot at 1 sets the
+others to 0, and all at 0 is allowed only where the bundle ignores unseen categories. A box over
+slots as numbers holds inputs with two categories at once; with it, a prototype reported that
+87 % of Adult's labels flip within 0.05 standard deviations, against 64 of 200 with categories
+kept one-hot. For trees the search splits at the threshold where the widest tree's range is
+still open. A box where every tree reaches leaves of one value is one prediction, so the search
+is exact: it ends with a proof or a counterexample unless its budget, counted in boxes so that
+every machine gives the same answer, runs out. This is the setting of the tree-ensemble
+verification literature [16, 17, 18], here with categories modelled as the transform encodes
+them. For networks the boxes close with the interval bounds of Section 4.2 [21], and predicted
+points refute [20]; such a rule can stay undecided.
+
+The two answers are checked on their own terms. A counterexample is an input record, predicted
+by the runtime, reported only when that prediction breaks the claim. A proof is a certificate,
+the splits in walk order, which a `const fn` walk checks with the model's bounds. Kani proves the
+step that makes the closed boxes cover the region: a split keeps every input of a box in the part
+its own value selects, and that part is never taken for empty. `model!(…, rule(…))` audits the
+rule while the crate compiles, makes a rule that fails a compile error that prints an input
+breaking it, and makes the compiler walk the certificate of a rule that holds with the module's
+own `output_bounds`. The constant evaluator costs about 3 µs per tree node per box, so it checks
+proofs up to about three seconds' worth; a larger one is checked at expansion.
+
+On Adult's 155 trees, the rule above holds with a proof of 338,266 boxes, found and checked in
+under 8 s, and the same rule at 0.9 fails. On California Housing a district whose every column
+lies in its training range is predicted at $803,579, above every training target. Label
+stability turned up a property of the trees themselves: of 60 Adult records, 15 predicted over
+$50K fall to between 2 and 20 % when their capital gain and capital loss go from $0 to $1
+(for 7 of them nothing else moves), because the trainer places a threshold at the largest training value on its left ("≤ 0"), so
+a value it never saw goes with the small capital gains (`reports/rules/`).
+
+### 4.5 Models trained elsewhere
+
+The compiled model need not come from Tabsmith's trainer. `tabsmith import` reads a
+gradient-boosted model saved by XGBoost [10] or LightGBM [9] and writes a bundle, which `model!`
+compiles like any other, proofs and rules included. For XGBoost the program computes the
+library's own arithmetic rather than its numbers to a tolerance. XGBoost sends `x < s` left,
+the compiled tree `x <= t`, so `t` is the f32 just below `s`, which splits every f32 input the
+same way; the leaves, parsed from their text straight to f32, are added in f32 in XGBoost's tree
+order, and the bundle says so (`"sum": "f32"`), so that the runtime, both forms of compiled
+trees, the constant evaluator, the bounds and the rule engine add them that way.
+
+One part of the margin comes from the C library. A binary model starts from `-logf(1/p - 1)`
+for its base score `p`, and over the 2,139,095,039 positive finite f32 inputs the correctly
+rounded value differs from glibc's `logf` on 416,909 and the Windows CRT's `logf` on 501,924:
+XGBoost itself starts some models from different margins on Linux and Windows. The import
+carries a port of Arm's `logf` [22], the code of glibc, equal to glibc on every input, and
+stores the margin, so a bundle starts from Linux XGBoost's bits everywhere. Base scores near
+the class balance hit the difference often; models trained with 12 such base scores would have
+had 1,498 of 12,000 margins one ulp off with a correctly rounded start.
+
+On 100,000 rows each, models of 300 and 1,200 trees made by XGBoost 3.4.1 on Linux gave their
+margins bit for bit on all 270,980 rows the bundles accepted, computed by the runtime on Windows,
+and the compiled fixture model gives them in both forms and in the compiler. The rows not
+accepted have a missing value in a field whose splits send one left at some and right at others,
+which no imputation reproduces; such a field refuses missing values rather than predict
+differently. LightGBM keeps f64 leaves, which the format holds as f32, so its raw scores come
+within a bound the import reports (`reports/import/`).
 
 ## 5. Evaluation
 
@@ -290,8 +399,8 @@ LightGBM on the same machine, rows and settings (Section 5.5).
 
 The bundle loader was fuzzed with libFuzzer for 5.3 million inputs without a crash
 (`reports/fuzz/`). Every workspace crate forbids `unsafe`. Property tests cover
-predictions, metrics, splits, epoch orders and damaged bundles; 224 automated tests and
-11 doctests run on Linux, macOS and Windows in CI, including process-level tests that
+predictions, metrics, splits, epoch orders and damaged bundles; 305 automated tests and
+15 doctests run on Linux, macOS and Windows in CI, including process-level tests that
 drive the real binary and a crash-and-resume test that aborts the process.
 
 ### 5.4 The same trees on every operating system
@@ -337,11 +446,15 @@ bindings) interpret a model file; they keep the model's contract and weights out
 type system, which is the gap this work closes. Tools that generate C code from trees
 (for example m2cgen or treelite) produce source, but the generated code is not analysed
 by the compiler beyond type checking, and C offers neither the constant evaluation nor
-the model checking used here. Formal verification of neural networks (Reluplex and its
-successors) targets properties of the function; our proofs target the program: absence
+the model checking used here. Formal verification of neural networks (Reluplex [19] and
+its successors) targets properties of the function; our proofs target the program: absence
 of panics for every input, with value bounds from a sound static analysis rather than
-an SMT query. Conformal prediction [15] is used as published; our contribution is only
-to carry the calibration into the compiled model. Burn [5] and CubeCL provided the
+an SMT query. Tree ensembles have been verified with mixed-integer programming [16], graph
+formulations of robustness [17] and abstraction refinement [18]; our rule search is a branch
+and bound of the same kind, distinguished by modelling the categorical encoding exactly, by
+checking each counterexample through the production runtime, and by emitting certificates the
+Rust compiler re-checks. Conformal prediction [15] is used as published; our contribution is only
+to carry the calibration into the compiled model. Burn [6] and CubeCL provided the
 training backends; three findings about their GPU paths (TF32 without an opt-out,
 autotune nondeterminism across processes, a device loss on an integrated GPU) are
 documented in `docs/design-decisions.md` and drafted as upstream reports.
@@ -350,7 +463,10 @@ documented in `docs/design-decisions.md` and drafted as upstream reports.
 
 The proofs cover the two example models, not every bundle, until a user runs `cargo
 kani` on their own compiled model; the macro generates the harnesses, the user runs
-them. The output bounds of a network over all inputs are infinite; the useful bounds
+them, and the walk proofs grow with the size of the whole ensemble, so a large model
+takes hours. The order of the additions in `outputs` is the same as the kernel's by
+construction and by test, not by proof, and nothing is proved about a network's values.
+The output bounds of a network over all inputs are infinite; the useful bounds
 need a box, and the box is the user's claim about the inputs. Conformal coverage is
 calibrated on the validation split, which also selected the model, so it is approximate;
 the exact guarantee needs rows the model never saw. The trees have no native categorical
@@ -360,7 +476,12 @@ networks is reproducible across processes, not across operating systems. GPU tra
 is certified only on the hardware it was run on. There has been no user study: every
 number here is about the machine, not about the people who would use it. Per-prediction
 attributions (TreeSHAP) are not implemented, because the tree format does not record
-node coverage.
+node coverage. A rule's "every input" is every input the model accepts, realistic or not;
+boxes cannot express correlations between fields, interval bounds leave a network's tight
+rules undecided, and a claim near a large ensemble's true maximum can stay undecided after a
+million boxes. An imported field whose splits send a missing value both ways refuses missing
+values, because the format has one way through a split; LightGBM models are within a bound, not
+bit for bit.
 
 ## 8. Conclusion
 
@@ -376,16 +497,31 @@ evaluation and verification are good enough to reason about them. Rust's are.
 1. The Tabsmith repository: <https://github.com/NatMartini/Tabsmith>. The technical
    report (`docs/technical-report.md`) and the design decisions
    (`docs/design-decisions.md`) hold the full account; `reports/` the evidence.
-5. N. Dilokthanakul et al. Burn: a flexible and comprehensive deep learning framework
-   in Rust. <https://burn.dev>.
+6. Burn: a deep learning framework in Rust, version 0.22. <https://burn.dev>.
 8. L. Grinsztajn, E. Oyallon, G. Varoquaux. Why do tree-based models still outperform
    deep learning on typical tabular data? *NeurIPS Datasets and Benchmarks*, 2022.
+9. G. Ke et al. LightGBM: a highly efficient gradient boosting decision tree. *NeurIPS*, 2017.
+10. T. Chen, C. Guestrin. XGBoost: a scalable tree boosting system. *KDD*, 2016.
 13. The Kani Rust Verifier, a bit-precise model checker for Rust.
     <https://github.com/model-checking/kani>
 14. libm: a port of musl's libm to Rust. <https://crates.io/crates/libm>
 15. V. Vovk, A. Gammerman, G. Shafer. *Algorithmic Learning in a Random World*.
     Springer, 2005; A. N. Angelopoulos, S. Bates. A gentle introduction to conformal
     prediction and distribution-free uncertainty quantification, 2021.
+16. A. Kantchelian, J. D. Tygar, A. D. Joseph. Evasion and hardening of tree ensemble
+    classifiers. *ICML*, 2016.
+17. H. Chen, H. Zhang, S. Si, Y. Li, D. Boning, C.-J. Hsieh. Robustness verification of
+    tree-based models. *NeurIPS*, 2019.
+18. J. Törnblom, S. Nadjm-Tehrani. Formal verification of input-output mappings of tree
+    ensembles. *Science of Computer Programming* 194, 2020.
+19. G. Katz, C. Barrett, D. L. Dill, K. Julian, M. J. Kochenderfer. Reluplex: an efficient
+    SMT solver for verifying deep neural networks. *CAV*, 2017.
+20. R. Bunel, I. Turkaslan, P. H. S. Torr, P. Kohli, M. P. Kumar. A unified view of
+    piecewise linear neural network verification. *NeurIPS*, 2018.
+21. S. Gowal et al. On the effectiveness of interval bound propagation for training
+    verifiably robust models. arXiv:1810.12715, 2018.
+22. Arm Optimized Routines: `logf` (single-precision logarithm), as in glibc and musl.
+    <https://github.com/ARM-software/optimized-routines>
 
 *Reference numbers follow the technical report's list, so that the two documents can be
 read together.*

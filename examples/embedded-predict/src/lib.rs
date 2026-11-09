@@ -21,7 +21,12 @@
 //! The `kani` option of `model!` makes each module carry its own proofs
 //! (`defects::proofs`, `defects_mlp::proofs`): each stage of `predict` (features,
 //! outputs, decode) is proved total on its own, with loop bounds taken from the model's
-//! shape. Nothing in this file is written by hand for the proofs.
+//! shape. The trees get two more proofs per tree: the generated code gives the same bits
+//! as the walk through the arrays, the walk the runtime takes, for every row; and every
+//! row of every box of feature values reaches a leaf inside the range that
+//! `output_bounds` adds up for that box. Nothing in this file is written by hand for
+//! those proofs. `mutants.rs` holds four proofs that must fail, each with one deliberate
+//! mistake, so that the generated ones cannot pass by checking nothing.
 #![cfg_attr(not(test), no_std)]
 
 tabsmith_macros::model!(defects, "../../fixtures/bundles/binary-gbdt", kani);
@@ -31,6 +36,9 @@ tabsmith_macros::model!(defects_mlp, "../../fixtures/bundles/binary-mlp", kani);
 // `cargo kani` keeps proving that form too; the firmware does not contain it.
 #[cfg(kani)]
 tabsmith_macros::model!(defects_arrays, "../../fixtures/bundles/binary-gbdt", tree_arrays, kani);
+
+#[cfg(kani)]
+mod mutants;
 
 pub use tabsmith_embedded::{InputError, SelfCheckError};
 

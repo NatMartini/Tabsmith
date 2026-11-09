@@ -12,6 +12,7 @@ pub mod device;
 pub mod exposure;
 pub mod fit;
 pub mod gbdt;
+pub mod import;
 pub mod metrics;
 mod parallel;
 mod pool;

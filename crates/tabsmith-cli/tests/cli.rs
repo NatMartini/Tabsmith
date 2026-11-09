@@ -664,3 +664,189 @@ fn predict_keep_details() {
     let kept: Vec<&str> = out.lines().skip(1).map(|l| l.split(',').nth(1).unwrap()).collect();
     assert_eq!(kept, ["NA", "DE", "null"], "{out}");
 }
+
+fn fixture(name: &str) -> String {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/bundles")
+        .join(name)
+        .to_string_lossy()
+        .into_owned()
+}
+
+#[test]
+fn audit_proves_refutes_and_says_why() {
+    let dir = tempfile::tempdir().unwrap();
+    let dir = dir.path();
+    let trees = fixture("binary-gbdt");
+    // A proof: exit 0.
+    let out = ok(
+        dir,
+        &[
+            "audit",
+            "--bundle",
+            &trees,
+            "--rule",
+            "hours_in_service in 0..=1000 => probability <= 0.9",
+        ],
+    );
+    assert!(
+        out.contains("holds: a proof of") && out.contains("rules: 1 hold, 0 fail, 0 undecided"),
+        "{out}"
+    );
+    // A file of rules, one of which fails: exit 8, every rule in the JSON, the witness inside.
+    std::fs::write(
+        dir.join("rules.txt"),
+        "# rules for the defects model\n\n=> probability >= 0.01\nhours_in_service in 0..=1000 => probability <= 0.8\n",
+    )
+    .unwrap();
+    let out = tabsmith(dir, &["audit", "--bundle", &trees, "--rules", "rules.txt", "--json"]);
+    assert_eq!(out.status.code(), Some(8));
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["ok"], false);
+    let rules = v["result"]["rules"].as_array().unwrap();
+    assert_eq!(rules.len(), 2);
+    assert_eq!(rules[0]["result"], "holds");
+    assert!(rules[0]["proof"]["boxes"].as_u64().unwrap() >= 1);
+    assert_eq!(rules[1]["result"], "fails");
+    assert!(rules[1]["witness"]["hours_in_service"].as_f64().unwrap() <= 1000.0, "{v}");
+    assert!(rules[1]["prediction"]["probability"].as_f64().unwrap() > 0.8, "{v}");
+    // A budget too small for a network: undecided, exit 9.
+    let out = tabsmith(
+        dir,
+        &[
+            "audit",
+            "--bundle",
+            &fixture("binary-mlp"),
+            "--rule",
+            "_ within 2 sd => probability <= 0.999",
+            "--boxes",
+            "20",
+        ],
+    );
+    assert_eq!(out.status.code(), Some(9));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("undecided: the budget of 20 boxes ran out"));
+    // Rules that cannot be read or do not fit the bundle are errors: exit 2.
+    let e = fails(
+        dir,
+        &["audit", "--bundle", &trees, "--rule", "age < 3 => probability <= 0.5"],
+        "E_RULE_INVALID",
+        2,
+    );
+    assert!(e["error"]["message"].as_str().unwrap().contains("no strict comparisons"), "{e}");
+    let e = fails(
+        dir,
+        &["audit", "--bundle", &trees, "--rule", "age <= 3 => probability <= 0.5"],
+        "E_RULE_INVALID",
+        2,
+    );
+    assert!(e["error"]["message"].as_str().unwrap().contains("no input field `age`"), "{e}");
+    fails(dir, &["audit", "--bundle", &trees], "E_RULE_INVALID", 2);
+    // The stability of the bundle's example records: every record answered, in order.
+    let examples = format!("{trees}/examples/input.json");
+    let out = tabsmith(
+        dir,
+        &["audit", "--bundle", &trees, "--stability", "0.5", "--input", &examples, "--json"],
+    );
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let records = v["result"]["stability"]["records"].as_array().unwrap();
+    let n = serde_json::from_str::<serde_json::Value>(&std::fs::read_to_string(&examples).unwrap()).unwrap()["records"]
+        .as_array()
+        .unwrap()
+        .len();
+    assert_eq!(records.len(), n);
+    for (i, r) in records.iter().enumerate() {
+        assert_eq!(r["record"], i + 1);
+        assert!(["holds", "fails"].contains(&r["result"].as_str().unwrap()), "{r}");
+        if r["result"] == "fails" {
+            assert_ne!(r["prediction"]["label"], r["label"], "{r}");
+        }
+    }
+    let code = if records.iter().any(|r| r["result"] == "fails") { 8 } else { 0 };
+    assert_eq!(out.status.code(), Some(code));
+    let human = String::from_utf8_lossy(&tabsmith(dir, &["audit", "--bundle", &trees, "--stability", "0.5", "--input", &examples]).stdout)
+        .to_string();
+    assert!(
+        human.contains(&format!("stability of {n} records")) && human.contains("keep their label"),
+        "{human}"
+    );
+    // A regression has no label to keep.
+    let e = fails(
+        dir,
+        &[
+            "audit",
+            "--bundle",
+            &fixture("regression-gbdt"),
+            "--stability",
+            "0.5",
+            "--input",
+            &examples,
+        ],
+        "E_RULE_INVALID",
+        2,
+    );
+    assert!(
+        e["error"]["message"].as_str().unwrap().contains("a regression predicts a value"),
+        "{e}"
+    );
+}
+
+#[test]
+fn import_predicts_audits_and_refuses_what_it_cannot_reproduce() {
+    let dir = tempfile::tempdir().unwrap();
+    let dir = dir.path();
+    let model = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/import/xgboost-binary.json");
+    let model = model.to_string_lossy().into_owned();
+    let import = ["import", &model, "--out", "b", "--target", "defect", "--labels", "ok,defect"];
+    let out = ok(dir, &import);
+    assert!(
+        out.contains("imported XGBoost 3.4.1 (binary:logistic; 20 trees")
+            && out.contains("bit for bit")
+            && out.contains("refused in humidity, voltage_drop"),
+        "{out}"
+    );
+    // The same model again is the same bundle; --json says what was imported.
+    assert!(ok(dir, &import).contains("already bundle"));
+    let j = json(dir, &import);
+    assert_eq!(j["result"]["model"]["exact"], true, "{j}");
+    assert_eq!(j["result"]["manifest"]["evaluation_status"], "imported", "{j}");
+    // The bundle predicts like any other.
+    let header = "hours_in_service,cycles,temp_mean,temp_std,temp_max,vibration_rms,vibration_peak,pressure_mean,pressure_std,current_mean,current_std,humidity,voltage_drop,ambient_noise_db,calibration_offset";
+    std::fs::write(
+        dir.join("rows.csv"),
+        format!("{header}\n4115,413,54.33,0.7168,56.1581,0.6597,2.0875,4.745,0.3711,16.4154,1.232,45.1,0.31,50.2,0\n120,11,62.9,1.37,67.19,0.05,0.158,4.03,0.31,9.51,0.63,40.2,0.2,48.0,0\n"),
+    )
+    .unwrap();
+    let out = ok(dir, &["predict", "--bundle", "b", "--input", "rows.csv"]);
+    assert_eq!(out.lines().count(), 3, "{out}");
+    assert!(out.lines().skip(1).all(|l| l.contains("ok") || l.contains("defect")), "{out}");
+    // Rules over it get an answer; standard deviations of training it does not have.
+    let audit = tabsmith(
+        dir,
+        &[
+            "audit",
+            "--bundle",
+            "b",
+            "--rule",
+            "hours_in_service in 0..=1000 => probability <= 0.99",
+        ],
+    );
+    assert!(matches!(audit.status.code(), Some(0 | 8 | 9)), "{audit:?}");
+    let e = fails(
+        dir,
+        &["audit", "--bundle", "b", "--rule", "_ within 3 sd => probability <= 0.9"],
+        "E_RULE_INVALID",
+        2,
+    );
+    assert!(
+        e["error"]["message"].as_str().unwrap().contains("holds no training statistics"),
+        "{e}"
+    );
+    // A model it cannot reproduce is refused: exit 4.
+    let text = std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/import/lightgbm-regression.txt"))
+        .unwrap()
+        .replace("objective=regression", "objective=poisson");
+    std::fs::write(dir.join("poisson.txt"), text).unwrap();
+    let e = fails(dir, &["import", "poisson.txt", "--out", "p"], "E_IMPORT_UNSUPPORTED", 4);
+    assert!(e["error"]["message"].as_str().unwrap().contains("exponential"), "{e}");
+    fails(dir, &["import", "rows.csv", "--out", "q"], "E_IMPORT_INVALID", 4);
+}

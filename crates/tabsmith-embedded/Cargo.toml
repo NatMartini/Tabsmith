@@ -14,8 +14,9 @@ keywords = ["machine-learning", "no-std", "embedded", "inference", "tabular"]
 categories = ["no-std", "embedded", "science"]
 include = ["/src/**/*.rs", "/README.md", "/LICENSE-MIT", "/LICENSE-APACHE"]
 
-[dependencies]
-# exp in pure Rust: the same bits on every target, where the platform C library would differ.
+# No dependencies. `kernels::exp` is libm's algorithm as a `const fn`; libm itself stays as
+# the reference its tests compare against.
+[dev-dependencies]
 libm.workspace = true
 
 [lints]

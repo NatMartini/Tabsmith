@@ -82,7 +82,11 @@ four reasons:
 5. **Models compiled into code** (§6.1). A procedural macro turns a bundle into a
    `no_std` Rust module whose types are the model's input contract. The module shares
    the runtime's arithmetic, so it predicts the same bits as the runtime, on every platform;
-   tests check this on seven bundles and three platforms.
+   tests check this on nine bundles and three platforms.
+6. **Models imported with the library's arithmetic** (§6.4). XGBoost models become bundles
+   whose margins are XGBoost's bit for bit, the C library's `logf` in the starting margin
+   included; LightGBM models come within a bound the import reports, and a missing value that
+   no imputation reproduces is refused.
 
 ### Scope
 
@@ -111,7 +115,7 @@ about 3,300 lines of integration tests):
 | Crate | Role | Depends on |
 |---|---|---|
 | `tabsmith-contracts` | Every record that crosses a stage boundary, with its format version; configuration; errors; file hashing | serde, serde_json, toml, thiserror, sha2 |
-| `tabsmith-embedded` | The numeric kernels, `no_std` and allocation-free, shared by the runtime and by compiled models | libm |
+| `tabsmith-embedded` | The numeric kernels, `no_std`, allocation-free and `const`, shared by the runtime and by compiled models | nothing |
 | `tabsmith-runtime` | Loading and verifying bundles; the transform; model execution; `Predictor` | contracts, embedded, safetensors |
 | `tabsmith-macros` | `model!`: a bundle compiled into a Rust module while the application builds | contracts, runtime, syn, quote |
 | `tabsmith-workflow` | Data (Polars), splits, fitting, training (Burn), evaluation, bundles, reports | contracts, runtime, Burn, Polars |
@@ -404,18 +408,22 @@ edited bundle is a compile error. It then generates a module with:
   constant assertions that every split reads a real feature and points forward inside
   its own tree;
 - each tree as a `const fn` of nested `if`s, up to 32,768 nodes by default;
-- `predict`, which allocates nothing and needs no `std`;
+- `predict`, which allocates nothing and needs no `std`, and is a `const fn`;
+- a constant assertion that the compiler, predicting the bundle's examples itself, gets
+  the runtime's bits for each;
 - `self_check()`, which replays the bundle's examples against the runtime's predictions
-  recorded at compile time.
+  recorded at compile time, on the device.
 
 The generated code and the runtime call the same kernels in `tabsmith-embedded`: a dot
 product with a fixed order of eight partial sums, dense layers, tree traversal summing
 leaves in f64 in tree order, standardisation, sigmoid and softmax. Their order of
-operations is part of the format. `exp` comes from `libm` [14], a pure-Rust port of
-musl's math library, instead of the C runtime. A generated tree repeats the traversal's
+operations is part of the format. `exp` is not the C runtime's: it is the algorithm of
+`libm` [14] (FreeBSD's e_exp.c), written in the kernel crate operation for operation as a
+`const fn`, with libm's bits for all 2^32 `f32` inputs and 3.2 billion random `f64`. A
+generated tree repeats the traversal's
 arithmetic in code: a row goes left on `<=`, so NaN goes right, and each output adds its
 trees in order, in f64. Three test suites check the consequence:
-- For seven bundles covering every task and model kind, the compiled model and the
+- For nine bundles covering every task and model kind, the compiled model and the
   runtime return the same bits on the bundle's examples and on 3,000 random records each
   (proptest). The records include missing values, unseen categories, NaN, infinity and
   values of the wrong type. A record that one of them refuses, the other refuses too.
@@ -447,8 +455,20 @@ and 115 s instead of 27 s at 169,248, which is why the default stops at 32,768 n
 `tree_code` and `tree_arrays` override it. Above that size, `outputs_batch` and the runtime
 go tree by tree over blocks of rows, which keeps one tree in the cache while the block walks
 it, and which changes no bit because each output still adds its trees in order. Below it,
-row by row is as fast. `outputs` also becomes a `const fn`, so rustc can run the model. The
-numbers are in `reports/inference/`.
+row by row is as fast. The numbers are in `reports/inference/`.
+
+**The compiler runs the model.** Every kernel is a `const fn`, and so are the generated
+`features`, `outputs`, `decode` and `predict`, for networks and for trees in both forms.
+rustc's constant evaluator computes IEEE 754 arithmetic in software with the hardware's
+rounding, so it predicts the same bits. The generated module asserts that it does: the
+compiler predicts the bundle's examples while the crate compiles and compares the bits with
+the runtime's, and a model it computes differently does not compile. An application can
+predict in its own constants, where a refused input is a compile error. On Covertype's
+169,248 nodes the check adds 0.2 s to `cargo check`. One difference had to go first:
+IEEE 754 leaves the sign of a NaN from an invalid operation to the processor, and
+`inf - inf` in a network's last layer gave `-NaN` on x86 but `+NaN` in the compiler and on
+ARM. Every kernel that can return a NaN now returns the same quiet NaN, so the claim of
+identical bits holds for NaN results too (`reports/const/`).
 
 `examples/embedded-predict` compiles two bundles into a `no_std` library, without
 `unsafe` code, that builds for a Cortex-M4F (`thumbv7em-none-eabihf`) and for
@@ -468,9 +488,41 @@ proved one walk at a time, through any tree, in 10 s and 1.7 GB; `outputs` adds 
 leaf values, so it cannot panic once every walk stays in range. All 14 walks in one proof
 ran out of memory with 14 GB. The harnesses are generated by `model!` itself, with loop
 bounds from the model's shape, so nothing is written by hand and every compiled model
-carries the same proofs. All nine, six for the two models of the example and three for the
-same trees as arrays, pass with Kani 0.68 (CBMC 6.11), in 81 s together and under 2 GB
-of memory each (`reports/kani/`).
+carries the same proofs.
+
+**From the runtime to the bounds.** Not panicking says nothing about the values, so the
+trees get two more proofs each, which together link the runtime to the bounds:
+
+1. The runtime walks the bundle's arrays with `kernels::Trees::leaf`; `model!` reads the
+   same arrays through the runtime and keeps them as `TREES`. Same function, same data.
+2. `<model>_tree_<t>_is_its_walk`: the code of tree `t` gives the same bits as that walk,
+   for every row of features, NaN and infinities included (Kani, one proof per tree).
+3. `outputs` adds, per output, the trees in tree order in `f64`, as
+   `kernels::Trees::outputs` does, and rounds to `f32` at the end. This link is by
+   construction, and `tests/tree_code.rs` checks it on a row for every node and on random
+   rows. So the compiled model predicts what the runtime predicts for every input, not
+   only for the bundle's examples.
+4. `<model>_tree_<t>_stays_in_its_range`: every row of every box of feature values reaches
+   a leaf of the tree inside `Trees::leaf_range` of the box (Kani, one proof per tree).
+5. `Trees::bounds` adds the ranges in the order of link 3. Adding a smaller leaf to a
+   smaller sum never gives a larger sum, and rounding to `f32` keeps the order: facts of
+   IEEE 754 arithmetic, which tabsmith-embedded's own Kani proofs check bit for bit on the
+   operations both functions use. So `output_bounds` and `OUTPUT_BOUNDS` hold for every row.
+
+Each proof takes one tree, because with a symbolic tree index the range proof of all 14 ran
+out of 14 GB, and the range is proved on the code, where every index is a constant. Through
+the arrays, the range proof of one tree took 82 s and over 7 GB, against 5 s and 130 MB on
+the code. Trees kept as arrays therefore get their code inside the proofs only, where link 2
+connects it to the walk. Four further
+harnesses must fail, each with one deliberate mistake (another tree, a threshold one unit in
+the last place off, a strict comparison in the range, and the NaN rule of 0.4.0, below), so
+that the generated proofs cannot pass by checking nothing. Writing link 4's assumption
+down found a bug: the documentation said that a NaN bound lets a feature be NaN, and in
+0.4.0 a NaN lower bound did not. A box with `lo` NaN and `hi` below a threshold reached no
+leaf, while a NaN row goes right at every split. All 69 harnesses of the example (nine that
+it never panics, 56 for the trees in both forms, four that must fail) pass with Kani 0.68
+(CBMC 6.11) in one plain `cargo kani`, in 459 s and under 1.8 GB each; the three lemmas run
+apart (`reports/kani/`).
 
 **What else the compiler knows.** Proving the absence of panics is the floor. The
 generated module also carries properties of the model's values, computed by rustc's
@@ -479,14 +531,17 @@ constant evaluator from the generated constants:
 - *Output bounds.* `output_bounds(&lo, &hi)` bounds the raw outputs over a box of
   feature values; `OUTPUT_BOUNDS` is the unbounded box. For trees, each tree contributes
   the smallest and the largest leaf the box can reach, summed in the order inference
-  sums; rounding is monotone, so the bound is sound with no error margin. For a
+  sums; rounding is monotone, so the bound is sound with no error margin, as the Kani
+  proofs above check for every box. For a
   network, interval arithmetic runs through the layers and is widened by the worst
   rounding error of the kernel (one unit roundoff per product and per addition, on the
   sum of the magnitudes). A binary tree model therefore knows `PROBABILITY_BOUNDS`
   before it runs, and a regression `VALUE_BOUNDS`; the embedded example asserts at
-  compile time that its defect probability lies strictly inside (0, 1). The macro
-  computes the same bounds at expansion time with the same `const fn`s and checks that
-  rustc agrees bit for bit.
+  compile time that its defect probability lies strictly inside (0, 1). The compiler
+  computes them with the kernels `decode` calls, and the logistic function as computed
+  never decreases from one `f32` logit to the next (all 2^32 checked), so no input leaves
+  the probability bounds. The macro computes the same bounds at expansion time with the
+  same `const fn`s and checks that rustc agrees bit for bit.
 - *Monotonicity.* Trees trained under a monotone constraint (`train.gbdt.trees.monotone`)
   keep it by construction, as in XGBoost: a split on the constrained feature is taken
   only when the lesser side's weight is at most the greater side's, and from then on
@@ -525,6 +580,128 @@ nothing else):
   deviation in the bundle's transform, and the share of unseen categories, and lists
   the fields that moved (`GET /stats`). It needs nothing the bundle does not already
   carry.
+
+### 6.3 Rules over regions of inputs
+
+The bounds of §6.1 say what a model can output over a box; an application usually needs a
+narrower and stronger statement about a region it cares about. `tabsmith audit`,
+`Predictor::audit` and `model!(…, rule(…))` take a rule as one line of text,
+`conditions => claim`: for example `age in 17..=25, capital_gain == 0 => probability <= 0.99`,
+or `_ within 3 sd => value <= 600000`, where `_ within k sd` keeps every other numeric field
+within `k` training standard deviations of its mean. The answer is a proof, an input that
+breaks the rule, or "undecided" when the budget runs out (D18).
+
+*Search.* The region becomes a box of feature values, and the search cuts boxes until each
+one's bounds settle the claim (`Claim::holds_within`: for a binary model or a regression, the
+bound on the side the claim limits decides exactly, because the logistic function and
+`mean + std · z` never decrease; a multiclass label needs a margin of 10⁻⁶ between outputs
+unless the box is one point). A category's slots stay one-hot throughout: a slot at 1 sets its
+category's other slots to 0, and all of them at 0 is allowed only where the bundle ignores
+unseen categories. A box over slots as plain numbers would hold inputs with two categories at
+once; a prototype that did so reported that 87 % of Adult's labels flip within 0.05 standard
+deviations, against 64 of 200 once categories were kept one-hot. For trees the search splits at
+the threshold where the widest tree's range is still open, so it is exact: a box where every
+tree reaches leaves of one value is a single prediction, and the search ends with a proof or a
+counterexample [16, 17, 18]. Every 64 boxes a greedy dive follows each tree toward the leaves
+that break the claim, which finds most counterexamples at once. For networks the boxes close
+with `dense_bounds`, the interval bound propagation of §6.1 [21], and counterexamples come from
+predicting each box's centre and the corner that a linearisation at the centre points to; the
+split is the feature whose sensitivity times width is largest [20]. Interval bounds cannot
+refute, so a network's rule can stay undecided.
+
+*Checking the answers.* A counterexample is a record built inside the box (as close to the
+training means, or to a given record, as the box allows, whole numbers where the field held
+whole numbers), predicted by `predict_one`, and reported only when that prediction breaks the
+claim. A proof is a certificate, the splits in the order of a walk that visits each left part
+first, and `rules::Walk` with the kernels' bounds checks it again before it is reported. Kani
+proves the step that makes the closed boxes cover the region: a split keeps every input of a
+box in the part its own value selects, and that part is never taken for empty, for every box,
+row and finite threshold of a domain with numbers and both kinds of category. A test runs the
+tree search on 400 random small ensembles and compares every answer with every row of the
+region, one per cell of the trees' thresholds.
+
+*The compiler.* `model!(…, rule(…))` audits each rule while the crate compiles, with the same
+budget of a million boxes. A rule that fails is a compile error that prints an input breaking
+it; an undecided rule is one too. A rule that holds becomes a constant certificate and a
+constant assertion that walks it with the module's `output_bounds`, so the compiler checks the
+proof in its own floating point, with the per-tree ranges that the proofs of §6.1 cover.
+rustc's constant evaluator takes about 3 µs per tree node per box (a proof of 3,244 boxes over
+3,610 nodes took 33 s), so a proof above a million of those is checked at expansion instead,
+and the module's documentation says which.
+
+*Findings.* On Adult (155 trees), "nobody of 17 to 25 without capital gain or loss is predicted
+over $50K with probability above 0.99" holds, with a proof of 338,266 boxes found and checked in
+under 8 s; 0.9 fails. On California Housing (309 trees), whose training targets stop at
+$500,001, the search finds a district predicted at $803,579 whose every column lies in its
+training range; the combination does not occur in any census. The label stability of 200
+Adult records (`--stability`): within 0.05 standard deviations of each record's numbers, 50 can
+change their label, each with an input that does. Of 60 records, 15 predicted over $50K fall
+to between 2 and 20 % when their capital gain and capital loss go from $0 to $1 (for 7, nothing
+else moves; nobody in the data has both, and the smallest positive values are $114 and $155),
+because the
+trees split at "≤ 0": the threshold sits at the largest training value on its left, so a value
+never seen between 0 and the smallest positive one takes the right branch, that of the small
+capital gains in training (`reports/rules/`).
+
+### 6.4 Models from XGBoost and LightGBM
+
+Most gradient-boosted models in use were trained with XGBoost [10] or LightGBM [9].
+`tabsmith import` turns their saved models into bundles, so that everything above applies to
+them: the runtime, compilation with `model!`, the proofs, the browser build and rules (D19). The
+aim was the library's own arithmetic, where the format can hold it, and a stated bound where it
+cannot. A converter that re-implements the walk and compares within a tolerance cannot say which
+of its differences are rounding and which are a missing value sent the wrong way.
+
+*What the libraries compute.* Walking saved models by hand in several precisions and comparing
+the bits with the libraries' predictions settled it: XGBoost 3.4 rounds each input to f32, sends
+`x < s` left and a NaN by the split's `default_left`, and adds f32 leaves in f32, in tree order,
+from a margin in f32; LightGBM 4.7 compares f64 inputs with f64 thresholds, `x <= t`, and adds
+f64 leaves in f64.
+
+*Making the bundle compute it.* The import stores `s.next_down()` as Tabsmith's threshold, which
+splits every f32 input as `x < s` does. Thresholds and leaves are parsed from their decimal text
+straight to f32: through f64, a decimal can round twice and land on the neighbouring f32. A tree
+model may say `"sum": "f32"`, and every walk of it, the runtime row by row and tree by tree, the
+compiled code in both forms, the compiler's constant evaluation, `output_bounds` and the rule
+engine's search, adds its leaves in f32 (`Trees::outputs_in_f32`, `bounds_in_f32`; rounding an
+f32 sum never reverses an order, which two Kani lemmas check). A multiclass model's trees are put
+in Tabsmith's order, tree `t` for class `t % K`, each class keeping the order of its own sum.
+
+*The C library in the margin.* A binary model stores its base score as a probability `p`, and
+XGBoost starts each margin from `-logf(1.0f/p - 1.0f)`. C libraries round `logf` differently. Of
+the 2,139,095,039 positive finite f32 inputs, the correctly rounded value differs from glibc 2.43's
+`logf` on 416,909, and the Windows CRT's `logf` on 501,924, so XGBoost itself starts some binary
+models from different margins on Linux and on Windows. The import carries a port of Arm's
+optimized-routines `logf` [22], the code of glibc and musl, which equals glibc on all of them,
+with and without fused multiply-adds, and stores the margin it gives: a bundle starts from Linux
+XGBoost's bits on every platform. The inputs that matter are `1/p − 1` near the class balance,
+where the difference is common: for 12 of 1,596 random base scores in (0.02, 0.98) glibc is not
+correctly rounded, and models trained with those 12 would have 1,498 of 12,000 margins one ulp
+off with the correctly rounded start.
+
+*Missing values.* Each split sends a missing value one way: XGBoost by `default_left`, LightGBM
+by `default_left` for its missing type NaN and as the value 0 for its missing type None. When one
+value takes the missing value's way at every split on a field, the import imputes it and the
+bundle stays exact. When the splits disagree, no imputation reproduces the library, and the field
+refuses missing values (`MissingRule::Refuse`, `E_INVALID_VALUE`). Both libraries choose a
+direction per split, so fields that had missing values in training usually refuse them; a
+per-split direction in the format would remove that limit (§8).
+
+*Evidence.* XGBoost 3.4.1 and LightGBM 4.7.0 made models on 50,000 rows of the sample data in
+WSL and predicted 100,000 rows, a tenth with one or two fields set missing; Tabsmith compared on
+Windows (`reports/import/`):
+
+| Model | Trees | Rows compared | Result |
+|---|---:|---:|---|
+| XGBoost binary, 4 classes, regression | 300, 1,200, 300 | 270,980 | every margin bit for bit |
+| XGBoost binary, 12 base scores where glibc's `logf` is not correctly rounded | 5 each | 11,901 | every margin bit for bit |
+| LightGBM binary, 4 classes, regression | 300, 1,200, 300 | 270,980 | largest difference 3 % to 17 % of the reported bound |
+
+The rows not compared hold a missing value in a refusing field, and each was refused. LightGBM's
+bound adds the leaves' rounding to f32, both sums' rounding and the output's; LightGBM's thresholds
+are rounded down to f32, which takes LightGBM's branch for every f32 input. Given rows that are
+not f32 values, LightGBM took another branch on 31 to 91 of 90,000 rows, where an input lay
+closer to a threshold than f32 resolves.
 
 ## 7. Evaluation
 
@@ -621,7 +798,7 @@ from 49 to 32 ms.
 
 ### 7.4 Robustness
 
-The workspace has 224 tests and 11 doctests. They include property tests (proptest) that
+The workspace has 305 tests and 15 doctests. They include property tests (proptest) that
 check these invariants on random inputs:
 - predictions are total and independent of batch composition;
 - a compiled model and the runtime return the same bits, and refuse the same records;
@@ -658,7 +835,7 @@ execute.
   `set_float32_matmul_precision`. A second draft, for `cubecl-wgpu`, reports the panic
   in the autotune timing path on the integrated GPU.
 - **Determinism across platforms.** Inference is portable: the runtime and compiled
-  models take `exp` from `libm`, and CI checks the prediction hashes of seven bundles on
+  models compute `exp` with libm's algorithm in the kernel crate, and CI checks the prediction hashes of nine bundles on
   three platforms (§6.1). Training is not yet. Its guarantees are stated and tested per
   platform (OS, architecture, engine), and resuming a run on another platform is
   refused. The quick-start problem was trained on one machine under Windows 11 and
@@ -671,10 +848,31 @@ execute.
   the C runtime. On 2 million inputs, Microsoft's runtime and glibc disagree by one ulp
   on 0.07 % of `f32` exponentials and 0.12 % of logarithms. A pure-Rust math library in
   the training engine would make the networks portable too.
-- **Proofs.** The Kani proofs of §6.1 show that prediction never panics. They say
-  nothing about numerical accuracy, which the equivalence and portability tests cover,
-  and they cover the two models of `examples/embedded-predict`, not every bundle. Kani
-  does not run on Windows; the proofs ran on Linux and are set up to run in CI.
+- **Proofs.** The Kani proofs of §6.1 show that prediction never panics and, for trees,
+  that the compiled code is the runtime's walk and that the output bounds hold. Link 3,
+  the order of the additions in `outputs`, holds by construction and is tested, not
+  proved. Nothing is proved about a network's values beyond its tested bounds, about
+  `outputs_batch`, or about `PROBABILITY_BOUNDS`, which rounds through `exp`. The proofs
+  cover the models of `examples/embedded-predict`, not every bundle, until a user runs
+  `cargo kani` on their own. A walk proof grows with the whole ensemble, because the walk
+  indexes the arrays of every tree: about 7 s and 1.3 GB per tree at 854 nodes and 32 s
+  and 5.7 GB at 3,610, so a model of tens of thousands of nodes takes hours. Kani does not run on Windows; the
+  proofs ran on Linux and run in CI, except tabsmith-embedded's rounding lemmas, which do
+  not depend on the code and take about 10 minutes.
+- **Rules.** A rule's "every input" is every input `predict` accepts, realistic or not:
+  boxes cannot express correlations between fields, and a dataset's own one-hot columns
+  (Covertype's soil types) are numbers to the model. Interval bounds make a network's
+  tight rules undecided. Search time grows with the ensemble and with how close a claim is
+  to the truth: a claim near Adult's true maximum stays undecided after a million boxes.
+  A stability range of whole-number fields is rounded at its ends, but may hold fractions
+  between them. A multiclass claim on a probability (rather than a label) is not
+  supported.
+- **Imports.** A field whose splits send a missing value both ways refuses missing values: the
+  format has one way through a split, and a second, per-split way for missing values would touch
+  every walk, bound and proof and the rule engine's boxes. LightGBM is within a bound, not bit
+  for bit, since the format's leaves are f32; categorical splits, other links and random forests
+  are refused. An imported bundle carries no training statistics, so rules cannot use `within k
+  sd`.
 - **Tasks.** Ranking and survival targets are outside 0.1; the task enums are where
   they would go. A chronological split exists (`--time`); rolling validation over
   several time windows does not.
@@ -720,3 +918,19 @@ and TF32 inside the matmul library.
 13. The Kani Rust Verifier, a bit-precise model checker for Rust.
     https://github.com/model-checking/kani
 14. libm: a port of musl's libm to Rust. https://crates.io/crates/libm
+15. V. Vovk, A. Gammerman, G. Shafer. *Algorithmic Learning in a Random World*.
+    Springer, 2005.
+16. A. Kantchelian, J. D. Tygar, A. D. Joseph. Evasion and hardening of tree ensemble
+    classifiers. *ICML*, 2016.
+17. H. Chen, H. Zhang, S. Si, Y. Li, D. Boning, C.-J. Hsieh. Robustness verification of
+    tree-based models. *NeurIPS*, 2019.
+18. J. Törnblom, S. Nadjm-Tehrani. Formal verification of input-output mappings of tree
+    ensembles. *Science of Computer Programming* 194, 2020.
+19. G. Katz, C. Barrett, D. L. Dill, K. Julian, M. J. Kochenderfer. Reluplex: an efficient
+    SMT solver for verifying deep neural networks. *CAV*, 2017.
+20. R. Bunel, I. Turkaslan, P. H. S. Torr, P. Kohli, M. P. Kumar. A unified view of
+    piecewise linear neural network verification. *NeurIPS*, 2018.
+21. S. Gowal et al. On the effectiveness of interval bound propagation for training
+    verifiably robust models. arXiv:1810.12715, 2018.
+22. Arm Optimized Routines: `logf` (single-precision logarithm), as in glibc and musl.
+    https://github.com/ARM-software/optimized-routines

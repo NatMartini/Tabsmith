@@ -1,0 +1,14 @@
+ldd (Ubuntu GLIBC 2.43-2ubuntu2.4) 2.43
+positive finite f32 inputs: 2139095039
+platform != port                     0
+platform != port with FMA            0
+platform != correctly rounded        416909
+port != port with FMA                0
+port != correctly rounded            416909
+port with FMA != correctly rounded   416909
+p = 0.127: -logf(1/p - 1): platform 0xbff6c076 port 0xbff6c076 fma 0xbff6c076 cr 0xbff6c076
+p = 0.5: -logf(1/p - 1): platform 0x80000000 port 0x80000000 fma 0x80000000 cr 0x80000000
+p = 0.3: -logf(1/p - 1): platform 0xbf58e883 port 0xbf58e883 fma 0xbf58e883 cr 0xbf58e883
+p = 0.01: -logf(1/p - 1): platform 0xc0930b39 port 0xc0930b39 fma 0xc0930b39 cr 0xc0930b39
+p = 0.9: -logf(1/p - 1): platform 0x400c9f52 port 0x400c9f52 fma 0x400c9f52 cr 0x400c9f52
+p = 0.333: -logf(1/p - 1): platform 0xbf31d46b port 0xbf31d46b fma 0xbf31d46b cr 0xbf31d46b

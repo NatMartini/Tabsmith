@@ -1,0 +1,25 @@
+{
+  "predictions": [
+    {
+      "label": "ok",
+      "probability": 0.4024192247954576
+    },
+    {
+      "label": "ok",
+      "probability": 0.036192683960906254
+    },
+    {
+      "label": "defect",
+      "probability": 0.8331070813710375
+    },
+    {
+      "label": "ok",
+      "probability": 0.06640533239311718
+    },
+    {
+      "label": "defect",
+      "probability": 0.8519427427522746
+    }
+  ],
+  "tolerance": 1e-6
+}

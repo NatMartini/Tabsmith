@@ -15,6 +15,8 @@ tabsmith_macros::model!(multiclass_code, "../../fixtures/bundles/multiclass-gbdt
 tabsmith_macros::model!(multiclass_arrays, "../../fixtures/bundles/multiclass-gbdt", tree_arrays);
 tabsmith_macros::model!(regression_code, "../../fixtures/bundles/regression-gbdt", tree_code);
 tabsmith_macros::model!(regression_arrays, "../../fixtures/bundles/regression-gbdt", tree_arrays);
+tabsmith_macros::model!(imported_code, "../../fixtures/bundles/imported-xgboost-binary", tree_code);
+tabsmith_macros::model!(imported_arrays, "../../fixtures/bundles/imported-xgboost-binary", tree_arrays);
 
 /// A value of each feature inside its interval `(lo, hi]`.
 fn row_inside(bounds: &[(f32, f32)]) -> Vec<f32> {
@@ -177,6 +179,7 @@ macro_rules! same_bits {
 same_bits!(binary, binary_code, binary_arrays);
 same_bits!(multiclass, multiclass_code, multiclass_arrays);
 same_bits!(regression, regression_code, regression_arrays);
+same_bits!(imported_xgboost, imported_code, imported_arrays);
 
 // The compiler itself evaluates the model here, with its own software floating point.
 const MULTICLASS_AT_COMPILE_TIME: [f32; multiclass_code::N_OUTPUTS] = multiclass_code::outputs(&[0.25; multiclass_code::N_FEATURES]);

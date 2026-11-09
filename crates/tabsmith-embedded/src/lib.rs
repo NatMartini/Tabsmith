@@ -2,20 +2,24 @@
 //!
 //! `tabsmith-runtime` and the models that `tabsmith_macros::model!` compiles into
 //! an application's code both call the [`kernels`] of this crate, so the two compute
-//! the same bits. The kernels allocate nothing, contain no `unsafe` code and take
-//! their transcendental functions from [`libm`] (pure Rust) instead of the platform's
-//! C library, whose last bits differ between operating systems: a model predicts the
-//! same values on Linux, Windows, macOS, WebAssembly and a microcontroller.
+//! the same bits. The kernels allocate nothing, contain no `unsafe` code, and are
+//! `const fn`s, so a compiled model can predict while it compiles. Their one
+//! transcendental function, [`kernels::exp`], is the algorithm of the `libm` crate,
+//! written in this crate, rather than the platform's C library, whose last bits differ
+//! between operating systems: a model predicts the same values on Linux, Windows, macOS,
+//! WebAssembly, a microcontroller and in the compiler. The crate has no dependencies.
 //!
 //! The crate also holds the few types that compiled models share: [`FieldValue`] for
 //! raw inputs, [`InputError`] for refused inputs, [`SelfCheckError`], [`Work`] for a
 //! model's cost, and the [`Model`] trait that the runtime's `Predictor` and every
-//! compiled model implement.
+//! compiled model implement. [`rules`] checks proofs that a model keeps a rule over a
+//! region of inputs, as `const fn`s too, so the compiler can check them.
 #![cfg_attr(not(test), no_std)]
 #![warn(missing_docs)]
 
 mod input;
 pub mod kernels;
+pub mod rules;
 
 pub use input::{FieldInfo, FieldKind, FieldValue, InputError, SelfCheckError};
 

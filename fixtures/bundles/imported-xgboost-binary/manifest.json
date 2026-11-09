@@ -1,0 +1,71 @@
+{
+  "bundle_format": 1,
+  "bundle_id": "b-127f3caa65d9a6de",
+  "name": "xgboost-binary",
+  "created_at": "2026-11-07T01:53:06Z",
+  "recipe": "tabular-binary@0.1",
+  "tabsmith_version": "0.4.0",
+  "provenance": {
+    "run_id": "import",
+    "candidate": "xgboost",
+    "snapshot_id": "",
+    "split_id": "",
+    "transform_id": "",
+    "config_hash": "a08b292fe32da48a61b7cc73d8d81dfcd36beeb33ca018f42ee455852ebf603a"
+  },
+  "runtime": {
+    "min_runtime_version": "0.4.0",
+    "transform_version": "tabsmith.std-tabular.v2",
+    "model_format": "tabsmith.trees.v1",
+    "devices": [
+      "cpu"
+    ],
+    "precision": "fp32"
+  },
+  "files": [
+    {
+      "path": "input.schema.json",
+      "sha256": "a2e551b7d68b69e38d55030b39ab629addb1a65446bead04e1d00e11359bd1c1",
+      "bytes": 2537
+    },
+    {
+      "path": "output.schema.json",
+      "sha256": "d67712c2d61501d8609fcb94ec930b1636f831a571dc5ba7c0f02ddadd22610d",
+      "bytes": 227
+    },
+    {
+      "path": "transform.json",
+      "sha256": "d63fdc43a369ec4589515e0b5a16bf0b04cbad1ff95783941bc815cb7b0f1711",
+      "bytes": 2944
+    },
+    {
+      "path": "model.config.json",
+      "sha256": "fc6f84b8c4f6f012a66114b889c22f3633d0f4ac6492436fd43a3621d18c23d5",
+      "bytes": 272
+    },
+    {
+      "path": "model.safetensors",
+      "sha256": "e392dd2dfbabebd0ff55e622905d7f116664d4ec153a007b793c8b2699ed1cc1",
+      "bytes": 6248
+    },
+    {
+      "path": "evaluation.json",
+      "sha256": "b2580b02110fd4d4a133792d74cb87e0297bfd303e4566dfb581f8357b6ab8b1",
+      "bytes": 803
+    },
+    {
+      "path": "examples/input.json",
+      "sha256": "7ae5e872cf629d2d7b2ab3701c1a3ae8406859d38a0c31d6d2e35a74a18cfff6",
+      "bytes": 2392
+    },
+    {
+      "path": "examples/expected.json",
+      "sha256": "5fcf87445bd153f198562a3d7f9cb34302e36f011146e9dc4d1345b574a3cee7",
+      "bytes": 428
+    }
+  ],
+  "self_contained": true,
+  "contains_training_data": false,
+  "contains_optimizer_state": false,
+  "evaluation_status": "imported"
+}

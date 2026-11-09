@@ -7,10 +7,12 @@ use quote::{format_ident, quote};
 use syn::LitStr;
 use syn::parse::{Parse, ParseStream};
 use tabsmith_contracts::config::{NanPolicy, Task, UnknownCategoryPolicy};
-use tabsmith_contracts::model::Activation;
+use tabsmith_contracts::model::{Activation, LeafSum};
 use tabsmith_contracts::schema::RawDtype;
-use tabsmith_contracts::transform::FeatureTransform;
+use tabsmith_contracts::transform::{FeatureTransform, MissingRule};
+use tabsmith_embedded::rules::{Claim, NUMERIC, Step};
 use tabsmith_embedded::{Work, kernels};
+use tabsmith_runtime::audit::{Budget, Certificate, FeatureDomain, Rule, Verdict};
 use tabsmith_runtime::model::Model;
 use tabsmith_runtime::{LoadOptions, Outcome, Predictor, Record};
 
@@ -24,13 +26,22 @@ const TREE_CODE_MAX_NODES: usize = 32_768;
 /// Trees deeper than this always stay arrays: each level nests one more `if`.
 const TREE_CODE_MAX_DEPTH: usize = 64;
 
-/// `name, "path"` with the options `kani`, and `tree_code` or `tree_arrays`.
+/// The most work the compiler is asked to do to check a rule's proof again: closed boxes
+/// times the nodes of the trees (or the weights of the network) that bound each one. rustc's
+/// constant evaluator takes about 3 µs per unit, so this is about 3 s (`reports/rules/`); a
+/// larger proof is checked when the macro expands, natively, and the module's documentation
+/// says so.
+const RULE_CHECK_MAX_WORK: usize = 1_000_000;
+
+/// `name, "path"` with the options `kani`, `tree_code` or `tree_arrays`, and `rule(…)`.
 pub struct Args {
     name: Ident,
     path: LitStr,
     kani: bool,
     /// `Some(true)` for `tree_code`, `Some(false)` for `tree_arrays`.
     tree_code: Option<bool>,
+    /// Each `rule(…)`: where it is, and its text.
+    rules: Vec<(proc_macro2::Span, String)>,
 }
 
 impl Parse for Args {
@@ -38,7 +49,7 @@ impl Parse for Args {
         let name: Ident = input.parse()?;
         input.parse::<syn::Token![,]>()?;
         let path: LitStr = input.parse()?;
-        let (mut kani, mut tree_code) = (false, None);
+        let (mut kani, mut tree_code, mut rules) = (false, None, Vec::new());
         while input.peek(syn::Token![,]) {
             input.parse::<syn::Token![,]>()?;
             if input.is_empty() {
@@ -52,10 +63,15 @@ impl Parse for Args {
                     return Err(syn::Error::new(option.span(), "`tree_code` and `tree_arrays` exclude each other"));
                 }
                 tree_code = Some(option == "tree_code");
+            } else if option == "rule" {
+                let content;
+                syn::parenthesized!(content in input);
+                let tokens: TokenStream = content.parse()?;
+                rules.push((option.span(), tokens.to_string()));
             } else {
                 return Err(syn::Error::new(
                     option.span(),
-                    format!("unknown option `{option}`; the options are `kani`, `tree_code` and `tree_arrays`"),
+                    format!("unknown option `{option}`; the options are `kani`, `tree_code`, `tree_arrays` and `rule(…)`"),
                 ));
             }
         }
@@ -64,6 +80,7 @@ impl Parse for Args {
             path,
             kani,
             tree_code,
+            rules,
         })
     }
 }
@@ -76,7 +93,19 @@ pub fn expand(args: &Args) -> syn::Result<TokenStream> {
     let tree_code = compiled
         .tree_code(args.tree_code)
         .map_err(|e| fail(format!("Tabsmith bundle `{}`:\n{e}", args.path.value())))?;
-    Ok(compiled.generate(&args.name, args.kani, tree_code))
+    let mut proofs = Vec::with_capacity(args.rules.len());
+    for (span, text) in &args.rules {
+        proofs.push(compiled.prove(text).map_err(|e| syn::Error::new(*span, e))?);
+    }
+    Ok(compiled.generate(&args.name, args.kani, tree_code, &proofs))
+}
+
+/// A rule the macro proved: its canonical text and its proof.
+pub(crate) struct Proved {
+    text: String,
+    proof: Certificate,
+    /// Boxes the search visited.
+    visited: usize,
 }
 
 /// One input field of the model.
@@ -92,6 +121,8 @@ enum Spec {
         mean: f64,
         std: f64,
         offset: usize,
+        /// The field refuses missing values (a model imported from XGBoost or LightGBM).
+        refuse_missing: bool,
     },
     Text {
         ty: Ident,
@@ -123,6 +154,8 @@ enum Network {
         base: Vec<f64>,
         /// One sign per feature: 1 increasing, -1 decreasing, 0 unconstrained.
         monotone: Vec<i8>,
+        /// Whether the leaves are added in f32 (a model imported from XGBoost).
+        sum_in_f32: bool,
     },
 }
 
@@ -175,18 +208,24 @@ struct Compiled {
     conformal: Option<(f64, f64)>,
     /// Depth of the deepest tree; 0 for a network.
     max_tree_depth: usize,
+    /// The depth of each tree, in order; empty for a network.
+    tree_depths: Vec<usize>,
     /// Upper bounds on the arithmetic of one prediction.
     work: Work,
     /// Bounds of the raw outputs over every input, `[lo, hi]` per output.
     output_bounds: Vec<[f32; 2]>,
+    /// Which features are numbers and which are slots of a category, for rules.
+    domain: FeatureDomain,
+    /// The loaded bundle, for rules.
+    predictor: Predictor,
 }
 
-/// What the compiler will know about the model besides its weights: the deepest tree,
-/// the worst-case work of one prediction, and the bounds of its raw outputs over every
-/// input. The bounds are computed here with the kernels the generated code calls, and
-/// the generated code makes rustc's constant evaluator derive them again from the
+/// What the compiler will know about the model besides its weights: the depth of each
+/// tree, the worst-case work of one prediction, and the bounds of its raw outputs over
+/// every input. The bounds are computed here with the kernels the generated code calls,
+/// and the generated code makes rustc's constant evaluator derive them again from the
 /// constants; the two must agree bit for bit.
-fn analyse(network: &Network, n_features: usize, n_outputs: usize, task: Task) -> (usize, Work, Vec<[f32; 2]>) {
+fn analyse(network: &Network, n_features: usize, n_outputs: usize, task: Task) -> (Vec<usize>, Work, Vec<[f32; 2]>) {
     let exponentials = match task {
         Task::Binary => 1,
         Task::Multiclass => n_outputs,
@@ -206,7 +245,7 @@ fn analyse(network: &Network, n_features: usize, n_outputs: usize, task: Task) -
                 additions: layers.iter().map(|l| l.out_dim).sum(),
                 exponentials,
             };
-            (0, work, lo.into_iter().zip(hi).map(|(a, b)| [a, b]).collect())
+            (Vec::new(), work, lo.into_iter().zip(hi).map(|(a, b)| [a, b]).collect())
         }
         Network::Trees {
             roots,
@@ -216,6 +255,7 @@ fn analyse(network: &Network, n_features: usize, n_outputs: usize, task: Task) -
             right,
             value,
             base,
+            sum_in_f32,
             ..
         } => {
             // The runtime verified that children come after their parent, inside the
@@ -247,15 +287,18 @@ fn analyse(network: &Network, n_features: usize, n_outputs: usize, task: Task) -
                 base,
             };
             let (mut lo_out, mut hi_out) = (vec![0f32; n_outputs], vec![0f32; n_outputs]);
-            trees.bounds(&lo, &hi, &mut vec![false; feature.len()], &mut lo_out, &mut hi_out);
+            if *sum_in_f32 {
+                trees.bounds_in_f32(&lo, &hi, &mut vec![false; feature.len()], &mut lo_out, &mut hi_out);
+            } else {
+                trees.bounds(&lo, &hi, &mut vec![false; feature.len()], &mut lo_out, &mut hi_out);
+            }
             let work = Work {
                 comparisons: depths.iter().sum(),
                 multiply_adds: 0,
                 additions: roots.len(),
                 exponentials,
             };
-            let deepest = depths.iter().copied().max().unwrap_or(0);
-            (deepest, work, lo_out.into_iter().zip(hi_out).map(|(a, b)| [a, b]).collect())
+            (depths, work, lo_out.into_iter().zip(hi_out).map(|(a, b)| [a, b]).collect())
         }
     }
 }
@@ -317,12 +360,18 @@ impl Compiled {
             let ident = field_names.ident(&snake(&name));
             let spec = match feature {
                 FeatureTransform::Numeric {
-                    impute, mean, std, offset, ..
+                    impute,
+                    mean,
+                    std,
+                    offset,
+                    missing,
+                    ..
                 } => Spec::Numeric {
                     impute: *impute,
                     mean: *mean,
                     std: *std,
                     offset: *offset,
+                    refuse_missing: *missing == MissingRule::Refuse,
                 },
                 FeatureTransform::Categorical {
                     categories,
@@ -415,6 +464,7 @@ impl Compiled {
                     } else {
                         spec.monotone.clone()
                     },
+                    sum_in_f32: spec.sum == LeafSum::F32,
                 }
             }
         };
@@ -453,7 +503,8 @@ impl Compiled {
             }
         };
 
-        let (max_tree_depth, work, output_bounds) = analyse(&network, t.output_dim, config.n_outputs(), o.task);
+        let (tree_depths, work, output_bounds) = analyse(&network, t.output_dim, config.n_outputs(), o.task);
+        let max_tree_depth = tree_depths.iter().copied().max().unwrap_or(0);
         Ok(Compiled {
             path: path.to_string(),
             files,
@@ -467,6 +518,7 @@ impl Compiled {
             n_outputs: config.n_outputs(),
             conformal: b.conformal.as_ref().map(|c| (c.alpha, c.quantile)),
             max_tree_depth,
+            tree_depths,
             work,
             output_bounds,
             // The runtime's missing-value tokens (`MissingTokens::new`): every token is a
@@ -484,7 +536,41 @@ impl Compiled {
             output,
             examples: b.examples.records.clone(),
             expected,
+            domain: FeatureDomain::of(t),
+            predictor: predictor.clone(),
         })
+    }
+
+    /// Audits a rule as `tabsmith audit` does with its default budget: a proof, or the reason
+    /// the rule cannot be part of the module.
+    fn prove(&self, text: &str) -> Result<Proved, String> {
+        let rule = Rule::parse(text).map_err(|e| e.render())?;
+        let audit = self.predictor.audit(&rule, &Budget::default()).map_err(|e| e.render())?;
+        match audit.verdict {
+            Verdict::Holds(proof) => Ok(Proved {
+                text: audit.rule,
+                proof,
+                visited: audit.boxes,
+            }),
+            Verdict::Fails { witness, prediction } => {
+                let got = match &prediction.outcome {
+                    Outcome::Binary { probability, .. } | Outcome::Multiclass { probability, .. } => {
+                        format!("label {:?} with probability {probability}", prediction.label)
+                    }
+                    Outcome::Regression { value } => format!("the value {value}"),
+                };
+                Err(format!(
+                    "the rule `{}` does not hold: tabsmith-runtime predicts {got} for this input of its region:\n{}",
+                    audit.rule,
+                    serde_json::to_string_pretty(&witness.to_json()).unwrap_or_default()
+                ))
+            }
+            Verdict::Undecided(why) => Err(format!(
+                "the rule `{}` is undecided: {why} ({} boxes visited). Narrow its region, for example with \
+                 `_ within 3 sd`, or check it with `tabsmith audit --boxes <more>`",
+                audit.rule, audit.boxes
+            )),
+        }
     }
 
     /// Whether the trees become code: what the invocation asks for, otherwise as long as
@@ -505,7 +591,7 @@ impl Compiled {
         }
     }
 
-    fn generate(&self, name: &Ident, kani: bool, tree_code: bool) -> TokenStream {
+    fn generate(&self, name: &Ident, kani: bool, tree_code: bool, rules: &[Proved]) -> TokenStream {
         let kani_derive = if kani {
             quote!(#[cfg_attr(kani, derive(kani::Arbitrary))])
         } else {
@@ -550,14 +636,12 @@ impl Compiled {
 
         let (output_types, decode) = self.output();
         let (model_consts, outputs_body, batch_body) = self.network(tree_code);
-        let (outputs_const, outputs_doc) = if tree_code {
-            (
-                quote!(const),
-                "The model's raw outputs for one row of features: every tree is a function of \
-                 nested `if`s. `const`, so the compiler can run the model while it compiles.",
-            )
-        } else {
-            (quote!(), "The model's raw outputs for one row of features.")
+        let outputs_doc = match &self.network {
+            Network::Trees { .. } if tree_code => {
+                "The model's raw outputs for one row of features: every tree is a function of nested `if`s."
+            }
+            Network::Trees { .. } => "The model's raw outputs for one row of features: a walk through every tree's arrays.",
+            Network::Dense(_) => "The model's raw outputs for one row of features: the dense layers.",
         };
         let examples: Vec<TokenStream> = self.examples.iter().map(|e| self.example(e)).collect();
         let n_examples = examples.len();
@@ -566,6 +650,7 @@ impl Compiled {
         let conformal = self.conformal();
         let model_impl = self.model_impl();
         let proofs = if kani { self.proofs(name, tree_code) } else { quote!() };
+        let (rules_code, rules_doc) = self.rules(rules);
 
         let dropped = if self.dropped.is_empty() {
             String::new()
@@ -579,11 +664,12 @@ impl Compiled {
             "The Tabsmith bundle `{bundle_id}` (`{}`), compiled into Rust code: a {task} model of `{target}` ({}), \
              {n_fields} input fields → {n_features} features → {n_outputs} output(s).{dropped}\n\n\
              Generated by `tabsmith_macros::model!`. The bundle was verified when this crate was compiled, and \
-             [`predict`] computes exactly what `tabsmith-runtime` computes for the same input, bit for bit; \
-             [`self_check`] confirms it on the bundle's examples. `no_std`, no allocation.\n\n\
+             [`predict`] computes exactly what `tabsmith-runtime` computes for the same input, bit for bit. \
+             It is a `const fn`: the compiler ran it on the bundle's examples while this crate compiled and \
+             got the runtime's bits, and [`self_check`] repeats that on the device. `no_std`, no allocation.\n\n\
              The compiler also knows the model's cost ([`WORST_CASE`]) and the bounds of its raw outputs \
              ([`OUTPUT_BOUNDS`] for every input, [`output_bounds`] for a box of feature values){}; \
-             [`Model`] implements the `tabsmith_embedded::Model` trait.",
+             [`Model`] implements the `tabsmith_embedded::Model` trait.{rules_doc}",
             self.path,
             self.summary,
             if kani {
@@ -648,7 +734,7 @@ impl Compiled {
                 #output_types
 
                 /// The model's features for one input: the frozen transform of the bundle.
-                pub fn features(input: &Input) -> ::core::result::Result<[f32; N_FEATURES], InputError> {
+                pub const fn features(input: &Input) -> ::core::result::Result<[f32; N_FEATURES], InputError> {
                     let mut x = [0f32; N_FEATURES];
                     #(#encode)*
                     Ok(x)
@@ -657,7 +743,7 @@ impl Compiled {
                 #model_consts
 
                 #[doc = #outputs_doc]
-                pub #outputs_const fn outputs(x: &[f32; N_FEATURES]) -> [f32; N_OUTPUTS] {
+                pub const fn outputs(x: &[f32; N_FEATURES]) -> [f32; N_OUTPUTS] {
                     #outputs_body
                 }
 
@@ -671,9 +757,13 @@ impl Compiled {
 
                 #decode
 
-                /// Predicts one input.
-                pub fn predict(input: &Input) -> ::core::result::Result<Prediction, InputError> {
-                    Ok(decode(&outputs(&features(input)?)))
+                /// Predicts one input. `const`, so the compiler can predict while it compiles:
+                /// `const P: Prediction = match predict(&INPUT) { Ok(p) => p, Err(_) => panic!() };`
+                pub const fn predict(input: &Input) -> ::core::result::Result<Prediction, InputError> {
+                    match features(input) {
+                        Ok(x) => Ok(decode(&outputs(&x))),
+                        Err(e) => Err(e),
+                    }
                 }
 
                 /// Predicts one row of raw values, in the order of [`FIELDS`].
@@ -693,8 +783,177 @@ impl Compiled {
 
                 #model_impl
 
+                #rules_code
+
                 #proofs
             }
+        }
+    }
+
+    /// `RULES`, the domain the proofs cut, and for every proof small enough a constant that
+    /// makes the compiler walk it: each box it closes must hold no input, or have
+    /// [`output_bounds`] that satisfy the claim. Also the paragraph of the module's
+    /// documentation that lists the rules.
+    fn rules(&self, proved: &[Proved]) -> (TokenStream, String) {
+        if proved.is_empty() {
+            return (quote!(), String::new());
+        }
+        let r = quote!(::tabsmith_embedded::rules);
+        let per_box = match &self.network {
+            Network::Trees { feature, .. } => feature.len(),
+            Network::Dense(layers) => layers.iter().map(|l| l.weight.len() + l.bias.len()).sum(),
+        };
+        let mut checks = Vec::new();
+        let mut lines = Vec::new();
+        for p in proved {
+            let boxes = p.proof.boxes();
+            let by_compiler = boxes.saturating_mul(per_box.max(1)) <= RULE_CHECK_MAX_WORK;
+            lines.push(format!(
+                "- `{}`: a proof of {boxes} box{} ({} visited){}",
+                p.text,
+                if boxes == 1 { "" } else { "es" },
+                p.visited,
+                if by_compiler {
+                    ", which the compiler checks again while this crate compiles"
+                } else {
+                    ", checked again when the macro expanded: too large for the compiler"
+                }
+            ));
+            if by_compiler {
+                checks.push(self.rule_check(p));
+            }
+        }
+        let texts: Vec<&str> = proved.iter().map(|p| p.text.as_str()).collect();
+        let n = texts.len();
+        let category = self.domain.category.iter().map(|&c| {
+            if c == NUMERIC {
+                quote!(#r::NUMERIC)
+            } else {
+                let c = Literal::u32_unsuffixed(c);
+                quote!(#c)
+            }
+        });
+        let g = self.domain.slots.len();
+        let slots = self.domain.slots.iter().map(|[a, b]| {
+            let (a, b) = (Literal::u32_unsuffixed(*a), Literal::u32_unsuffixed(*b));
+            quote!([#a, #b])
+        });
+        let doc = format!(
+            "\n\n**Rules.** Every input of each rule's region gets a prediction that meets the rule's claim: \
+             the macro proved it when it expanded (`tabsmith_runtime::audit`, as `tabsmith audit` does), and a \
+             rule that fails or stays undecided does not compile. A proof cuts the region into boxes of feature \
+             values, and the bounds of every box settle the claim.\n{}",
+            lines.join("\n")
+        );
+        let code = quote! {
+            /// The rules this module was compiled with, in their canonical text: each holds for every
+            /// input of its region (see the module's documentation).
+            pub const RULES: [&str; #n] = [#(#texts),*];
+
+            /// Which features are numbers and which are slots of a category, for the proofs of [`RULES`].
+            const RULE_CATEGORY: [u32; N_FEATURES] = [#(#category),*];
+            const RULE_SLOTS: [[u32; 2]; #g] = [#(#slots),*];
+            const RULE_DOMAIN: #r::Domain<'static> = #r::Domain {
+                category: &RULE_CATEGORY,
+                slots: &RULE_SLOTS,
+            };
+
+            #(#checks)*
+        };
+        (code, doc)
+    }
+
+    /// The constant that makes the compiler check one rule's proof.
+    fn rule_check(&self, p: &Proved) -> TokenStream {
+        let r = quote!(::tabsmith_embedded::rules);
+        let steps = p.proof.steps.iter().map(|s| match *s {
+            Step::Split { feature, threshold } => {
+                let (f, t) = (Literal::u32_unsuffixed(feature), f32_lit(threshold));
+                quote!(#r::Step::Split { feature: #f, threshold: #t })
+            }
+            Step::Close => quote!(#r::Step::Close),
+        });
+        let n_steps = p.proof.steps.len();
+        let lo = p.proof.lo.iter().map(|&v| f32_lit(v));
+        let hi = p.proof.hi.iter().map(|&v| f32_lit(v));
+        let none = &p.proof.none;
+        let g = none.len();
+        let depth = p.proof.depth;
+        let claim = match p.proof.claim {
+            Claim::ProbabilityAtMost(v) => {
+                let v = f64_lit(v);
+                quote!(#r::Claim::ProbabilityAtMost(#v))
+            }
+            Claim::ProbabilityAtLeast(v) => {
+                let v = f64_lit(v);
+                quote!(#r::Claim::ProbabilityAtLeast(#v))
+            }
+            Claim::Positive { threshold } => {
+                let t = f64_lit(threshold);
+                quote!(#r::Claim::Positive { threshold: #t })
+            }
+            Claim::Negative { threshold } => {
+                let t = f64_lit(threshold);
+                quote!(#r::Claim::Negative { threshold: #t })
+            }
+            Claim::ValueAtMost { limit, mean, std } | Claim::ValueAtLeast { limit, mean, std } => {
+                let (l, m, s) = (f64_lit(limit), f64_lit(mean), f64_lit(std));
+                if matches!(p.proof.claim, Claim::ValueAtMost { .. }) {
+                    quote!(#r::Claim::ValueAtMost { limit: #l, mean: #m, std: #s })
+                } else {
+                    quote!(#r::Claim::ValueAtLeast { limit: #l, mean: #m, std: #s })
+                }
+            }
+            Claim::Class(k) => {
+                let k = Literal::usize_unsuffixed(k);
+                quote!(#r::Claim::Class(#k))
+            }
+            Claim::NotClass(k) => {
+                let k = Literal::usize_unsuffixed(k);
+                quote!(#r::Claim::NotClass(#k))
+            }
+        };
+        let open = format!(
+            "the compiler finds a box of the proof of the rule `{}` whose bounds do not settle it",
+            p.text
+        );
+        let malformed = format!("the proof of the rule `{}` is not a tree of splits", p.text);
+        quote! {
+            // The compiler walks the rule's proof with its own floating point: every box it closes
+            // holds no input, or has output bounds that satisfy the claim.
+            #[allow(long_running_const_eval)]
+            const _: () = {
+                const STEPS: [#r::Step; #n_steps] = [#(#steps),*];
+                let mut lo: [f32; N_FEATURES] = [#(#lo),*];
+                let mut hi: [f32; N_FEATURES] = [#(#hi),*];
+                let mut none: [bool; #g] = [#(#none),*];
+                let mut saved_lo = [0f32; N_FEATURES * #depth];
+                let mut saved_hi = [0f32; N_FEATURES * #depth];
+                let mut saved_none = [false; #g * #depth];
+                let mut saved_step = [0usize; #depth];
+                let mut walk = #r::Walk::new(RULE_DOMAIN, &STEPS, &mut saved_lo, &mut saved_hi, &mut saved_none, &mut saved_step);
+                let claim = #claim;
+                let mut p = [0f64; N_OUTPUTS];
+                loop {
+                    match walk.next(&mut lo, &mut hi, &mut none) {
+                        Ok(true) => {
+                            if !#r::is_empty(&RULE_DOMAIN, &lo, &hi, &none) {
+                                let b = output_bounds(&lo, &hi);
+                                let (mut lo_out, mut hi_out) = ([0f32; N_OUTPUTS], [0f32; N_OUTPUTS]);
+                                let mut o = 0;
+                                while o < N_OUTPUTS {
+                                    lo_out[o] = b[o][0];
+                                    hi_out[o] = b[o][1];
+                                    o += 1;
+                                }
+                                assert!(claim.holds_within(&lo_out, &hi_out, &mut p), #open);
+                            }
+                        }
+                        Ok(false) => break,
+                        Err(_) => panic!(#malformed),
+                    }
+                }
+            };
         }
     }
 
@@ -756,10 +1015,11 @@ impl Compiled {
                 };
                 (doc, f)
             }
-            Network::Trees { feature, .. } => {
+            Network::Trees { feature, sum_in_f32, .. } => {
                 let n_nodes = feature.len();
                 let depth = self.max_tree_depth;
                 let packed = pack(quote!(lo_out), quote!(hi_out));
+                let bounds = if *sum_in_f32 { quote!(bounds_in_f32) } else { quote!(bounds) };
                 let doc = "Upper bounds on the arithmetic of one prediction (`outputs` and `decode`), from the \
                            model's shape: the comparisons are the sum of the trees' depths. No loop depends on the data.";
                 let f = quote! {
@@ -775,7 +1035,7 @@ impl Compiled {
                     pub const fn output_bounds(lo: &[f32; N_FEATURES], hi: &[f32; N_FEATURES]) -> [[f32; 2]; N_OUTPUTS] {
                         let mut reachable = [false; #n_nodes];
                         let (mut lo_out, mut hi_out) = ([0f32; N_OUTPUTS], [0f32; N_OUTPUTS]);
-                        TREES.bounds(lo, hi, &mut reachable, &mut lo_out, &mut hi_out);
+                        TREES.#bounds(lo, hi, &mut reachable, &mut lo_out, &mut hi_out);
                         #packed
                     }
                 };
@@ -826,35 +1086,54 @@ impl Compiled {
              [`output_bounds`] of the unbounded box, evaluated by the compiler. For this model: {}.",
             shown.join(", ")
         );
+        // The derived bounds come from the kernels `decode` calls, evaluated by the compiler,
+        // and must agree with the same kernels run when the macro expanded.
         let derived = match &self.output {
             Output::Binary { .. } => {
                 let [lo, hi] = self.output_bounds[0];
-                let (p, q) = (f64_lit(kernels::sigmoid(f64::from(lo))), f64_lit(kernels::sigmoid(f64::from(hi))));
+                let (p, q) = (kernels::sigmoid(f64::from(lo)), kernels::sigmoid(f64::from(hi)));
+                let (pb, qb) = (Literal::u64_unsuffixed(p.to_bits()), Literal::u64_unsuffixed(q.to_bits()));
                 let doc = format!(
                     "Bounds of the probability over every possible input: the logistic function of \
-                     [`OUTPUT_BOUNDS`], which it maps monotonically ({} to {}), up to the rounding of `exp`.",
-                    short(kernels::sigmoid(f64::from(lo))),
-                    short(kernels::sigmoid(f64::from(hi)))
-                );
-                quote! {
-                    #[doc = #doc]
-                    pub const PROBABILITY_BOUNDS: [f64; 2] = [#p, #q];
-                }
-            }
-            Output::Regression { mean, std } => {
-                let [lo, hi] = self.output_bounds[0];
-                let (p, q) = (kernels::unscale(lo, *mean, *std), kernels::unscale(hi, *mean, *std));
-                let (pl, ql) = (f64_lit(p), f64_lit(q));
-                let doc = format!(
-                    "Bounds of the predicted value over every possible input, in the target's units: \
-                     [`OUTPUT_BOUNDS`] unscaled ({} to {}). Every operation rounds monotonically, so the \
-                     bounds are exact.",
+                     [`OUTPUT_BOUNDS`] ({} to {}), as [`decode`] computes it. The computed logistic function \
+                     never decreases from one `f32` logit to the next, which the Tabsmith repository checks for \
+                     all 2^32 of them, so no input leaves these bounds.",
                     short(p),
                     short(q)
                 );
                 quote! {
                     #[doc = #doc]
-                    pub const VALUE_BOUNDS: [f64; 2] = [#pl, #ql];
+                    pub const PROBABILITY_BOUNDS: [f64; 2] =
+                        [kernels::sigmoid(OUTPUT_BOUNDS[0][0] as f64), kernels::sigmoid(OUTPUT_BOUNDS[0][1] as f64)];
+
+                    const _: () = assert!(
+                        PROBABILITY_BOUNDS[0].to_bits() == #pb && PROBABILITY_BOUNDS[1].to_bits() == #qb,
+                        "the probability bounds differ from the ones computed when the macro expanded"
+                    );
+                }
+            }
+            Output::Regression { mean, std } => {
+                let [lo, hi] = self.output_bounds[0];
+                let (p, q) = (kernels::unscale(lo, *mean, *std), kernels::unscale(hi, *mean, *std));
+                let (pb, qb) = (Literal::u64_unsuffixed(p.to_bits()), Literal::u64_unsuffixed(q.to_bits()));
+                let doc = format!(
+                    "Bounds of the predicted value over every possible input, in the target's units: \
+                     [`OUTPUT_BOUNDS`] unscaled ({} to {}), as [`decode`] computes it. Every operation rounds \
+                     monotonically, so no input leaves these bounds.",
+                    short(p),
+                    short(q)
+                );
+                quote! {
+                    #[doc = #doc]
+                    pub const VALUE_BOUNDS: [f64; 2] = [
+                        kernels::unscale(OUTPUT_BOUNDS[0][0], TARGET_MEAN, TARGET_STD),
+                        kernels::unscale(OUTPUT_BOUNDS[0][1], TARGET_MEAN, TARGET_STD),
+                    ];
+
+                    const _: () = assert!(
+                        VALUE_BOUNDS[0].to_bits() == #pb && VALUE_BOUNDS[1].to_bits() == #qb,
+                        "the value bounds differ from the ones computed when the macro expanded"
+                    );
                 }
             }
             Output::Multiclass { .. } => quote!(),
@@ -916,7 +1195,7 @@ impl Compiled {
         let per_task = match &self.output {
             Output::Regression { .. } => quote! {
                 /// `[value − quantile, value + quantile]`, in the target's units; `None` without a calibration.
-                pub fn interval(p: &Prediction) -> Option<[f64; 2]> {
+                pub const fn interval(p: &Prediction) -> Option<[f64; 2]> {
                     match CONFORMAL {
                         Some(c) => Some([p.value - c.quantile, p.value + c.quantile]),
                         None => None,
@@ -927,7 +1206,7 @@ impl Compiled {
                 /// Whether `[Label::Negative, Label::Positive]` are in the prediction set: a label is in
                 /// it when its probability is at least `1 − quantile`. The set can be empty or hold
                 /// both. `None` without a calibration.
-                pub fn prediction_set(p: &Prediction) -> Option<[bool; 2]> {
+                pub const fn prediction_set(p: &Prediction) -> Option<[bool; 2]> {
                     match CONFORMAL {
                         Some(c) => Some([1.0 - p.probability >= 1.0 - c.quantile, p.probability >= 1.0 - c.quantile]),
                         None => None,
@@ -937,7 +1216,7 @@ impl Compiled {
             Output::Multiclass { .. } => quote! {
                 /// Whether each class of [`Class::ALL`] is in the prediction set: a class is in it when
                 /// its probability is at least `1 − quantile`. `None` without a calibration.
-                pub fn prediction_set(p: &Prediction) -> Option<[bool; N_OUTPUTS]> {
+                pub const fn prediction_set(p: &Prediction) -> Option<[bool; N_OUTPUTS]> {
                     match CONFORMAL {
                         Some(c) => {
                             let mut set = [false; N_OUTPUTS];
@@ -982,12 +1261,15 @@ impl Compiled {
 
     /// The harnesses for the Kani model checker: prediction never panics, for every
     /// possible input, proved stage by stage with loop bounds from the model's shape.
+    /// For trees also, tree by tree, that the generated code is the walk over the arrays
+    /// and that every row of a box stays inside the range `output_bounds` adds up.
     fn proofs(&self, name: &Ident, tree_code: bool) -> TokenStream {
         let features = format_ident!("{name}_features_are_total");
         let decode = format_ident!("{name}_decode_is_total");
         // `kernels::numeric` scans the numeric missing-value tokens; nothing else in
         // `features` loops.
         let u_features = Literal::usize_unsuffixed(self.numeric_tokens.len() + 2);
+        let chain = self.tree_proofs(name, tree_code);
         let outputs = match &self.network {
             Network::Trees { .. } if tree_code => {
                 let total = format_ident!("{name}_outputs_are_total");
@@ -1050,13 +1332,33 @@ impl Compiled {
         } else {
             quote!()
         };
+        let trees_doc = match &self.network {
+            Network::Dense(_) => String::new(),
+            Network::Trees { .. } => format!(
+                "\n\nTrees get two more proofs each, small because each takes one tree. \
+                 `{name}_tree_<t>_is_its_walk`: the code of tree `t` gives the same bits as the walk through \
+                 the arrays, the walk the runtime takes, for every row of features (NaN and infinities \
+                 included). `{name}_tree_<t>_stays_in_its_range`: every row of every box of feature values \
+                 reaches a leaf of that code inside `TREES.leaf_range(t, ..)`, the range that [`output_bounds`] \
+                 adds up for the box. Each output adds its trees in the order of the runtime's kernel, so the \
+                 model predicts what the runtime predicts for every input, not only for [`EXAMPLES`]. Rounded \
+                 addition never puts two sums in the wrong order, which tabsmith-embedded proves with Kani too, \
+                 so `output_bounds` holds for every row of its box.{}",
+                if tree_code {
+                    ""
+                } else {
+                    " These trees are kept as arrays: their code exists only in this module, as the link between \
+                     the walk and its range. A tree too deep for code has neither proof."
+                }
+            ),
+        };
         let doc = format!(
             "Proofs for the [Kani](https://github.com/model-checking/kani) model checker (`cargo kani`): \
              prediction never panics, for every possible input. `predict` is `decode(&outputs(&features(input)?))`, \
              and each stage is proved total for every value of its argument's type, a superset of what the \
              stage before it can return: any number (NaN and infinities included), any category, any missing \
              value. Proving the stages apart keeps each proof small. The loop bounds come from the model's \
-             shape. Harness names start with `{name}_`, so several models can share a crate; \
+             shape.{trees_doc}\n\nHarness names start with `{name}_`, so several models can share a crate; \
              `examples/embedded-predict` in the Tabsmith repository shows the recommended settings."
         );
         quote! {
@@ -1083,7 +1385,116 @@ impl Compiled {
                     let z: [f32; N_OUTPUTS] = kani::any();
                     let _ = decode(&z);
                 }
+
+                #chain
             }
+        }
+    }
+
+    /// The proofs of each tree: that its code gives the same bits as the walk over the
+    /// arrays, and that every row of a box reaches a leaf inside the tree's `leaf_range` for
+    /// that box. Each proof takes one tree with a constant index, so the proofs stay small:
+    /// with a symbolic tree, the range proof of the 14 trees of `binary-gbdt` ran out of
+    /// 14 GB. The range is proved on the code, where every index is a constant: on the
+    /// walk, whose indices depend on the comparisons, one tree took 82 s and over 7 GB
+    /// instead of 5 s and 130 MB. Trees kept as arrays therefore get their code here too,
+    /// for the proofs only, and the walk inherits the range through the first proof. A tree
+    /// too deep for code (`TREE_CODE_MAX_DEPTH`) gets neither proof.
+    fn tree_proofs(&self, name: &Ident, tree_code: bool) -> TokenStream {
+        let Network::Trees {
+            roots,
+            feature,
+            threshold,
+            left,
+            right,
+            value,
+            base,
+            ..
+        } = &self.network
+        else {
+            return quote!();
+        };
+        let trees = kernels::Trees {
+            roots,
+            feature,
+            threshold,
+            left,
+            right,
+            value,
+            base,
+        };
+        let mut proofs = Vec::new();
+        for (t, &depth) in self.tree_depths.iter().enumerate() {
+            if depth > TREE_CODE_MAX_DEPTH {
+                continue;
+            }
+            let start = roots[t] as usize;
+            let end = roots.get(t + 1).map_or(feature.len(), |&r| r as usize);
+            let nodes = end - start;
+            let (index, function) = (Literal::usize_unsuffixed(t), format_ident!("tree_{t}"));
+            if !tree_code {
+                // The same function `model!` generates for trees as code.
+                let body = tree_expr(&trees, start);
+                proofs.push(quote! {
+                    const fn #function(x: &[f32; N_FEATURES]) -> f32 {
+                        #body
+                    }
+                });
+            }
+            let walk = format_ident!("{name}_tree_{t}_is_its_walk");
+            let u_walk = Literal::usize_unsuffixed(depth + 2);
+            let walk_doc = if tree_code {
+                format!(
+                    "Tree {t} as generated code gives the same bits as the walk through its arrays, the walk the \
+                     runtime takes, for every row of features."
+                )
+            } else {
+                format!(
+                    "The code of tree {t}, generated for these proofs, gives the same bits as the walk through its \
+                     arrays, the walk `outputs` and the runtime take, for every row of features."
+                )
+            };
+            proofs.push(quote! {
+                #[doc = #walk_doc]
+                #[kani::proof]
+                #[kani::unwind(#u_walk)]
+                fn #walk() {
+                    let x: [f32; N_FEATURES] = kani::any();
+                    assert!(#function(&x).to_bits() == TREES.value[TREES.leaf(#index, &x)].to_bits());
+                }
+            });
+            // The loops: the features of the box and the nodes of the tree.
+            let u_range = Literal::usize_unsuffixed(nodes.max(self.n_features) + 2);
+            let n_nodes = Literal::usize_unsuffixed(nodes);
+            let range = format_ident!("{name}_tree_{t}_stays_in_its_range");
+            let range_doc = format!("Every row of every box reaches a leaf of tree {t} inside `TREES.leaf_range({t}, ..)` of the box.");
+            proofs.push(quote! {
+                #[doc = #range_doc]
+                #[kani::proof]
+                #[kani::unwind(#u_range)]
+                fn #range() {
+                    let (lo, hi, x) = any_row_of_any_box();
+                    let [min, max] = TREES.leaf_range(#index, &lo, &hi, &mut [false; #n_nodes]);
+                    let leaf = #function(&x);
+                    assert!(min <= leaf && leaf <= max);
+                }
+            });
+        }
+        quote! {
+            /// Any box of feature values and any row of it: `lo[j] <= x[j] <= hi[j]` for every
+            /// feature `j`, where `x[j]` may also be NaN if `lo[j]` or `hi[j]` is NaN. Empty boxes
+            /// (`lo > hi`) have no row.
+            fn any_row_of_any_box() -> ([f32; N_FEATURES], [f32; N_FEATURES], [f32; N_FEATURES]) {
+                let (lo, hi, x): ([f32; N_FEATURES], [f32; N_FEATURES], [f32; N_FEATURES]) = (kani::any(), kani::any(), kani::any());
+                let mut j = 0;
+                while j < N_FEATURES {
+                    kani::assume((lo[j] <= x[j] && x[j] <= hi[j]) || (x[j].is_nan() && (lo[j].is_nan() || hi[j].is_nan())));
+                    j += 1;
+                }
+                (lo, hi, x)
+            }
+
+            #(#proofs)*
         }
     }
 
@@ -1164,6 +1575,17 @@ impl Compiled {
             (false, false) => "Never missing: the model has no slot for a missing value.",
         };
         match &f.spec {
+            Spec::Numeric {
+                refuse_missing: true,
+                mean,
+                std,
+                ..
+            } => format!(
+                "`{name}`: a number, standardised with the mean {} and standard deviation {}. A missing value \
+                 is refused: the model's trees send it different ways at different splits.",
+                short(*mean),
+                short(*std),
+            ),
             Spec::Numeric { impute, mean, std, .. } => format!(
                 "`{name}`: a number, standardised with the training mean {} and standard deviation {}. \
                  A missing value is imputed with {}.",
@@ -1225,12 +1647,19 @@ impl Compiled {
         };
         match &f.spec {
             Spec::Numeric {
-                impute, mean, std, offset, ..
+                impute,
+                mean,
+                std,
+                offset,
+                refuse_missing,
             } => {
                 let (impute, mean, std) = (f64_lit(*impute), f64_lit(*mean), f64_lit(*std));
                 let nan = self.nan_is_missing;
                 quote! {
-                    x[#offset] = kernels::numeric(#field, input.#ident, &NUMERIC_TOKENS, #nan, #impute, #mean, #std)?;
+                    x[#offset] = match kernels::numeric(#field, input.#ident, &NUMERIC_TOKENS, #nan, #refuse_missing, #impute, #mean, #std) {
+                        Ok(z) => z,
+                        Err(e) => return Err(e),
+                    };
                 }
             }
             Spec::Text {
@@ -1474,8 +1903,8 @@ impl Compiled {
                 };
                 let decode = quote! {
                     /// The prediction for one row of model outputs (one logit).
-                    pub fn decode(z: &[f32; N_OUTPUTS]) -> Prediction {
-                        let probability = kernels::sigmoid(f64::from(z[0]));
+                    pub const fn decode(z: &[f32; N_OUTPUTS]) -> Prediction {
+                        let probability = kernels::sigmoid(z[0] as f64);
                         let label = if probability >= THRESHOLD { Label::Positive } else { Label::Negative };
                         Prediction { label, probability }
                     }
@@ -1525,7 +1954,7 @@ impl Compiled {
                 };
                 let decode = quote! {
                     /// The prediction for one row of model outputs (one logit per class).
-                    pub fn decode(z: &[f32; N_OUTPUTS]) -> Prediction {
+                    pub const fn decode(z: &[f32; N_OUTPUTS]) -> Prediction {
                         let mut probabilities = [0f64; N_OUTPUTS];
                         kernels::softmax(z, &mut probabilities);
                         let best = kernels::argmax(&probabilities);
@@ -1555,7 +1984,7 @@ impl Compiled {
                 };
                 let decode = quote! {
                     /// The prediction for one row of model outputs (the standardised value).
-                    pub fn decode(z: &[f32; N_OUTPUTS]) -> Prediction {
+                    pub const fn decode(z: &[f32; N_OUTPUTS]) -> Prediction {
                         Prediction { value: kernels::unscale(z[0], TARGET_MEAN, TARGET_STD) }
                     }
                 };
@@ -1613,7 +2042,9 @@ impl Compiled {
                 value,
                 base,
                 monotone,
+                sum_in_f32,
             } => {
+                let sum_in_f32 = *sum_in_f32;
                 let (n_trees, n_nodes, n_base) = (roots.len(), feature.len(), base.len());
                 let generated = tree_code.then(|| {
                     let trees = kernels::Trees {
@@ -1625,7 +2056,7 @@ impl Compiled {
                         value,
                         base,
                     };
-                    generated_trees(&trees, self.n_outputs)
+                    generated_trees(&trees, self.n_outputs, sum_in_f32)
                 });
                 let trees_doc = if tree_code {
                     "The same trees as arrays, for [`output_bounds`] and the compiler's checks. \
@@ -1673,6 +2104,16 @@ impl Compiled {
                     const TREE_RIGHT: [u32; #n_nodes] = [#(#right),*];
                     const TREE_VALUE: [f32; #n_nodes] = [#(#value),*];
                     const TREE_BASE: [f64; #n_base] = [#(#base),*];
+                    /// The starting scores rounded to f32, where the leaves are added in f32.
+                    const TREE_BASE_F32: [f32; #n_base] = {
+                        let mut b = [0f32; #n_base];
+                        let mut o = 0;
+                        while o < #n_base {
+                            b[o] = TREE_BASE[o] as f32;
+                            o += 1;
+                        }
+                        b
+                    };
 
                     #[doc = #monotone_doc]
                     pub const MONOTONE: [i8; N_FEATURES] = [#(#monotone),*];
@@ -1734,9 +2175,10 @@ impl Compiled {
                     };
                 };
                 let Some((functions, body)) = generated else {
+                    let call = if sum_in_f32 { quote!(outputs_in_f32) } else { quote!(outputs) };
                     let body = quote! {
                         let mut out = [0f32; N_OUTPUTS];
-                        TREES.outputs(x, &mut out);
+                        TREES.#call(x, &mut out);
                         out
                     };
                     return (consts, body, row_by_row);
@@ -1764,7 +2206,7 @@ impl Compiled {
                 quote! {
                     const EXPECTED: [u64; #n] = [#(#bits),*];
 
-                    fn same_as_runtime(i: usize, p: &Prediction) -> bool {
+                    const fn same_as_runtime(i: usize, p: &Prediction) -> bool {
                         p.#field.to_bits() == EXPECTED[i]
                     }
                 }
@@ -1778,8 +2220,15 @@ impl Compiled {
                 quote! {
                     const EXPECTED: [[u64; N_OUTPUTS]; #n] = [#(#rows),*];
 
-                    fn same_as_runtime(i: usize, p: &Prediction) -> bool {
-                        p.probabilities.iter().zip(EXPECTED[i].iter()).all(|(a, b)| a.to_bits() == *b)
+                    const fn same_as_runtime(i: usize, p: &Prediction) -> bool {
+                        let mut k = 0;
+                        while k < N_OUTPUTS {
+                            if p.probabilities[k].to_bits() != EXPECTED[i][k] {
+                                return false;
+                            }
+                            k += 1;
+                        }
+                        true
                     }
                 }
             }
@@ -1787,13 +2236,33 @@ impl Compiled {
         quote! {
             #check
 
+            // The compiler predicts every example with its own floating point, and must get
+            // the bits tabsmith-runtime predicted when the macro expanded: otherwise the crate
+            // does not compile.
+            #[allow(long_running_const_eval)]
+            const _: () = {
+                let mut i = 0;
+                while i < EXAMPLES.len() {
+                    match predict(&EXAMPLES[i]) {
+                        Ok(p) => assert!(
+                            same_as_runtime(i, &p),
+                            "the compiler predicts an example of the bundle differently from tabsmith-runtime"
+                        ),
+                        Err(_) => panic!("the compiler refuses an example of the bundle that tabsmith-runtime predicts"),
+                    }
+                    i += 1;
+                }
+            };
+
             /// Predicts [`EXAMPLES`] and compares every result, bit for bit, with what
-            /// `tabsmith-runtime` predicted for them when this crate was compiled. Run it
-            /// once on the target (a power-on self test): it fails on a platform whose
-            /// floating point differs, for example one that flushes subnormals to zero.
+            /// `tabsmith-runtime` predicted for them when this crate was compiled. The compiler
+            /// already did the same while it compiled; run this once on the target (a power-on
+            /// self test): it fails on a platform whose floating point differs, for example one
+            /// that flushes subnormals to zero. The examples pass through `black_box`, so that
+            /// the device computes them rather than the optimiser.
             pub fn self_check() -> ::core::result::Result<(), SelfCheckError> {
                 for (i, input) in EXAMPLES.iter().enumerate() {
-                    let same = match predict(input) {
+                    let same = match predict(::core::hint::black_box(input)) {
                         Ok(p) => same_as_runtime(i, &p),
                         Err(_) => false,
                     };
@@ -1826,8 +2295,9 @@ fn tree_expr(t: &kernels::Trees<'_>, i: usize) -> TokenStream {
 
 /// One function per tree, the body of `outputs` that adds them up, and `outputs_by_tree`
 /// for many rows. Each output adds its trees in order, in f64, and is rounded to f32 at
-/// the end, as in `kernels::Trees`: the same bits.
-fn generated_trees(t: &kernels::Trees<'_>, n_outputs: usize) -> (TokenStream, TokenStream) {
+/// the end, as in `kernels::Trees::outputs`, or in f32 when `sum_in_f32`, as in
+/// `kernels::Trees::outputs_in_f32`: the same bits.
+fn generated_trees(t: &kernels::Trees<'_>, n_outputs: usize, sum_in_f32: bool) -> (TokenStream, TokenStream) {
     let n_trees = t.roots.len();
     let names: Vec<Ident> = (0..n_trees).map(|i| format_ident!("tree_{i}")).collect();
     let functions = t.roots.iter().zip(&names).map(|(&root, name)| {
@@ -1841,14 +2311,23 @@ fn generated_trees(t: &kernels::Trees<'_>, n_outputs: usize) -> (TokenStream, To
     });
     let additions = names.iter().enumerate().map(|(i, name)| {
         let o = Literal::usize_unsuffixed(i % n_outputs);
-        quote!(sums[#o] += #name(x) as f64;)
+        if sum_in_f32 {
+            quote!(sums[#o] += #name(x);)
+        } else {
+            quote!(sums[#o] += #name(x) as f64;)
+        }
     });
     let results = (0..n_outputs).map(|o| {
         let o = Literal::usize_unsuffixed(o);
-        quote!(sums[#o] as f32)
+        if sum_in_f32 { quote!(sums[#o]) } else { quote!(sums[#o] as f32) }
     });
+    let (start, widen, round) = if sum_in_f32 {
+        (quote!(TREE_BASE_F32), quote!(), quote!())
+    } else {
+        (quote!(TREE_BASE), quote!(as f64), quote!(as f32))
+    };
     let body = quote! {
-        let mut sums = TREE_BASE;
+        let mut sums = #start;
         #(#additions)*
         [#(#results),*]
     };
@@ -1863,15 +2342,15 @@ fn generated_trees(t: &kernels::Trees<'_>, n_outputs: usize) -> (TokenStream, To
         pub(crate) fn outputs_by_tree(x: &[[f32; N_FEATURES]], out: &mut [[f32; N_OUTPUTS]]) {
             const BLOCK: usize = 256;
             for (rows, results) in x.chunks(BLOCK).zip(out.chunks_mut(BLOCK)) {
-                let mut sums = [TREE_BASE; BLOCK];
+                let mut sums = [#start; BLOCK];
                 for (t, tree) in TREE_FUNCTIONS.iter().enumerate() {
                     for (row, s) in rows.iter().zip(sums.iter_mut()) {
-                        s[t % N_OUTPUTS] += tree(row) as f64;
+                        s[t % N_OUTPUTS] += tree(row) #widen;
                     }
                 }
                 for (s, r) in sums[..rows.len()].iter().zip(results.iter_mut()) {
                     for k in 0..N_OUTPUTS {
-                        r[k] = s[k] as f32;
+                        r[k] = s[k] #round;
                     }
                 }
             }
@@ -1935,7 +2414,7 @@ mod tests {
             for kani in [false, true] {
                 for requested in [None, Some(true), Some(false)] {
                     let tree_code = compiled.tree_code(requested).unwrap();
-                    let tokens = compiled.generate(&format_ident!("m"), kani, tree_code);
+                    let tokens = compiled.generate(&format_ident!("m"), kani, tree_code, &[]);
                     syn::parse2::<syn::File>(tokens).unwrap_or_else(|e| panic!("{name}: {e}"));
                 }
             }
@@ -1949,19 +2428,54 @@ mod tests {
         assert_eq!(compiled.tree_code(Some(true)), Ok(true));
         assert_eq!(compiled.tree_code(Some(false)), Ok(false));
 
-        let code = compiled.generate(&format_ident!("m"), false, true).to_string();
+        let code = compiled.generate(&format_ident!("m"), false, true, &[]).to_string();
         assert!(code.contains("const fn tree_0"), "one function per tree");
         assert!(code.contains("pub const fn outputs"), "the compiler can run the model");
         assert!(!code.contains("TREES . outputs"), "the arrays are not walked");
-        let arrays = compiled.generate(&format_ident!("m"), false, false).to_string();
+        let arrays = compiled.generate(&format_ident!("m"), false, false, &[]).to_string();
         assert!(!arrays.contains("const fn tree_0"));
-        assert!(!arrays.contains("pub const fn outputs"));
         assert!(arrays.contains("TREES . outputs"));
+        // Walking the arrays is a `const fn` too, and so is the whole prediction.
+        for both in [&code, &arrays] {
+            for f in ["features", "outputs", "decode", "predict"] {
+                assert!(both.contains(&format!("pub const fn {f} (")), "{f}");
+            }
+        }
 
         compiled.max_tree_depth = TREE_CODE_MAX_DEPTH + 1;
         assert_eq!(compiled.tree_code(None), Ok(false));
         assert_eq!(compiled.tree_code(Some(false)), Ok(false));
         assert!(compiled.tree_code(Some(true)).unwrap_err().contains("tree_arrays"));
+    }
+
+    #[test]
+    fn every_tree_gets_its_two_proofs_in_both_forms() {
+        let mut compiled = Compiled::load(&fixture("binary-gbdt"), "binary-gbdt").unwrap();
+        let count = |code: &str, needle: &str| code.matches(needle).count();
+        for tree_code in [true, false] {
+            let code = compiled.generate(&format_ident!("m"), true, tree_code, &[]).to_string();
+            for t in 0..14 {
+                assert_eq!(count(&code, &format!("fn m_tree_{t}_is_its_walk ")), 1, "tree {t}");
+                assert_eq!(count(&code, &format!("fn m_tree_{t}_stays_in_its_range ")), 1, "tree {t}");
+                // The code of each tree exists once: in the module, or for arrays in the proofs.
+                assert_eq!(count(&code, &format!("const fn tree_{t} ")), 1, "tree {t}");
+            }
+            assert_eq!(count(&code, "_is_its_walk "), 14);
+            let without = compiled.generate(&format_ident!("m"), false, tree_code, &[]).to_string();
+            assert_eq!(count(&without, "_is_its_walk "), 0, "no proofs without `kani`");
+            assert_eq!(count(&without, "const fn tree_0 "), usize::from(tree_code));
+        }
+        // A tree too deep for code has neither proof; the others keep theirs.
+        compiled.tree_depths[3] = TREE_CODE_MAX_DEPTH + 1;
+        let code = compiled.generate(&format_ident!("m"), true, false, &[]).to_string();
+        assert_eq!(count(&code, "fn m_tree_3_is_its_walk "), 0);
+        assert_eq!(count(&code, "fn m_tree_3_stays_in_its_range "), 0);
+        assert_eq!(count(&code, "_stays_in_its_range "), 13);
+        // A network has no trees to prove.
+        let network = Compiled::load(&fixture("binary-mlp"), "binary-mlp").unwrap();
+        let code = network.generate(&format_ident!("m"), true, false, &[]).to_string();
+        assert_eq!(count(&code, "_is_its_walk "), 0);
+        assert_eq!(count(&code, "any_row_of_any_box"), 0);
     }
 
     #[test]

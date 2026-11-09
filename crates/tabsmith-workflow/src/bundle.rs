@@ -22,7 +22,7 @@ use tabsmith_runtime::{CheckReport, LoadOptions, Predictor, Record, Value};
 use crate::assurance::{Assurance, DEFAULT_ALPHA};
 use crate::fit::FittedArtifacts;
 use crate::pipeline::Workspace;
-use crate::project::{read_json, write_atomic, write_json};
+use crate::project::{fresh_dir, read_json, write_atomic, write_json};
 
 #[derive(Debug, Clone, Default)]
 pub struct BundleOptions {
@@ -144,7 +144,7 @@ fn round6(x: f64) -> f64 {
     (x * 1e6).round() / 1e6
 }
 
-fn file_entry(dir: &Path, rel: &str) -> Result<FileEntry> {
+pub(crate) fn file_entry(dir: &Path, rel: &str) -> Result<FileEntry> {
     let p = dir.join(rel);
     let (sha256, bytes) = sha256_file(&p).map_err(|e| TabsmithError::io(Phase::Bundle, &p, e))?;
     Ok(FileEntry {
@@ -230,10 +230,7 @@ impl Workspace {
             out.file_name().and_then(|n| n.to_str()).unwrap_or("bundle"),
             std::process::id()
         ));
-        if tmp.exists() {
-            fs::remove_dir_all(&tmp).map_err(|e| TabsmithError::io(Phase::Bundle, &tmp, e))?;
-        }
-        fs::create_dir_all(tmp.join("examples")).map_err(|e| TabsmithError::io(Phase::Bundle, &tmp, e))?;
+        fresh_dir(&tmp, &["examples"], Phase::Bundle)?;
         let cleanup = |e: TabsmithError| {
             let _ = fs::remove_dir_all(&tmp);
             e
@@ -268,7 +265,7 @@ impl Workspace {
                     "unevaluated-candidate".into()
                 },
                 test: test_eval.clone(),
-                valid: metrics.valid.clone(),
+                valid: Some(metrics.valid.clone()),
                 notes,
             };
             write_json(&tmp.join(EVALUATION_FILE), &evaluation)?;

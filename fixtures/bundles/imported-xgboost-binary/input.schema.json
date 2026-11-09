@@ -1,0 +1,117 @@
+{
+  "fields": [
+    {
+      "name": "hours_in_service",
+      "kind": "numeric",
+      "raw_dtype": "float",
+      "required": true,
+      "nullable": true
+    },
+    {
+      "name": "cycles",
+      "kind": "numeric",
+      "raw_dtype": "float",
+      "required": true,
+      "nullable": true
+    },
+    {
+      "name": "temp_mean",
+      "kind": "numeric",
+      "raw_dtype": "float",
+      "required": true,
+      "nullable": true
+    },
+    {
+      "name": "temp_std",
+      "kind": "numeric",
+      "raw_dtype": "float",
+      "required": true,
+      "nullable": true
+    },
+    {
+      "name": "temp_max",
+      "kind": "numeric",
+      "raw_dtype": "float",
+      "required": true,
+      "nullable": true
+    },
+    {
+      "name": "vibration_rms",
+      "kind": "numeric",
+      "raw_dtype": "float",
+      "required": true,
+      "nullable": true
+    },
+    {
+      "name": "vibration_peak",
+      "kind": "numeric",
+      "raw_dtype": "float",
+      "required": true,
+      "nullable": true
+    },
+    {
+      "name": "pressure_mean",
+      "kind": "numeric",
+      "raw_dtype": "float",
+      "required": true,
+      "nullable": true
+    },
+    {
+      "name": "pressure_std",
+      "kind": "numeric",
+      "raw_dtype": "float",
+      "required": true,
+      "nullable": true
+    },
+    {
+      "name": "current_mean",
+      "kind": "numeric",
+      "raw_dtype": "float",
+      "required": true,
+      "nullable": true
+    },
+    {
+      "name": "current_std",
+      "kind": "numeric",
+      "raw_dtype": "float",
+      "required": true,
+      "nullable": true
+    },
+    {
+      "name": "humidity",
+      "kind": "numeric",
+      "raw_dtype": "float",
+      "required": true,
+      "nullable": false,
+      "note": "refuses missing values: the model's splits on it send one left at some and right at others"
+    },
+    {
+      "name": "voltage_drop",
+      "kind": "numeric",
+      "raw_dtype": "float",
+      "required": true,
+      "nullable": false,
+      "note": "refuses missing values: the model's splits on it send one left at some and right at others"
+    },
+    {
+      "name": "ambient_noise_db",
+      "kind": "numeric",
+      "raw_dtype": "float",
+      "required": true,
+      "nullable": true
+    },
+    {
+      "name": "calibration_offset",
+      "kind": "numeric",
+      "raw_dtype": "float",
+      "required": true,
+      "nullable": true
+    }
+  ],
+  "missing_column": "error",
+  "extra_columns": "ignore",
+  "unknown_category": "ignore",
+  "nan": "missing",
+  "infinite": "error",
+  "csv_delimiter": ","
+}

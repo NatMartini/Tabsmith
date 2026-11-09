@@ -5,7 +5,8 @@
 #   bash tools/verify.sh                          the CI checks
 #   bash tools/verify.sh --all                    also the minimum Rust versions, the
 #                                                 GPU-feature lint (Linux), the fuzz target,
-#                                                 RustSec advisories and the Kani proofs
+#                                                 RustSec advisories, the Kani proofs and
+#                                                 the Kani lemmas of tabsmith-embedded
 #   bash tools/verify.sh --all 2>&1 | tee verify.log
 #
 # It adds the rustup targets and components it needs, and with --all the MSRV toolchains,
@@ -98,13 +99,29 @@ advisories() {
   return $ok
 }
 
-kani_proofs() {
+kani_setup() {
   command -v cargo-kani >/dev/null 2>&1 || cargo install --locked kani-verifier || return 1
-  [ -d "$HOME/.kani" ] || cargo kani setup || return 1
+  [ -d "$HOME/.kani" ] || cargo kani setup
+}
+
+kani_proofs() {
+  kani_setup || return 1
   if command -v timeout >/dev/null 2>&1; then
     (cd examples/embedded-predict && timeout "${KANI_TIMEOUT:-4h}" cargo kani)
   else
     (cd examples/embedded-predict && cargo kani)
+  fi
+}
+
+# Every proof of tabsmith-embedded: the rounding facts behind Trees::bounds, which do not
+# depend on the code, take about 10 minutes and up to 10 GB, and are not part of CI; and the
+# two proofs that a rule proof's splits cover its region (rules::proofs), which CI runs.
+kani_lemmas() {
+  kani_setup || return 1
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "${KANI_TIMEOUT:-4h}" cargo kani -p tabsmith-embedded
+  else
+    cargo kani -p tabsmith-embedded
   fi
 }
 
@@ -146,6 +163,7 @@ if [ "$ALL" = 1 ]; then
   step 'RustSec advisories (every Cargo.lock)' advisories
   step 'minimum Rust versions' msrv
   step 'Kani proofs (examples/embedded-predict)' kani_proofs
+  step 'Kani lemmas and rule splits (tabsmith-embedded)' kani_lemmas
 fi
 
 printf '\n===== summary: %s, %s\n' "$(uname -sm)" "$(rustc -V)"

@@ -19,6 +19,8 @@ tabsmith_macros::model!(multiclass_gbdt, "../../fixtures/bundles/multiclass-gbdt
 tabsmith_macros::model!(regression_mlp, "../../fixtures/bundles/regression-mlp");
 tabsmith_macros::model!(regression_gbdt, "../../fixtures/bundles/regression-gbdt");
 tabsmith_macros::model!(policies_linear, "../../fixtures/bundles/policies-linear");
+tabsmith_macros::model!(imported_xgboost, "../../fixtures/bundles/imported-xgboost-binary");
+tabsmith_macros::model!(imported_lightgbm, "../../fixtures/bundles/imported-lightgbm-multiclass");
 
 const RECORDS: usize = 20_000;
 
@@ -70,4 +72,6 @@ portable! {
     regression_mlp_is_portable: regression_mlp, "regression-mlp", 0xd38d_3051_1c7d_e789, |p| [p.value];
     regression_gbdt_is_portable: regression_gbdt, "regression-gbdt", 0x62e5_a5f8_89b1_be08, |p| [p.value];
     policies_linear_is_portable: policies_linear, "policies-linear", 0x1a0c_ca3d_1d7d_bb76, |p| [p.probability];
+    imported_xgboost_is_portable: imported_xgboost, "imported-xgboost-binary", 0xed72_62ae_8019_50bd, |p| [p.probability];
+    imported_lightgbm_is_portable: imported_lightgbm, "imported-lightgbm-multiclass", 0x15fe_5e07_65cf_3434, |p| p.probabilities;
 }

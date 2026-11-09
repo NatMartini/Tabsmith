@@ -1,0 +1,21 @@
+bundle b-711d77525a02c0f4 at <adult bundle> (155 trees, 9151 nodes: searched exactly)
+
+stability of 60 records of adult-60.jsonl: every number within 0.05 sd of the record's, categories and missing values kept
+  record 2: ">50K" can change to label "<=50K", probability 0.080244: capital_gain 0 → 1, capital_loss 0 → 1, fnlwgt 280464 → 275967
+  record 3: ">50K" can change to label "<=50K", probability 0.201651: capital_gain 0 → 1, capital_loss 0 → 1, fnlwgt 193524 → 196030
+  record 6: "<=50K" can change to label ">50K", probability 0.614253: fnlwgt 32275 → 27661
+  record 10: ">50K" can change to label "<=50K", probability 0.074357: capital_gain 0 → 1, capital_loss 0 → 1
+  record 11: ">50K" can change to label "<=50K", probability 0.064900: capital_gain 0 → 1, capital_loss 0 → 1, fnlwgt 124191 → 120131
+  record 15: ">50K" can change to label "<=50K", probability 0.032004: capital_gain 0 → 1, capital_loss 0 → 1, fnlwgt 66614 → 67154
+  record 19: ">50K" can change to label "<=50K", probability 0.066683: capital_gain 0 → 1, capital_loss 0 → 1, fnlwgt 181344 → 179731
+  record 22: "<=50K" can change to label ">50K", probability 0.502659: fnlwgt 160943 → 162095
+  record 25: ">50K" can change to label "<=50K", probability 0.088213: capital_gain 0 → 1, capital_loss 0 → 1, fnlwgt 347890 → 343957
+  record 26: ">50K" can change to label "<=50K", probability 0.200292: capital_gain 0 → 1, capital_loss 0 → 1
+  record 28: ">50K" can change to label "<=50K", probability 0.047536: capital_gain 0 → 1, capital_loss 0 → 1
+  record 30: ">50K" can change to label "<=50K", probability 0.101334: capital_gain 0 → 1, capital_loss 0 → 1
+  record 33: ">50K" can change to label "<=50K", probability 0.026154: capital_gain 0 → 1, capital_loss 0 → 1
+  record 36: ">50K" can change to label "<=50K", probability 0.073442: capital_gain 0 → 1, capital_loss 0 → 1, fnlwgt 117963 → 115971
+  record 48: ">50K" can change to label "<=50K", probability 0.018642: capital_gain 0 → 1, capital_loss 0 → 1, fnlwgt 201965 → 202052
+  record 49: ">50K" can change to label "<=50K", probability 0.041447: capital_gain 0 → 1, capital_loss 0 → 1
+  record 55: ">50K" can change to label "<=50K", probability 0.039091: capital_gain 0 → 1, capital_loss 0 → 1
+records: 43 keep their label, 17 can change it, 0 undecided

@@ -14,10 +14,30 @@ use crate::config::{NanPolicy, UnknownCategoryPolicy};
 /// v2: missing-value tokens and typed categoricals are part of the transform.
 pub const TRANSFORM_VERSION: &str = "tabsmith.std-tabular.v2";
 
+/// What a numeric feature does with a missing value.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MissingRule {
+    /// Replace it with `impute`: Tabsmith's own models.
+    #[default]
+    Impute,
+    /// Refuse it: a model imported from a library whose trees send a missing value
+    /// left at some splits and right at others, which no single value reproduces.
+    Refuse,
+}
+
+impl MissingRule {
+    /// Whether this is the default, which a transform leaves out.
+    pub fn is_impute(&self) -> bool {
+        *self == MissingRule::Impute
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum FeatureTransform {
-    /// `z = (x - mean) / std`, missing `x` replaced by `impute` first.
+    /// `z = (x - mean) / std`, missing `x` replaced by `impute` first (or refused, by
+    /// [`MissingRule::Refuse`]).
     Numeric {
         name: String,
         impute: f64,
@@ -25,6 +45,10 @@ pub enum FeatureTransform {
         std: f64,
         /// Index of the single output column.
         offset: usize,
+        /// `impute` (left out) or `refuse`. A runtime that does not know this field
+        /// refuses the bundle rather than impute what it must refuse.
+        #[serde(default, skip_serializing_if = "MissingRule::is_impute")]
+        missing: MissingRule,
     },
     /// One-hot over `categories` (training order), plus a trailing slot for
     /// missing values when missing values were seen in training. Unseen values
@@ -95,6 +119,12 @@ pub struct FittedTransform {
 }
 
 impl FittedTransform {
+    /// Whether the numbers' `mean` and `std` come from training rows. An imported model's
+    /// transform has none: it uses each number as it is (mean 0, std 1).
+    pub fn has_statistics(&self) -> bool {
+        self.fitted_rows > 0
+    }
+
     /// Checks internal consistency (offsets contiguous, names match widths).
     pub fn check_consistency(&self) -> Result<(), String> {
         let mut expected = 0usize;

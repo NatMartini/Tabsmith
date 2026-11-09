@@ -1,0 +1,10 @@
+{
+  "status": "imported",
+  "notes": [
+    "imported from XGBoost 3.4.1 (binary:logistic), model file sha256 a08b292fe32da48a61b7cc73d8d81dfcd36beeb33ca018f42ee455852ebf603a; Tabsmith did not evaluate it",
+    "outputs are XGBoost's margins bit for bit: thresholds are the f32 just below XGBoost's (it sends x < s left, Tabsmith x <= t), leaves are its f32 values, added in f32 in its tree order",
+    "inputs are rounded to f32, as XGBoost rounds them; a missing value is null, NaN or a missing token (XGBoost's default missing value is NaN)",
+    "the starting margin is -logf(1/p - 1) for base_score p = 0.12766667, with glibc's logf, as XGBoost computes it on Linux",
+    "refuses missing values in humidity, voltage_drop: the model's splits on each send one left at some and right at others"
+  ]
+}
